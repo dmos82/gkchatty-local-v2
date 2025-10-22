@@ -1,0 +1,28 @@
+{
+  "name": "@gkchatty/mcp-server",
+  "version": "1.0.0",
+  "description": "GKChatty MCP Server - Claude integration for RAG queries and uploads",
+  "main": "index.js",
+  "bin": {
+    "gkchatty-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "mcp",
+    "gkchatty",
+    "knowledge-base"
+  ],
+  "author": "David Morin",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.17.4",
+    "axios": "1.11.0",
+    "axios-cookiejar-support": "6.0.4",
+    "bcryptjs": "3.0.2",
+    "form-data": "4.0.4",
+    "tough-cookie": "5.1.2"
+  },
+  "private": true
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@gkchatty/shared",
+  "version": "1.0.0",
+  "description": "Shared types, utilities, and configuration for GKChatty ecosystem",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "dev": "tsc --watch"
+  },
+  "keywords": ["gkchatty", "shared", "types", "utilities"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "5.8.3"
+  },
+  "dependencies": {}
+}

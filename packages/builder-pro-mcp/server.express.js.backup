@@ -1,0 +1,431 @@
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const path = require('path');
+const fs = require('fs').promises;
+const { ESLint } = require('eslint');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.MCP_PORT || 5002;
+const BUILDER_PRO_API = process.env.BUILDER_PRO_API || 'http://localhost:5001';
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    service: 'builder-pro-mcp',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Code Review Analyzer
+class CodeReviewAnalyzer {
+  constructor() {
+    this.eslint = new ESLint({
+      overrideConfig: {
+        env: {
+          es2021: true,
+          node: true,
+          browser: true
+        },
+        parserOptions: {
+          ecmaVersion: 2021,
+          sourceType: 'module',
+          ecmaFeatures: {
+            jsx: true
+          }
+        },
+        rules: {
+          'no-unused-vars': 'warn',
+          'no-console': 'warn',
+          'prefer-const': 'warn',
+          'no-var': 'error',
+          'eqeqeq': 'warn',
+          'curly': 'warn',
+          'consistent-return': 'warn',
+          'no-shadow': 'warn',
+          'no-duplicate-imports': 'error',
+          'no-unreachable': 'error',
+          'no-debugger': 'error'
+        }
+      }
+    });
+  }
+
+  async analyzeCode(code, filePath = 'unknown.js') {
+    const issues = [];
+    const suggestions = [];
+    const securityIssues = [];
+
+    // Run ESLint
+    try {
+      const results = await this.eslint.lintText(code, { filePath });
+      if (results[0]) {
+        results[0].messages.forEach(msg => {
+          issues.push({
+            type: msg.severity === 2 ? 'error' : 'warning',
+            line: msg.line,
+            column: msg.column,
+            message: msg.message,
+            rule: msg.ruleId
+          });
+        });
+      }
+    } catch (error) {
+      console.error('ESLint error:', error);
+    }
+
+    // Security checks
+    const securityPatterns = [
+      { pattern: /eval\s*\(/, message: 'Avoid using eval() - security risk' },
+      { pattern: /innerHTML\s*=/, message: 'Direct innerHTML assignment can lead to XSS' },
+      { pattern: /document\.write\(/, message: 'Avoid document.write() - security and performance risk' },
+      { pattern: /(password|secret|api_key|apikey|token)\s*=\s*["'][^"']+["']/i, message: 'Hardcoded credentials detected' },
+      { pattern: /TODO|FIXME|HACK|XXX/, message: 'Found TODO/FIXME comment' },
+      { pattern: /console\.(log|debug|info)/, message: 'Console statement should be removed in production' }
+    ];
+
+    securityPatterns.forEach(({ pattern, message }) => {
+      const matches = code.match(new RegExp(pattern, 'g'));
+      if (matches) {
+        securityIssues.push({
+          type: 'security',
+          pattern: pattern.source,
+          message,
+          occurrences: matches.length
+        });
+      }
+    });
+
+    // Code quality suggestions
+    if (code.length > 500 && !code.includes('function') && !code.includes('=>')) {
+      suggestions.push('Consider breaking this code into smaller functions for better maintainability');
+    }
+
+    if ((code.match(/if\s*\(/g) || []).length > 5) {
+      suggestions.push('High cyclomatic complexity detected. Consider refactoring to reduce nested conditions');
+    }
+
+    if (!code.includes('try') && code.includes('async')) {
+      suggestions.push('Async code should include proper error handling with try-catch blocks');
+    }
+
+    return {
+      issues,
+      securityIssues,
+      suggestions,
+      stats: {
+        lines: code.split('\n').length,
+        characters: code.length,
+        functions: (code.match(/function\s+\w+|=>\s*{/g) || []).length
+      }
+    };
+  }
+
+  async fetchRAGContext(query) {
+    try {
+      // This will query BUILDER-PRO's knowledge base
+      const response = await axios.post(`${BUILDER_PRO_API}/api/rag/search`, {
+        query,
+        namespace: 'system-kb',
+        topK: 5
+      });
+      return response.data.results || [];
+    } catch (error) {
+      console.error('RAG query failed:', error.message);
+      return [];
+    }
+  }
+
+  async generateReview(analysis, ragContext) {
+    const review = {
+      summary: '',
+      critical: [],
+      warnings: [],
+      suggestions: [],
+      ragInsights: []
+    };
+
+    // Categorize issues
+    analysis.issues.forEach(issue => {
+      if (issue.type === 'error') {
+        review.critical.push(issue);
+      } else {
+        review.warnings.push(issue);
+      }
+    });
+
+    // Add security issues to critical
+    analysis.securityIssues.forEach(issue => {
+      review.critical.push({
+        type: 'security',
+        message: issue.message,
+        occurrences: issue.occurrences
+      });
+    });
+
+    // Add suggestions
+    review.suggestions = analysis.suggestions;
+
+    // Add RAG insights if available
+    if (ragContext && ragContext.length > 0) {
+      review.ragInsights = ragContext.map(doc => ({
+        source: doc.metadata?.source || 'Knowledge Base',
+        relevance: doc.score,
+        insight: doc.content.substring(0, 200) + '...'
+      }));
+    }
+
+    // Generate summary
+    const criticalCount = review.critical.length;
+    const warningCount = review.warnings.length;
+
+    if (criticalCount === 0 && warningCount === 0) {
+      review.summary = '✅ Code looks good! No critical issues found.';
+    } else if (criticalCount > 0) {
+      review.summary = `⚠️ Found ${criticalCount} critical issue(s) and ${warningCount} warning(s) that need attention.`;
+    } else {
+      review.summary = `📝 Found ${warningCount} warning(s) to consider.`;
+    }
+
+    return review;
+  }
+}
+
+// Initialize analyzer
+const analyzer = new CodeReviewAnalyzer();
+
+// Main review endpoint
+app.post('/review', async (req, res) => {
+  try {
+    const { code, filePath, contextQuery } = req.body;
+
+    if (!code) {
+      return res.status(400).json({
+        error: 'No code provided',
+        message: 'Please provide code to review in the request body'
+      });
+    }
+
+    console.log(`[Review] Analyzing ${filePath || 'unnamed file'} (${code.length} chars)`);
+
+    // Perform code analysis
+    const analysis = await analyzer.analyzeCode(code, filePath);
+
+    // Fetch RAG context if query provided
+    let ragContext = [];
+    if (contextQuery) {
+      console.log(`[Review] Fetching RAG context for: ${contextQuery}`);
+      ragContext = await analyzer.fetchRAGContext(contextQuery);
+    }
+
+    // Generate comprehensive review
+    const review = await analyzer.generateReview(analysis, ragContext);
+
+    // Add metadata
+    review.metadata = {
+      timestamp: new Date().toISOString(),
+      filePath: filePath || 'unknown',
+      codeStats: analysis.stats,
+      mcpVersion: '1.0.0'
+    };
+
+    console.log(`[Review] Completed - ${review.critical.length} critical, ${review.warnings.length} warnings`);
+
+    res.json(review);
+  } catch (error) {
+    console.error('[Review] Error:', error);
+    res.status(500).json({
+      error: 'Review failed',
+      message: error.message
+    });
+  }
+});
+
+// Security scan endpoint (focused security analysis)
+app.post('/security-scan', async (req, res) => {
+  try {
+    const { code, filePath } = req.body;
+
+    if (!code) {
+      return res.status(400).json({ error: 'No code provided' });
+    }
+
+    console.log(`[Security] Scanning ${filePath || 'unnamed file'}`);
+
+    // Comprehensive security patterns
+    const vulnerabilities = [];
+
+    const securityChecks = [
+      // Injection vulnerabilities
+      { pattern: /eval\s*\(/, severity: 'critical', type: 'Code Injection', message: 'eval() can execute arbitrary code' },
+      { pattern: /new\s+Function\s*\(/, severity: 'critical', type: 'Code Injection', message: 'Function constructor can execute arbitrary code' },
+      { pattern: /innerHTML\s*[+=]=/, severity: 'high', type: 'XSS', message: 'innerHTML can lead to XSS vulnerabilities' },
+      { pattern: /document\.write/, severity: 'high', type: 'XSS', message: 'document.write can be exploited for XSS' },
+
+      // SQL Injection risks
+      { pattern: /query\s*\([`"'].*\${.*}.*[`"']\)/, severity: 'critical', type: 'SQL Injection', message: 'Potential SQL injection via template literals' },
+      { pattern: /query\s*\(.*\+.*\)/, severity: 'high', type: 'SQL Injection', message: 'String concatenation in SQL queries' },
+
+      // Credential exposure
+      { pattern: /(password|pwd|passwd|secret|api[-_]?key|token|auth)\s*[:=]\s*["'][^"']+["']/i, severity: 'critical', type: 'Credential Exposure', message: 'Hardcoded credentials detected' },
+      { pattern: /AWS_ACCESS_KEY|AWS_SECRET|GITHUB_TOKEN|API_KEY/i, severity: 'critical', type: 'Credential Exposure', message: 'Environment variable names suggest credentials' },
+
+      // Path traversal
+      { pattern: /\.\.\/|\.\.\\/, severity: 'medium', type: 'Path Traversal', message: 'Relative path traversal detected' },
+      { pattern: /fs\.(readFile|writeFile|unlink).*\${/, severity: 'high', type: 'Path Traversal', message: 'Dynamic file operations could lead to path traversal' },
+
+      // Insecure randomness
+      { pattern: /Math\.random\(\).*(?:password|token|key|secret)/i, severity: 'high', type: 'Weak Cryptography', message: 'Math.random() is not cryptographically secure' },
+
+      // Command injection
+      { pattern: /exec\s*\(|spawn\s*\(/, severity: 'high', type: 'Command Injection', message: 'Shell command execution detected' },
+      { pattern: /child_process/, severity: 'medium', type: 'Command Injection', message: 'Child process usage requires careful input validation' }
+    ];
+
+    // Run security checks
+    securityChecks.forEach(check => {
+      const regex = new RegExp(check.pattern, 'gm');
+      let match;
+      while ((match = regex.exec(code)) !== null) {
+        const lineNumber = code.substring(0, match.index).split('\n').length;
+        vulnerabilities.push({
+          ...check,
+          line: lineNumber,
+          code: match[0].substring(0, 50)
+        });
+      }
+    });
+
+    // OWASP Top 10 compliance check
+    const owaspCompliance = {
+      injection: vulnerabilities.filter(v => v.type.includes('Injection')).length === 0,
+      brokenAuth: vulnerabilities.filter(v => v.type === 'Credential Exposure').length === 0,
+      xss: vulnerabilities.filter(v => v.type === 'XSS').length === 0,
+      pathTraversal: vulnerabilities.filter(v => v.type === 'Path Traversal').length === 0
+    };
+
+    const response = {
+      summary: vulnerabilities.length === 0 ? '✅ No security vulnerabilities detected' :
+                `⚠️ Found ${vulnerabilities.length} potential security issue(s)`,
+      vulnerabilities,
+      owaspCompliance,
+      recommendations: generateSecurityRecommendations(vulnerabilities),
+      metadata: {
+        timestamp: new Date().toISOString(),
+        filePath: filePath || 'unknown',
+        scanVersion: '1.0.0'
+      }
+    };
+
+    console.log(`[Security] Scan completed - ${vulnerabilities.length} issues found`);
+    res.json(response);
+  } catch (error) {
+    console.error('[Security] Error:', error);
+    res.status(500).json({ error: 'Security scan failed', message: error.message });
+  }
+});
+
+// Architecture validation endpoint
+app.post('/validate-architecture', async (req, res) => {
+  try {
+    const { filePath, code, projectType = 'node' } = req.body;
+
+    const violations = [];
+
+    // Check for architectural patterns based on project type
+    const patterns = {
+      node: {
+        'Separation of Concerns': {
+          check: () => {
+            const hasRouteLogic = /app\.(get|post|put|delete)/.test(code);
+            const hasBusinessLogic = /async\s+function|class\s+\w+Service/.test(code);
+            return !(hasRouteLogic && hasBusinessLogic && code.length > 200);
+          },
+          message: 'Routes and business logic should be in separate files'
+        },
+        'Error Handling': {
+          check: () => /try\s*{\s*[\s\S]*?\s*}\s*catch/.test(code) || code.length < 100,
+          message: 'Async operations should have proper error handling'
+        },
+        'Environment Variables': {
+          check: () => !/process\.env\.\w+/.test(code) || /require\(['"]dotenv['"]\)/.test(code),
+          message: 'Environment variables usage requires dotenv configuration'
+        }
+      }
+    };
+
+    const checksToRun = patterns[projectType] || patterns.node;
+
+    Object.entries(checksToRun).forEach(([principle, { check, message }]) => {
+      if (!check()) {
+        violations.push({ principle, message });
+      }
+    });
+
+    res.json({
+      compliant: violations.length === 0,
+      violations,
+      recommendations: violations.length > 0 ?
+        'Consider refactoring to align with architectural best practices' :
+        'Architecture looks good!',
+      metadata: {
+        timestamp: new Date().toISOString(),
+        filePath,
+        projectType
+      }
+    });
+  } catch (error) {
+    console.error('[Architecture] Error:', error);
+    res.status(500).json({ error: 'Architecture validation failed', message: error.message });
+  }
+});
+
+// Helper function for security recommendations
+function generateSecurityRecommendations(vulnerabilities) {
+  const recommendations = [];
+  const types = [...new Set(vulnerabilities.map(v => v.type))];
+
+  const recommendationMap = {
+    'Code Injection': 'Never use eval() or Function constructor with user input. Use safer alternatives like JSON.parse() for data.',
+    'XSS': 'Use textContent instead of innerHTML, or sanitize HTML with a library like DOMPurify.',
+    'SQL Injection': 'Always use parameterized queries or prepared statements. Never concatenate user input into SQL.',
+    'Credential Exposure': 'Store credentials in environment variables and use a secrets management system.',
+    'Path Traversal': 'Validate and sanitize file paths. Use path.join() and verify paths stay within intended directories.',
+    'Weak Cryptography': 'Use crypto.randomBytes() or crypto.getRandomValues() for secure random values.',
+    'Command Injection': 'Avoid shell commands when possible. If necessary, use parameterized commands and validate all inputs.'
+  };
+
+  types.forEach(type => {
+    if (recommendationMap[type]) {
+      recommendations.push(recommendationMap[type]);
+    }
+  });
+
+  return recommendations;
+}
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`
+╔══════════════════════════════════════════════════════╗
+║           BUILDER-PRO MCP Server v1.0.0              ║
+║                                                      ║
+║  Status: RUNNING                                     ║
+║  Port: ${PORT}                                          ║
+║  API: ${BUILDER_PRO_API}                 ║
+║                                                      ║
+║  Endpoints:                                          ║
+║  - POST /review              - Code review          ║
+║  - POST /security-scan       - Security analysis    ║
+║  - POST /validate-architecture - Architecture check ║
+║  - GET  /health             - Health check          ║
+╚══════════════════════════════════════════════════════╝
+  `);
+});

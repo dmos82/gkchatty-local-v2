@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "builder-pro": {
+      "command": "node",
+      "args": ["/Users/davidjmorin/GOLDKEY CHATTY/builder-pro/mcp/builder-pro-mcp/server.js"],
+      "env": {
+        "BUILDER_PRO_API_URL": "http://localhost:5001/api",
+        "BUILDER_PRO_WEB_URL": "http://localhost:5003",
+        "BUILDER_PRO_ADMIN_USERNAME": "admin",
+        "BUILDER_PRO_ADMIN_PASSWORD": "admin123"
+      }
+    }
+  }
+}
