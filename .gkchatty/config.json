@@ -1,0 +1,69 @@
+{
+  "$schema": "./config.schema.json",
+  "version": "1.0.0",
+  "environment": "development",
+  "backend": {
+    "api": {
+      "port": 4001,
+      "host": "localhost",
+      "cors": {
+        "origins": ["http://localhost:4003"]
+      }
+    },
+    "database": {
+      "mongodb": {
+        "uri": "mongodb://localhost:27017/gkckb",
+        "options": {
+          "maxPoolSize": 10,
+          "minPoolSize": 2,
+          "serverSelectionTimeoutMS": 5000
+        }
+      }
+    },
+    "services": {
+      "pinecone": {
+        "environment": "us-east-1-aws",
+        "indexName": "gkchatty-sandbox"
+      },
+      "openai": {
+        "model": {
+          "chat": "gpt-4o-mini",
+          "chatFallback": "gpt-3.5-turbo",
+          "embedding": "text-embedding-3-small"
+        }
+      },
+      "storage": {
+        "type": "local",
+        "localPath": "./uploads",
+        "s3Bucket": "local"
+      }
+    }
+  },
+  "web": {
+    "port": 4003,
+    "apiUrl": "http://localhost:4001"
+  },
+  "mcp": {
+    "gkchatty": {
+      "apiUrl": "http://localhost:4001",
+      "timeout": 30000,
+      "retries": 3,
+      "retryDelay": 1000
+    },
+    "builderPro": {
+      "enabled": true,
+      "autoFix": false,
+      "securityScan": true
+    }
+  },
+  "health": {
+    "checkInterval": 60000,
+    "services": ["mongodb", "backend", "pinecone", "openai"],
+    "timeout": 5000
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "enableDebug": false
+  }
+}

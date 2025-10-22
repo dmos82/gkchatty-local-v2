@@ -1,0 +1,42 @@
+{
+  "name": "@gkchatty/ecosystem",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-ready RAG platform with autonomous code generation - Complete monorepo",
+  "keywords": [
+    "rag",
+    "knowledge-base",
+    "ai",
+    "mcp",
+    "builder-pro",
+    "monorepo"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/gkchatty-ecosystem.git"
+  },
+  "engines": {
+    "node": ">=20.19.5",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "scripts": {
+    "setup": "./scripts/setup.sh",
+    "health": "./scripts/health-check.sh",
+    "start": "./scripts/start.sh",
+    "stop": "./scripts/stop.sh",
+    "dev": "pnpm --filter @gkchatty/backend dev & pnpm --filter @gkchatty/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:integration": "pnpm --filter @gkchatty/tests test:integration",
+    "test:e2e": "pnpm --filter @gkchatty/tests test:e2e",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
+    "clean": "pnpm -r clean && rm -rf node_modules",
+    "register-mcps": "./scripts/fix-mcp.sh"
+  },
+  "devDependencies": {
+    "prettier": "3.1.1",
+    "typescript": "5.8.3"
+  }
+}

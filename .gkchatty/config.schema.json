@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GKChatty Ecosystem Configuration",
+  "type": "object",
+  "required": ["version", "environment", "backend", "mcp"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration version"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["development", "staging", "production"],
+      "description": "Current environment"
+    },
+    "backend": {
+      "type": "object",
+      "required": ["api", "database", "services"],
+      "properties": {
+        "api": {
+          "type": "object",
+          "required": ["port", "host"],
+          "properties": {
+            "port": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 65535
+            },
+            "host": {
+              "type": "string"
+            },
+            "cors": {
+              "type": "object",
+              "properties": {
+                "origins": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "database": {
+          "type": "object",
+          "required": ["mongodb"],
+          "properties": {
+            "mongodb": {
+              "type": "object",
+              "required": ["uri"],
+              "properties": {
+                "uri": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "services": {
+          "type": "object",
+          "required": ["pinecone", "openai"],
+          "properties": {
+            "pinecone": {
+              "type": "object",
+              "required": ["environment", "indexName"],
+              "properties": {
+                "environment": {
+                  "type": "string"
+                },
+                "indexName": {
+                  "type": "string"
+                }
+              }
+            },
+            "openai": {
+              "type": "object",
+              "required": ["model"],
+              "properties": {
+                "model": {
+                  "type": "object",
+                  "required": ["chat", "embedding"],
+                  "properties": {
+                    "chat": {
+                      "type": "string"
+                    },
+                    "chatFallback": {
+                      "type": "string"
+                    },
+                    "embedding": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "required": ["gkchatty"],
+      "properties": {
+        "gkchatty": {
+          "type": "object",
+          "required": ["apiUrl"],
+          "properties": {
+            "apiUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "timeout": {
+              "type": "integer"
+            },
+            "retries": {
+              "type": "integer"
+            }
+          }
+        },
+        "builderPro": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "autoFix": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "properties": {
+        "checkInterval": {
+          "type": "integer"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
