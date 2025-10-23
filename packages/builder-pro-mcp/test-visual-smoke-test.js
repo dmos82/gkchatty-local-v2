@@ -27,7 +27,7 @@ async function testVisualPipeline() {
   console.log('\n📝 TEST 1: Blog Platform (Fixed Version)');
   console.log('Expected: Should PASS (typography plugin installed, config fixed)\n');
 
-  const blogURL = 'http://localhost:3001';
+  const blogURL = 'http://localhost:4001';
 
   const smokeTest = new VisualSmokeTest();
   const errorDetector = new VisualErrorDetector();
@@ -91,11 +91,11 @@ async function testVisualPipeline() {
     consoleErrors: [
       {
         text: '[vite] Internal server error: [postcss] Cannot find module @tailwindcss/typography',
-        location: { url: 'http://localhost:3001/src/index.css', lineNumber: 1 }
+        location: { url: 'http://localhost:4001/src/index.css', lineNumber: 1 }
       },
       {
         text: 'Failed to load resource: the server responded with a status of 500 (Internal Server Error)',
-        location: { url: 'http://localhost:3001/src/index.css', lineNumber: 1 }
+        location: { url: 'http://localhost:4001/src/index.css', lineNumber: 1 }
       }
     ],
     pageErrors: [],
@@ -104,7 +104,7 @@ async function testVisualPipeline() {
     visualErrors: [],
     assetFailures: [
       {
-        url: 'http://localhost:3001/src/index.css',
+        url: 'http://localhost:4001/src/index.css',
         status: 500,
         statusText: 'Internal Server Error'
       }

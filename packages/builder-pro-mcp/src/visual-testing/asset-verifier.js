@@ -30,7 +30,7 @@ class AssetVerifier {
 
   /**
    * Verify all assets on a page
-   * @param {string} url - URL to check (e.g., http://localhost:3001)
+   * @param {string} url - URL to check (e.g., http://localhost:4001)
    * @param {Object} page - Optional Playwright page object for extraction
    * @returns {Promise<Object>} Verification results
    */

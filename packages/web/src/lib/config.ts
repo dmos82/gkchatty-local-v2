@@ -23,9 +23,9 @@ if (process.env.NODE_ENV === 'production') {
   // Fallback when env var is missing
   if (!resolvedClientUrl) {
     console.warn(
-      'WARNING: NEXT_PUBLIC_API_BASE_URL is not set. Falling back to http://localhost:3001 for local client development.'
+      'WARNING: NEXT_PUBLIC_API_BASE_URL is not set. Falling back to http://localhost:4001 for local client development.'
     );
-    resolvedClientUrl = 'http://localhost:3001';
+    resolvedClientUrl = 'http://localhost:4001';
   }
 
   // If the URL points to localhost with https, downgrade to http to match local API server
@@ -58,10 +58,10 @@ if (typeof window === 'undefined') {
     }
   } else {
     // Development environment (local dev or CI local testing)
-    resolvedInternalUrl = API_INTERNAL_URL_FROM_ENV || 'http://localhost:3001';
+    resolvedInternalUrl = API_INTERNAL_URL_FROM_ENV || 'http://localhost:4001';
     if (!API_INTERNAL_URL_FROM_ENV) {
       console.warn(
-        'WARNING: API_INTERNAL_URL is not set. Falling back to http://localhost:3001 for local server development.'
+        'WARNING: API_INTERNAL_URL is not set. Falling back to http://localhost:4001 for local server development.'
       );
     }
   }

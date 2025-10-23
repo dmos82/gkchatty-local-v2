@@ -11,7 +11,7 @@ config({ path: pathModule.resolve(__dirname, '../../../../.env') });
 const log = getLogger('verifyPersonaIntegration');
 
 // Test configuration
-const API_BASE_URL = 'http://localhost:3001';
+const API_BASE_URL = 'http://localhost:4001';
 const TEST_USER_CREDENTIALS = {
   username: 'testadmin',
   password: 'testpassword',

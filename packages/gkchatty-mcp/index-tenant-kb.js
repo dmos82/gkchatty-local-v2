@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const FormData = require('form-data');
 
-const API_URL = process.env.GKCHATTY_API_URL || 'http://localhost:3001';
+const API_URL = process.env.GKCHATTY_API_URL || 'http://localhost:4001';
 const API_KEY = process.env.GKCHATTY_API_KEY;
 const USERNAME = process.env.GKCHATTY_USERNAME || 'dev';
 const PASSWORD = process.env.GKCHATTY_PASSWORD || 'dev123';

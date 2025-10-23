@@ -3,7 +3,7 @@ const express = require('express');
 const openaiHelper = require('./utils/openaiHelper');
 
 const app = express();
-const port = process.env.PORT ? parseInt(process.env.PORT) : 3001;
+const port = process.env.PORT ? parseInt(process.env.PORT) : 4001;
 
 // Add JSON parsing middleware
 app.use(express.json());

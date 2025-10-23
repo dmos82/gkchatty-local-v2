@@ -8,7 +8,7 @@ const {
 } = require('@modelcontextprotocol/sdk/types.js');
 const axios = require('axios');
 
-const API_URL = process.env.GKCHATTY_API_URL || 'http://localhost:3001';
+const API_URL = process.env.GKCHATTY_API_URL || 'http://localhost:4001';
 const API_KEY = process.env.GKCHATTY_API_KEY;
 // Fallback to username/password if no API key
 const USERNAME = process.env.GKCHATTY_USERNAME || 'dev';

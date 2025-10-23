@@ -11,7 +11,7 @@ async function testFrontendFlow() {
   try {
     console.log('[Test Frontend Flow] Starting complete frontend simulation...');
 
-    const baseURL = 'http://localhost:3001';
+    const baseURL = 'http://localhost:4001';
 
     // Step 1: Login as admin
     console.log('\n=== STEP 1: Admin Login ===');

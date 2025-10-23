@@ -8,7 +8,7 @@
 // ============================================================================
 
 /** Default API server port if not specified in environment */
-export const DEFAULT_API_PORT = 3001;
+export const DEFAULT_API_PORT = 4001;
 
 /** Default frontend port for CORS configuration */
 export const DEFAULT_FRONTEND_PORT = 3000;

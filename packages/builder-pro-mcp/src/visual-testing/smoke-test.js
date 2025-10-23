@@ -24,7 +24,7 @@ class VisualSmokeTest {
 
   /**
    * Run complete visual smoke test
-   * @param {string} url - URL to test (e.g., http://localhost:3001)
+   * @param {string} url - URL to test (e.g., http://localhost:4001)
    * @returns {Promise<Object>} Test results
    */
   async runSmokeTest(url) {
