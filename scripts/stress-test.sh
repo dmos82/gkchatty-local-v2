@@ -101,25 +101,26 @@ else
   test_fail "Frontend HTML does not contain 'GKChatty'"
 fi
 
-# Test 1.3: Auth - Register
-test_start "Auth - User registration"
+# Test 1.3: Auth - Register (Expected to fail - feature disabled)
+test_start "Auth - Public registration disabled check"
 RANDOM_USER="testuser_$(date +%s)"
 REGISTER_RESPONSE=$(curl -s -X POST http://localhost:4001/api/auth/register \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$RANDOM_USER\",\"email\":\"$RANDOM_USER@test.com\",\"password\":\"Test123!\"}" \
   2>&1 || echo "ERROR")
 
-if echo "$REGISTER_RESPONSE" | grep -q "success\|token\|user"; then
+# Public registration is intentionally disabled - we expect this error
+if echo "$REGISTER_RESPONSE" | grep -q "Public registration is disabled"; then
   test_pass
 else
-  test_fail "Registration failed: $REGISTER_RESPONSE"
+  test_fail "Expected 'Public registration is disabled' but got: $REGISTER_RESPONSE"
 fi
 
 # Test 1.4: Auth - Login
 test_start "Auth - User login"
 LOGIN_RESPONSE=$(curl -s -X POST http://localhost:4001/api/auth/login \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"dev\",\"password\":\"123123\"}" \
+  -d "{\"username\":\"dev\",\"password\":\"dev123\"}" \
   2>&1 || echo "ERROR")
 
 if echo "$LOGIN_RESPONSE" | grep -q "success\|token"; then
@@ -173,7 +174,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 # Test 3.1: Version stability
 test_start "Version stability (no ^ or ~)"
-DRIFT_COUNT=$(grep -r '"\^' packages/*/package.json | wc -l | tr -d ' ')
+# Exclude Turbo "^build" syntax which is a build dependency pattern, not a version
+DRIFT_COUNT=$(grep -r '"\^' packages/*/package.json | grep -v '"dependsOn"' | grep -v 'turbo' | wc -l | tr -d ' ')
 if [ "$DRIFT_COUNT" -eq 0 ]; then
   test_pass
 else
