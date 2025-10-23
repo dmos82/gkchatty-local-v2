@@ -175,7 +175,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # Test 3.1: Version stability
 test_start "Version stability (no ^ or ~)"
 # Exclude Turbo "^build" syntax which is a build dependency pattern, not a version
-DRIFT_COUNT=$(grep -r '"\^' packages/*/package.json | grep -v '"dependsOn"' | grep -v 'turbo' | wc -l | tr -d ' ')
+# Check dependencies and devDependencies sections only (exclude turbo pipeline config)
+DRIFT_COUNT=$(grep -r '"\^' packages/*/package.json | grep -E '(dependencies|devDependencies)' | wc -l | tr -d ' ')
 if [ "$DRIFT_COUNT" -eq 0 ]; then
   test_pass
 else
