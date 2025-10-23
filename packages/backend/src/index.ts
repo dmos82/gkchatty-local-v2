@@ -64,6 +64,7 @@ import localFileRoutes from './routes/localFileRoutes'; // <-- Import local file
 import versionRoutes from './routes/versionRoutes'; // <-- Import version routes
 import adminSettingsRoutes from './routes/adminSettingsRoutes'; // <-- Import admin settings routes
 import folderRoutes from './routes/folderRoutes'; // <-- Import folder routes
+import articleRoutes from './routes/articleRoutes'; // <-- Import article routes
 import * as http from 'http'; // Import http
 import { correlationIdMiddleware } from './middleware/correlationId';
 import { pinoLogger } from './utils/logger'; // Import base pinoLogger
@@ -592,6 +593,15 @@ async function startServer() {
       console.log('>>> [App Setup] Folder routes registered successfully.');
     } catch (err) {
       console.error('>>> !!! [App Setup] Error registering folder routes:', err);
+    }
+
+    // --- Article Routes ---
+    try {
+      console.log('>>> [App Setup] Registering article routes...');
+      app.use('/api/articles', articleRoutes);
+      console.log('>>> [App Setup] Article routes registered successfully.');
+    } catch (err) {
+      console.error('>>> !!! [App Setup] Error registering article routes:', err);
     }
 
     // Document routes (includes /chat endpoint)
