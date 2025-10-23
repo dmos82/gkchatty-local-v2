@@ -156,8 +156,14 @@ export const processAndEmbedDocument = async (
       }
     }
 
-    const isPdf = effectiveMimeType === 'application/pdf';
-    const isText = effectiveMimeType === 'text/plain' || effectiveMimeType === 'text/markdown';
+    // Check file extension as fallback for MIME type detection
+    const fileExt = path.extname(originalFileName).toLowerCase();
+    const isMarkdownExt = fileExt === '.md' || fileExt === '.markdown';
+    const isTextExt = fileExt === '.txt';
+    const isPdfExt = fileExt === '.pdf';
+
+    const isPdf = effectiveMimeType === 'application/pdf' || isPdfExt;
+    const isText = effectiveMimeType === 'text/plain' || effectiveMimeType === 'text/markdown' || isTextExt || isMarkdownExt;
     const isExcel =
       effectiveMimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
       effectiveMimeType === 'application/vnd.ms-excel' ||

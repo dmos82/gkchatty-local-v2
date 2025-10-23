@@ -30,14 +30,19 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter function (remains the same but add markdown support)
+// File filter function with extension fallback for markdown files
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const allowedMimes = ['application/pdf', 'text/plain', 'text/markdown'];
-  if (allowedMimes.includes(file.mimetype)) {
-    console.log(`[Multer] Allowed file type: ${file.mimetype}`);
+  const allowedExtensions = ['.pdf', '.txt', '.md', '.markdown'];
+
+  const fileExtension = path.extname(file.originalname).toLowerCase();
+
+  // Accept if MIME type matches OR if extension is allowed (for .md files with incorrect MIME)
+  if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
+    console.log(`[Multer] Allowed file: ${file.originalname} (mime: ${file.mimetype}, ext: ${fileExtension})`);
     cb(null, true);
   } else {
-    console.log(`[Multer] Blocked file type: ${file.mimetype}`);
+    console.log(`[Multer] Blocked file: ${file.originalname} (mime: ${file.mimetype}, ext: ${fileExtension})`);
     cb(new Error('Invalid file type. Only PDF, TXT, and Markdown files are allowed.'));
   }
 };

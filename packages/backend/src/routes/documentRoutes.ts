@@ -278,7 +278,7 @@ const handleDocumentUpload = async (req: Request, res: Response, next: NextFunct
         // 3. Upload to S3 and create UserDocument (if not a duplicate or if failed duplicate was handled)
         const fileExtension = path.extname(originalname);
         const extensionForStorage = fileExtension ? fileExtension.substring(1) : 'unknown';
-        const s3Key = `user_docs/${userId}/${uuidv4()}/${fileExtension || '.unknown'}`;
+        const s3Key = `user_docs/${userId}/${uuidv4()}/${originalname}`;
 
         log.info(
           `[UploadDoc - ${correlationId}] Starting S3 upload for ${originalname}. Bucket: ${s3Bucket}, Key: ${s3Key}`
