@@ -114,7 +114,37 @@ This workflow integrates BMAD specialists with the **Builder Pro BMAD** autonomo
 
 **Specialist:** Builder Pro BMAD (via `builder-pro-bmad` subagent)
 
-**IMPORTANT:** Due to Claude Code MCP + Task tool limitation, Builder Pro BMAD will be executed in main session (not as sub-agent). This is normal and works perfectly.
+**🚨 CRITICAL RULE: YOU (Claude) MUST NOT WRITE CODE IN PHASE 4**
+
+Phase 4 MUST be executed by invoking the `builder-pro-bmad` subagent using the Task tool:
+
+```
+Task(
+  subagent_type: "builder-pro-bmad",
+  description: "Implement [feature] with RAG pattern",
+  prompt: "Execute the implementation plan at specs/plans/[plan-file].md using RAG step-by-step queries from GKChatty.
+
+  For EACH step:
+  1. Query GKChatty: 'What is step [X] of the [feature] implementation plan?'
+  2. Execute ONLY that step
+  3. Test the step
+  4. If success → query next step
+  5. If failure → enter 3-iteration error recovery
+
+  Use these MCP tools:
+  - mcp__gkchatty-kb__query_gkchatty for RAG queries
+  - mcp__builder-pro-mcp__review_code for validation
+  - mcp__builder-pro-mcp__security_scan for security checks
+
+  DO NOT return control until all steps complete or blocked.
+  Report progress after each step."
+)
+```
+
+**⚠️ SELF-CHECK PROTOCOL:**
+- If you find yourself using Write/Edit tools → STOP, invoke builder-pro-bmad instead
+- If you're writing code directly → STOP, you've violated protocol
+- ONLY allowed tools: Task, TodoWrite, Bash (for git commits after agent completes)
 
 **RAG Workflow:**
 
@@ -230,8 +260,10 @@ Step 5: Completion
 2. ✅ Architect designs system architecture
 3. ✅ Scout discovers relevant files + GKChatty history
 4. ✅ Planner creates + uploads implementation plan
-5. ✅ Builder Pro BMAD executes with RAG pattern (in main session)
+5. ✅ **Builder Pro BMAD agent** executes with RAG pattern (autonomous, via Task tool)
 6. ✅ QA reviews and approves
+
+**IMPORTANT:** You (Claude) will invoke agents via Task tool. You do NOT write code directly.
 
 ---
 
