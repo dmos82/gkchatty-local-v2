@@ -59,6 +59,24 @@ check_mcps() {
     fi
 }
 
+# Function to check MCP servers running (informational)
+check_mcp_servers() {
+    echo -n "MCP Servers (gkchatty-mcp, builder-pro-mcp)... "
+    MCP_COUNT=$(ps aux | grep -E "(gkchatty-mcp|builder-pro-mcp)" | grep -v grep | wc -l | tr -d ' ')
+
+    if [ "$MCP_COUNT" -ge 2 ]; then
+        echo -e "${GREEN}✅ Running ($MCP_COUNT processes)${NC}"
+    elif [ "$MCP_COUNT" -eq 1 ]; then
+        echo -e "${YELLOW}⚠️  Only 1 MCP process running${NC}"
+        echo "   → Expected: 2 (gkchatty-mcp + builder-pro-mcp)"
+        echo "   → MCPs are managed by Claude Code"
+    else
+        echo -e "${YELLOW}⚠️  No MCP processes detected${NC}"
+        echo "   → MCPs are managed by Claude Code"
+        echo "   → Restart Claude Code if needed"
+    fi
+}
+
 # Function to check environment variables
 check_env() {
     echo -n "Environment Variables... "
@@ -113,6 +131,7 @@ check_env
 check_backend
 check_web
 check_mcps
+check_mcp_servers
 
 echo ""
 echo "======================================"

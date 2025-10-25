@@ -25,6 +25,7 @@
     "health": "./scripts/health-check.sh",
     "start": "./scripts/start.sh",
     "stop": "./scripts/stop.sh",
+    "restart": "./scripts/stop.sh && ./scripts/start.sh",
     "dev": "pnpm --filter @gkchatty/backend dev & pnpm --filter @gkchatty/web dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
