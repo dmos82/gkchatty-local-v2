@@ -1,0 +1,491 @@
+# Builder Pro Enhanced Validation Workflow Configuration
+# Version: 2.0 - Interactive Testing Edition
+# Enforces comprehensive testing including user interactions and flows
+
+workflow:
+  name: "BMAD Builder Pro Enhanced Validation Loop"
+  version: "2.0.0"
+  description: "Automated validation with interactive testing and user flow verification"
+  changelog: |
+    v2.0.0: Added Phase 2B (Interactive Testing), Phase 2C (User Flow Testing)
+    v1.0.0: Initial release with basic page load testing
+
+phases:
+  phase_1:
+    name: "Implementation Complete"
+    description: "All code written, TypeScript compiles, dev server runs"
+    required: true
+    criteria:
+      - "All planned features implemented"
+      - "TypeScript compilation succeeds (tsc --noEmit)"
+      - "Dev server starts without errors"
+      - "No build-time errors in console"
+    status_message: "Build created with no errors"
+    triggers:
+      on_complete: "prompt_user_phase_2"
+
+  phase_2:
+    name: "Comprehensive Testing"
+    description: "Visual + Interactive + User Flow testing"
+    required: true
+    sub_phases:
+
+      phase_2a:
+        name: "Visual Load Testing"
+        description: "Verify all pages load and render"
+        tool: "mcp__builder-pro-mcp__test_ui"
+        tests:
+          - name: "Homepage Load Test"
+            url: "http://localhost:3000"
+            actions:
+              - type: "screenshot"
+            verify:
+              - "HTTP 200 response"
+              - "Page title present"
+              - "No server console errors"
+            screenshot: "docs/screenshots/01-homepage.png"
+
+          - name: "Authentication Pages Load"
+            pages:
+              - url: "/signup"
+                screenshot: "docs/screenshots/02-signup-page.png"
+              - url: "/login"
+                screenshot: "docs/screenshots/03-login-page.png"
+            verify:
+              - "HTTP 200 response"
+              - "Forms render"
+              - "No console errors"
+
+      phase_2b:
+        name: "Interactive Testing"
+        description: "Test form submissions, button clicks, user interactions"
+        tool: "mcp__builder-pro-mcp__test_ui"
+        required: true
+        tests:
+
+          - name: "Signup Form Interaction Test"
+            description: "Fill signup form and submit"
+            url: "http://localhost:3000/signup"
+            steps:
+              - action: "screenshot"
+                description: "Before form interaction"
+                path: "docs/screenshots/04-signup-before.png"
+
+              - action: "type"
+                selector: "#username"
+                text: "testuser123"
+                description: "Fill username field"
+
+              - action: "type"
+                selector: "#email"
+                text: "test@example.com"
+                description: "Fill email field"
+
+              - action: "type"
+                selector: "#password"
+                text: "TestPassword123!"
+                description: "Fill password field"
+
+              - action: "screenshot"
+                description: "After form filled"
+                path: "docs/screenshots/05-signup-filled.png"
+
+              - action: "click"
+                selector: "button[type='submit']"
+                description: "Click submit button"
+
+              - action: "wait"
+                timeout: 3000
+                description: "Wait for submission processing"
+
+              - action: "screenshot"
+                description: "After form submission"
+                path: "docs/screenshots/06-signup-after.png"
+
+            verify:
+              critical:
+                - "No console errors during submission"
+                - "No unhandled promise rejections"
+                - "URL redirected to expected page OR error message displayed"
+
+              on_success:
+                - "URL changed to /feed or /dashboard"
+                - "No error messages visible"
+                - "Authentication state changed"
+
+              on_error:
+                - "Error message displayed to user"
+                - "Console error logged for debugging"
+                - "Form validation messages shown"
+
+            expected_outcomes:
+              success:
+                - "Redirect to /feed"
+                - "User authenticated"
+                - "No console errors"
+
+              expected_errors:
+                - message: "Failed to create profile"
+                  cause: "Database tables not initialized"
+                  severity: "CRITICAL"
+                  fix: "Run database migrations"
+
+                - message: "Username already taken"
+                  cause: "Duplicate username in database"
+                  severity: "MEDIUM"
+                  fix: "Use different test username"
+
+          - name: "Login Form Interaction Test"
+            description: "Fill login form and submit"
+            url: "http://localhost:3000/login"
+            prerequisite: "Signup test must pass OR test user must exist"
+            steps:
+              - action: "screenshot"
+                path: "docs/screenshots/07-login-before.png"
+
+              - action: "type"
+                selector: "#email"
+                text: "test@example.com"
+
+              - action: "type"
+                selector: "#password"
+                text: "TestPassword123!"
+
+              - action: "screenshot"
+                path: "docs/screenshots/08-login-filled.png"
+
+              - action: "click"
+                selector: "button[type='submit']"
+
+              - action: "wait"
+                timeout: 3000
+
+              - action: "screenshot"
+                path: "docs/screenshots/09-login-after.png"
+
+            verify:
+              - "No console errors"
+              - "URL redirected OR error shown"
+              - "Authentication attempted"
+
+          - name: "Navigation Testing"
+            description: "Click all navigation links"
+            url: "http://localhost:3000"
+            steps:
+              - action: "screenshot"
+                description: "Homepage navigation"
+
+              - action: "click"
+                selector: "a[href='/signup']"
+                description: "Click 'Sign Up' link"
+
+              - action: "screenshot"
+                description: "After clicking signup link"
+
+              - action: "wait"
+                timeout: 1000
+
+            verify:
+              - "Navigation links work"
+              - "URLs change correctly"
+              - "No broken links (404 errors)"
+
+      phase_2c:
+        name: "User Flow Testing"
+        description: "Test complete user journeys end-to-end"
+        tool: "mcp__builder-pro-mcp__test_ui"
+        required: true
+        flows:
+
+          - name: "Complete Signup → Login → Browse Flow"
+            description: "New user registration through first page view"
+            prerequisite: "Database initialized"
+            steps:
+              - flow_step: "signup"
+                url: "/signup"
+                actions:
+                  - "Fill username, email, password"
+                  - "Submit form"
+                verify:
+                  - "Account created"
+                  - "Redirected to feed"
+
+              - flow_step: "view_feed"
+                url: "/feed"
+                verify:
+                  - "Feed page loads"
+                  - "User is authenticated"
+                  - "Create post button visible"
+
+              - flow_step: "logout"
+                action: "Click logout button"
+                verify:
+                  - "Redirected to homepage"
+                  - "No longer authenticated"
+
+              - flow_step: "login"
+                url: "/login"
+                actions:
+                  - "Fill email, password"
+                  - "Submit form"
+                verify:
+                  - "Redirected to feed"
+                  - "Authenticated again"
+
+            success_criteria:
+              - "All steps complete without errors"
+              - "User can signup, logout, login"
+              - "Authentication state persists"
+
+          - name: "Create Post → Vote → Comment Flow"
+            description: "Complete user interaction flow"
+            prerequisite: "User authenticated + Database initialized"
+            steps:
+              - flow_step: "create_post"
+                url: "/feed"
+                actions:
+                  - "Click 'Create Post' button"
+                  - "Fill title and content"
+                  - "Submit post"
+                verify:
+                  - "Post appears in feed"
+                  - "Post has correct author"
+
+              - flow_step: "vote_on_post"
+                action: "Click upvote button"
+                verify:
+                  - "Vote count increases"
+                  - "Button state changes"
+
+              - flow_step: "add_comment"
+                actions:
+                  - "Click on post"
+                  - "Fill comment form"
+                  - "Submit comment"
+                verify:
+                  - "Comment appears"
+                  - "Comment count increases"
+
+      phase_2d:
+        name: "API & Database Testing"
+        description: "Verify backend connectivity and data persistence"
+        optional: true
+        tests:
+          - name: "Supabase Connection Test"
+            check: "Can connect to Supabase"
+
+          - name: "Database Tables Exist"
+            tables:
+              - "profiles"
+              - "posts"
+              - "votes"
+              - "comments"
+
+          - name: "RLS Policies Active"
+            verify: "Row Level Security enabled"
+
+    output_requirements:
+      required_files:
+        - "docs/validation/playwright-test-report.md"
+        - "docs/validation/bugs-found.md"
+
+      minimum_screenshots: 10
+
+      must_document:
+        - "Every button clicked"
+        - "Every form submitted"
+        - "Every navigation tested"
+        - "All console errors during actions"
+        - "All network errors"
+        - "All user flows attempted"
+
+    triggers:
+      on_complete: "auto_run_phase_3"
+
+  phase_3:
+    name: "Run orchestrate_build"
+    description: "Automated validation and bug detection"
+    tool: "mcp__builder-pro-mcp__orchestrate_build"
+    auto_run: true
+    parameters:
+      projectPath: "/absolute/path/to/project"
+      config:
+        frontend:
+          url: "http://localhost:3000"
+      autoFix: true
+      maxIterations: 3
+      stopOnCritical: false
+
+    output: "Comprehensive bug report with severity categorization"
+    triggers:
+      on_complete: "evaluate_bugs"
+
+  phase_4:
+    name: "Fix Bugs"
+    description: "Apply fixes based on bug reports from Phase 2 & 3"
+    required: true
+    sources:
+      - "Playwright test results (Phase 2)"
+      - "orchestrate_build report (Phase 3)"
+
+    prioritization:
+      critical:
+        - "App won't load (500 errors)"
+        - "Forms don't submit"
+        - "Database errors"
+        - "Authentication broken"
+        action: "Fix immediately"
+
+      high:
+        - "Features don't work"
+        - "User flows break"
+        - "Console errors during actions"
+        action: "Fix before next iteration"
+
+      medium:
+        - "UI glitches"
+        - "Performance issues"
+        action: "Document for future"
+
+    documentation:
+      required: true
+      file: "docs/validation/bugs-found.md"
+      template: ".bmad/templates/BUGS-FOUND-TEMPLATE.md"
+
+    triggers:
+      on_complete: "auto_run_phase_5"
+
+  phase_5:
+    name: "Re-run Comprehensive Tests"
+    description: "Full Phase 2 test suite to verify fixes"
+    required: true
+    run: "Complete Phase 2 again (2A + 2B + 2C)"
+    verify:
+      - "All previously failing tests now pass"
+      - "No new regressions introduced"
+      - "User flows complete end-to-end"
+
+    comparison:
+      before: "Phase 2 initial results"
+      after: "Phase 5 re-test results"
+      document: "Improvements and any remaining issues"
+
+    triggers:
+      on_complete: "evaluate_iteration"
+
+  phase_6:
+    name: "Evaluate Results"
+    description: "Determine if another iteration needed"
+    decision_tree:
+      all_tests_pass:
+        criteria:
+          - "No critical bugs"
+          - "No high-priority bugs"
+          - "All buttons work"
+          - "All forms work"
+          - "All user flows complete"
+          - "No console errors"
+        action: "proceed_to_phase_7"
+
+      issues_found:
+        check: "iteration_count"
+        if_less_than_max:
+          action: "loop_back_to_phase_3"
+          message: "Bugs found, starting iteration {N}"
+
+        if_at_max:
+          action: "document_remaining_issues"
+          message: "Max iterations reached, documenting remaining issues"
+          require: "user_decision"
+
+    max_iterations: 3
+
+  phase_7:
+    name: "Present to User"
+    description: "Show all results and request approval"
+    required: true
+    present:
+      - "Complete test results"
+      - "All screenshots captured"
+      - "Validation reports (Playwright + orchestrate_build)"
+      - "Bug reports (found + fixed)"
+      - "Any remaining issues"
+      - "Comparison: before vs after"
+
+    request:
+      - "User performs manual smoke test"
+      - "User verifies core functionality"
+      - "User approves OR requests changes"
+
+    approval_required: true
+    only_after_approval: "Mark project complete"
+
+enforcement:
+  cannot_mark_complete_without:
+    - "Phase 2A: Visual testing completed"
+    - "Phase 2B: Interactive testing completed"
+    - "Phase 2C: User flow testing completed"
+    - "Phase 3: orchestrate_build executed"
+    - "Phase 5: Re-testing completed"
+    - "All critical bugs fixed"
+    - "All high-priority bugs fixed"
+    - "Test report generated"
+    - "Bug report generated"
+    - "Minimum screenshots captured"
+    - "User approval received"
+
+templates:
+  test_report: ".bmad/templates/PLAYWRIGHT-TEST-REPORT-ENHANCED-TEMPLATE.md"
+  bug_report: ".bmad/templates/BUGS-FOUND-TEMPLATE.md"
+  validation_summary: ".bmad/templates/VALIDATION-COMPLETE-TEMPLATE.md"
+
+automation:
+  after_phase_1:
+    prompt: "Implementation complete. Run comprehensive testing (Phase 2A + 2B + 2C)?"
+
+  after_phase_2:
+    auto_run: "Phase 3 (orchestrate_build)"
+
+  after_phase_4:
+    auto_run: "Phase 5 (Re-run full Phase 2)"
+
+  after_phase_6_issues:
+    if: "iteration_count < max_iterations"
+    auto_run: "Loop back to Phase 3"
+
+validation_levels:
+  basic:
+    phases: ["2A"]
+    description: "Page load testing only"
+    use_case: "Quick sanity check"
+
+  standard:
+    phases: ["2A", "2B"]
+    description: "Page load + form interaction testing"
+    use_case: "Standard validation"
+
+  comprehensive:
+    phases: ["2A", "2B", "2C"]
+    description: "Full user flow testing"
+    use_case: "Pre-production validation"
+    default: true
+
+  complete:
+    phases: ["2A", "2B", "2C", "2D"]
+    description: "Everything including API/DB verification"
+    use_case: "Critical production deployments"
+
+success_metrics:
+  target_bug_detection_rate: "90%"
+  current_baseline: "37.5%"
+  improvement_target: "+142%"
+
+key_improvements_v2:
+  - "Added Phase 2B: Interactive testing (forms, buttons, clicks)"
+  - "Added Phase 2C: User flow testing (complete journeys)"
+  - "Console error monitoring during ALL actions"
+  - "URL verification after form submissions"
+  - "Error message detection on pages"
+  - "Before/after screenshots for every action"
+  - "Network request monitoring (future)"
+  - "Database state verification (future)"
