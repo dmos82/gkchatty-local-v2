@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,6 @@ export function SignupForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createClient()
 
   const validateUsername = (username: string): boolean => {
     // Username must be 3-20 characters, alphanumeric and underscores only
@@ -36,32 +35,35 @@ export function SignupForm() {
     }
 
     try {
-      // Check if username is already taken
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('username')
-        .eq('username', username.toLowerCase())
-        .single()
+      console.log('🔵 Starting signup for:', username)
 
-      if (existingProfile) {
-        setError('Username is already taken')
-        setLoading(false)
-        return
-      }
+      // Create fresh Supabase client
+      console.log('🔵 Creating fresh Supabase client...')
+      const supabase = createClient()
+      console.log('✅ Client created')
+
+      // SKIP username check for now - test if auth.signUp works
+      console.log('🔵 SKIPPING username check, going straight to auth.signUp...')
 
       // Sign up user
+      console.log('🔵 Creating auth user...')
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
       })
 
       if (signUpError) {
+        console.error('❌ Signup error:', signUpError)
         setError(signUpError.message)
+        setLoading(false)
         return
       }
 
+      console.log('✅ Auth user created:', data.user?.id)
+
       if (data.user) {
         // Create profile
+        console.log('🔵 Creating profile...')
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
@@ -71,15 +73,21 @@ export function SignupForm() {
           })
 
         if (profileError) {
+          console.error('❌ Profile error:', profileError)
           setError('Failed to create profile: ' + profileError.message)
+          setLoading(false)
           return
         }
 
+        console.log('✅ Profile created!')
+        console.log('🔵 Redirecting to /feed...')
         router.push('/feed')
         router.refresh()
       }
     } catch (err) {
-      setError('An unexpected error occurred')
+      console.error('❌ Signup error:', err)
+      setError('An unexpected error occurred: ' + (err instanceof Error ? err.message : String(err)))
+      setLoading(false)
     } finally {
       setLoading(false)
     }
