@@ -53,26 +53,27 @@ export function VoteButtons({ postId, initialVoteCount, userVote: initialUserVot
         setUserVote(newVote)
         setVoteCount(voteCount + countDelta)
 
-        await supabase
+        const { error: upsertError } = await supabase
           .from('votes')
           .upsert({
             user_id: user.id,
             post_id: postId,
             value: newVote,
+          }, {
+            onConflict: 'user_id,post_id'
           })
+
+        if (upsertError) throw upsertError
       }
 
-      // Update post vote count
-      await supabase
-        .from('posts')
-        .update({ vote_count: voteCount })
-        .eq('id', postId)
+      // Database triggers will automatically update post vote_count
+      // No manual update needed
 
     } catch (error) {
       console.error('Error voting:', error)
       // Revert optimistic update on error
-      setUserVote(userVote)
-      setVoteCount(voteCount)
+      setUserVote(oldVote)
+      setVoteCount(oldCount)
     } finally {
       setLoading(false)
     }
