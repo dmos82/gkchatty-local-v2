@@ -64,6 +64,7 @@ import localFileRoutes from './routes/localFileRoutes'; // <-- Import local file
 import versionRoutes from './routes/versionRoutes'; // <-- Import version routes
 import adminSettingsRoutes from './routes/adminSettingsRoutes'; // <-- Import admin settings routes
 import folderRoutes from './routes/folderRoutes'; // <-- Import folder routes
+import healthRoutes from './routes/healthRoutes'; // <-- Import health routes (BMAD v2.0)
 import * as http from 'http'; // Import http
 import { correlationIdMiddleware } from './middleware/correlationId';
 import { pinoLogger } from './utils/logger'; // Import base pinoLogger
@@ -394,6 +395,10 @@ async function startServer() {
         deployment_version: 'v1.0.0-reindex-fix-final-verification',
       });
     });
+
+    // Health Check Endpoints (for monitoring and auto-recovery)
+    app.use('/', healthRoutes); // Registers /health, /ready, /alive
+    console.log('>>> [App Setup] Health check routes registered (/health, /ready, /alive).');
 
     // Version Endpoint (for deployment verification)
     app.use('/api/version', versionRoutes);
