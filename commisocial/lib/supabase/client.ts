@@ -1,6 +1,4 @@
-// FIX #3: Use standard Supabase client instead of @supabase/ssr
-// The SSR package may have issues with React 19 + Next.js 16
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 
 export function createClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -17,11 +15,6 @@ export function createClient() {
 
   console.log('✅ Supabase client creating with URL:', supabaseUrl)
 
-  // Use standard client instead of SSR client
-  return createSupabaseClient(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-    }
-  })
+  // Use SSR-compatible browser client that writes to cookies
+  return createBrowserClient(supabaseUrl, supabaseKey)
 }
