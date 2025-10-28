@@ -1,0 +1,78 @@
+# BMAD Project Configuration - CommiSocial
+# Created: 2025-10-27
+# Purpose: Project-specific settings for BMAD workflows
+
+project:
+  name: commisocial
+  description: "Creator-focused social media platform with community features"
+  type: nextjs-supabase
+  version: "1.0.0"
+  created: "2025-10-27"
+
+# GKChatty Knowledge Base Configuration
+gkchatty:
+  user: commisocial
+  password: commisocial123!
+  namespace: commisocial
+  enforce_project_user: true
+  block_dev_user_uploads: true
+
+# Tech Stack
+tech_stack:
+  framework: Next.js 15
+  ui: React 19
+  styling: Tailwind CSS + shadcn/ui
+  database: PostgreSQL (Supabase)
+  auth: Supabase Auth
+  deployment: Vercel
+
+# Validation Settings
+validation:
+  require_tests: true
+  require_type_check: true
+  require_lint: true
+  require_build: true
+  playwright_tests: true
+  orchestrate_build: true
+
+# Development
+development:
+  port: 3000
+  hot_reload: true
+  strict_mode: true
+
+# Workflow Settings
+workflows:
+  preferred: bmad-pro-build
+  auto_validation: true
+  auto_commit: false  # Require user approval
+  auto_push: false    # Require user approval
+
+# Current Phase
+current_phase:
+  bmad_workflow: "Phase 3 - Planning Complete"
+  next_step: "Phase 4 - Implementation (Upload plan to GKChatty → Begin RAG execution)"
+
+# Project Contacts
+contacts:
+  owner: davidjmorin
+  developers:
+    - SuperClaude (AI)
+  reviewers:
+    - davidjmorin
+
+# Notes
+notes: |
+  This is a Builder Pro stress test project demonstrating:
+  - Complete BMAD-Pro-Build workflow (6 phases)
+  - Enhanced validation workflow v2.0
+  - Admin user management system (enterprise RBAC)
+  - 92% token-efficient RAG pattern
+
+  Phase Status:
+  ✅ Phase 0: Requirements Complete (8 user stories)
+  ✅ Phase 1: Architecture Complete (3,350 lines)
+  ✅ Phase 2: Discovery Complete (codebase analyzed)
+  ✅ Phase 3: Planning Complete (18 tasks, 42 hours)
+  ⏳ Phase 4: Implementation (Next - upload plan to GKChatty)
+  ⏳ Phase 5: QA Review
