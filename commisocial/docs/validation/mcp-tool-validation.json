@@ -1,0 +1,51 @@
+{
+  "passed": [],
+  "failed": [],
+  "skipped": [
+    {
+      "tool": "review_file",
+      "reason": "MCP tools can only be called via Claude Code, not directly from Node.js"
+    },
+    {
+      "tool": "review_code",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "security_scan",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "auto_fix",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "validate_configs",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "orchestrate_build",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "manage_ports",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "detect_dependencies",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "run_visual_test",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "switch_user",
+      "reason": "MCP tools can only be called via Claude Code"
+    },
+    {
+      "tool": "upload_to_gkchatty",
+      "reason": "MCP tools can only be called via Claude Code"
+    }
+  ],
+  "timestamp": "2025-10-28T19:12:58.350Z"
+}
