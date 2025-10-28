@@ -6,15 +6,16 @@ import { UserTable } from '@/components/admin/UserTable'
 export default async function UsersPage({
   searchParams,
 }: {
-  searchParams: { query?: string; role?: string; status?: string; page?: string }
+  searchParams: Promise<{ query?: string; role?: string; status?: string; page?: string }>
 }) {
   const supabase = await createClient()
 
-  // Parse search params
-  const query = searchParams.query || ''
-  const roleFilter = searchParams.role || 'all'
-  const statusFilter = searchParams.status || 'active'
-  const page = parseInt(searchParams.page || '1')
+  // Parse search params (Next.js 15 async searchParams)
+  const params = await searchParams
+  const query = params.query || ''
+  const roleFilter = params.role || 'all'
+  const statusFilter = params.status || 'active'
+  const page = parseInt(params.page || '1')
   const limit = 50
   const offset = (page - 1) * limit
 

@@ -8,9 +8,12 @@ import Link from 'next/link'
 export default async function UserDetailPage({
   params,
 }: {
-  params: { userId: string }
+  params: Promise<{ userId: string }>
 }) {
   const supabase = await createClient()
+
+  // Parse params (Next.js 15 async params)
+  const { userId } = await params
 
   // Get current admin user
   const { data: { user: currentUser } } = await supabase.auth.getUser()
@@ -26,7 +29,7 @@ export default async function UserDetailPage({
   const { data: user, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', params.userId)
+    .eq('id', userId)
     .single()
 
   if (error || !user) {
