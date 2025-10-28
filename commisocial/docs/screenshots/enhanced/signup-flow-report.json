@@ -1,0 +1,58 @@
+{
+  "analysis": {
+    "testName": "Signup Flow Test",
+    "url": "http://localhost:3000/signup",
+    "timestamp": "2025-10-28T01:54:10.958Z",
+    "testResult": {
+      "initialUrl": "http://localhost:3000/signup",
+      "finalUrl": "http://localhost:3000/signup",
+      "redirected": false,
+      "expectedRedirect": "/feed"
+    },
+    "totalRequests": 0,
+    "totalResponses": 0,
+    "errorResponses": [],
+    "rlsErrors": [],
+    "totalConsoleLogs": 2,
+    "consoleErrors": [],
+    "cdpLogs": 2,
+    "criticalIssues": [
+      {
+        "severity": "HIGH",
+        "type": "EXPECTED_REDIRECT_MISSING",
+        "message": "Expected redirect to /feed did not occur",
+        "details": {
+          "initialUrl": "http://localhost:3000/signup",
+          "finalUrl": "http://localhost:3000/signup",
+          "expected": "/feed"
+        }
+      }
+    ]
+  },
+  "networkRequests": [],
+  "networkResponses": [],
+  "consoleLogs": [
+    {
+      "timestamp": "2025-10-28T01:54:08.158Z",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "timestamp": "2025-10-28T01:54:08.252Z",
+      "type": "log",
+      "text": "✅ Supabase client creating with URL: https://usdmnaljflsbkgiejved.supabase.co"
+    }
+  ],
+  "cdpLogs": [
+    {
+      "timestamp": "2025-10-28T01:54:08.160Z",
+      "type": "info",
+      "args": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "timestamp": "2025-10-28T01:54:08.252Z",
+      "type": "log",
+      "args": "✅ Supabase client creating with URL: https://usdmnaljflsbkgiejved.supabase.co"
+    }
+  ]
+}

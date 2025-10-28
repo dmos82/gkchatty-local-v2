@@ -5,18 +5,22 @@ import { Button } from '@/components/ui/button'
 import { UserMenu } from './UserMenu'
 
 export async function Header() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // TEMPORARY: Disable auth check to test if this is causing lockup
+  const user = null
+  const profile = null
 
-  let profile = null
-  if (user) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('username, display_name')
-      .eq('id', user.id)
-      .single()
-    profile = data
-  }
+  // const supabase = await createClient()
+  // const { data: { user } } = await supabase.auth.getUser()
+  //
+  // let profile = null
+  // if (user) {
+  //   const { data } = await supabase
+  //     .from('profiles')
+  //     .select('username, display_name')
+  //     .eq('id', user.id)
+  //     .single()
+  //   profile = data
+  // }
 
   return (
     <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">

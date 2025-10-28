@@ -23,7 +23,7 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
       vote_count,
       comment_count,
       created_at,
-      author:author_id (
+      author:profiles!author_id (
         username,
         display_name
       )
@@ -73,10 +73,10 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
             <div className="flex-1 min-w-0">
               <div className="flex items-baseline gap-2 text-sm text-muted-foreground mb-3">
                 <Link
-                  href={`/profile/${post.author.username}`}
+                  href={`/profile/${(post.author as any).username}`}
                   className="font-medium hover:underline"
                 >
-                  {post.author.display_name || post.author.username}
+                  {(post.author as any).display_name || (post.author as any).username}
                 </Link>
                 <span>•</span>
                 <span>{timeAgo}</span>

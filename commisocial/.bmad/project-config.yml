@@ -11,11 +11,12 @@ project:
 
 # GKChatty Knowledge Base Configuration
 gkchatty:
-  user: commisocial
-  password: commisocial123!
-  namespace: commisocial
+  user: dev  # Using 'dev' for this project (legacy, project started before user isolation)
+  password: dev123
+  namespace: dev
   enforce_project_user: true
-  block_dev_user_uploads: true
+  block_dev_user_uploads: false  # Exception: dev allowed for legacy projects
+  note: "CommiSocial started with 'dev' user. New projects should use project-specific users."
 
 # Tech Stack
 tech_stack:

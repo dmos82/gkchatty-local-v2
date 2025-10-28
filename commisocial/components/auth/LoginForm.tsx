@@ -33,7 +33,12 @@ export function LoginForm() {
       }
 
       if (data.user) {
-        router.push('/feed')
+        // Check if there's a redirectTo parameter
+        const searchParams = new URLSearchParams(window.location.search)
+        const redirectTo = searchParams.get('redirectTo') || '/feed'
+
+        console.log('✅ Login successful, redirecting to:', redirectTo)
+        router.push(redirectTo)
         router.refresh()
       }
     } catch (err) {

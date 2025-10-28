@@ -22,7 +22,7 @@ export async function UserPosts({ username, userId }: UserPostsProps) {
       vote_count,
       comment_count,
       created_at,
-      author:author_id (
+      author:profiles!author_id (
         username,
         display_name
       )
@@ -63,7 +63,7 @@ export async function UserPosts({ username, userId }: UserPostsProps) {
   return (
     <div className="space-y-4">
       {postsWithVotes.map((post) => (
-        <PostCard key={post.id} post={post} />
+        <PostCard key={post.id} post={post as any} />
       ))}
     </div>
   )

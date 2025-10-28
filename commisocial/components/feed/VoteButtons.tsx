@@ -22,6 +22,10 @@ export function VoteButtons({ postId, initialVoteCount, userVote: initialUserVot
 
     setLoading(true)
 
+    // Store old values for rollback
+    const oldVote = userVote
+    const oldCount = voteCount
+
     try {
       const { data: { user } } = await supabase.auth.getUser()
 
@@ -30,10 +34,6 @@ export function VoteButtons({ postId, initialVoteCount, userVote: initialUserVot
         window.location.href = '/login'
         return
       }
-
-      // Optimistic UI update
-      const oldVote = userVote
-      const oldCount = voteCount
 
       if (userVote === value) {
         // Remove vote

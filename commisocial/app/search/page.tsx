@@ -39,7 +39,7 @@ export default async function SearchPage({
       vote_count,
       comment_count,
       created_at,
-      author:author_id (
+      author:profiles!author_id (
         username,
         display_name
       )
@@ -107,7 +107,7 @@ export default async function SearchPage({
               <h2 className="text-xl font-semibold mb-4">Posts</h2>
               <div className="space-y-4">
                 {posts.map((post) => (
-                  <PostCard key={post.id} post={{ ...post, user_vote: null }} />
+                  <PostCard key={post.id} post={{ ...post, user_vote: null } as any} />
                 ))}
               </div>
             </div>

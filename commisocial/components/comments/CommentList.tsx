@@ -24,7 +24,7 @@ export function CommentList({ postId }: CommentListProps) {
           vote_count,
           created_at,
           parent_id,
-          author:author_id (
+          author:profiles!author_id (
             username,
             display_name
           )
