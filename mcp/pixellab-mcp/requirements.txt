@@ -1,0 +1,5 @@
+httpx>=0.25.0
+mcp[cli]>=1.0.0
+fastmcp>=0.1.0
+pixellab>=1.0.5
+pillow>=12.0.0

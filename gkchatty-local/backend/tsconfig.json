@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": false,
+    "noFallthroughCasesInSwitch": true,
+    "declaration": true,
+    "sourceMap": true,
+    "types": ["node"],
+    "typeRoots": ["../../node_modules/@types", "./node_modules/@types", "./src/types"]
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/test-utils/**/*",
+    "src/scripts/check-chat-sources.ts",
+    "src/scripts/check-systemkb.ts",
+    "src/scripts/create-systemkb-record.ts",
+    "src/scripts/migrateUserCustomPrompts.ts",
+    "src/scripts/test-s3-pdf-upload.ts",
+    "src/scripts/verify-system-kb-state.ts",
+    "src/scripts/verifyPersonaIntegration.ts"
+  ]
+}

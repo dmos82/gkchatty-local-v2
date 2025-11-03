@@ -1,0 +1,23 @@
+{
+  "name": "pixellab-mcp",
+  "version": "1.0.0",
+  "description": "PixelLab MCP Server for AI-generated game sprites",
+  "main": "server.py",
+  "type": "module",
+  "scripts": {
+    "start": "python3 server.py",
+    "test": "python3 -c 'from server import health; import json; print(json.dumps(health(), indent=2))'"
+  },
+  "keywords": [
+    "mcp",
+    "pixellab",
+    "sprites",
+    "game-dev",
+    "pixel-art",
+    "ai-generation"
+  ],
+  "author": "David Morin",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

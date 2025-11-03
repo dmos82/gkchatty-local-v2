@@ -1,0 +1,78 @@
+{
+  "allReports": [
+    {
+      "iteration": 1,
+      "suite": "admin-full",
+      "name": "Admin Full Flow",
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "passRate": "0.0%",
+      "errors": [
+        {
+          "step": "Login",
+          "url": "/login",
+          "errors": [
+            {
+              "message": "Console/page errors detected: Failed to load resource: the server responded with a status of 404 (Not Found)",
+              "stack": "Error: Console/page errors detected: Failed to load resource: the server responded with a status of 404 (Not Found)\n    at SmokeTestRunner.runAssertion (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:208:17)\n    at SmokeTestRunner.runStep (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:126:22)\n    at async SmokeTestRunner.run (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:238:7)\n    at async runWithAutoFix (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:299:5)"
+            }
+          ],
+          "screenshot": "/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/docs/screenshots/smoke-tests/ERROR-admin-full-1-Login.png"
+        },
+        {
+          "step": "Admin Dashboard",
+          "url": "/admin",
+          "errors": [
+            {
+              "message": "Selector not found: text=User Management|text=Dashboard",
+              "stack": "Error: Selector not found: text=User Management|text=Dashboard\n    at SmokeTestRunner.runAssertion (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:191:19)\n    at async SmokeTestRunner.runStep (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:126:11)\n    at async SmokeTestRunner.run (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:238:7)\n    at async runWithAutoFix (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:299:5)"
+            }
+          ],
+          "screenshot": "/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/docs/screenshots/smoke-tests/ERROR-admin-full-2-Admin-Dashboard.png"
+        },
+        {
+          "step": "Users Page",
+          "url": "/admin/users",
+          "errors": [
+            {
+              "message": "Console/page errors detected: Failed to load resource: the server responded with a status of 404 (Not Found)",
+              "stack": "Error: Console/page errors detected: Failed to load resource: the server responded with a status of 404 (Not Found)\n    at SmokeTestRunner.runAssertion (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:208:17)\n    at SmokeTestRunner.runStep (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:126:22)\n    at async SmokeTestRunner.run (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:238:7)\n    at async runWithAutoFix (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:299:5)"
+            }
+          ],
+          "screenshot": "/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/docs/screenshots/smoke-tests/ERROR-admin-full-3-Users-Page.png"
+        },
+        {
+          "step": "Audit Logs",
+          "url": "/admin/audit-logs",
+          "errors": [
+            {
+              "message": "Console/page errors detected: Failed to load resource: the server responded with a status of 404 (Not Found), Failed to load resource: the server responded with a status of 500 (Internal Server Error), Event handlers cannot be passed to Client Component props.\n  <select id=... value=\"all\" onChange={function onChange} className=... children=...>\n                                      ^^^^^^^^^^^^^^^^^^^\nIf you need interactivity, consider converting part of this to a Client Component.",
+              "stack": "Error: Console/page errors detected: Failed to load resource: the server responded with a status of 404 (Not Found), Failed to load resource: the server responded with a status of 500 (Internal Server Error), Event handlers cannot be passed to Client Component props.\n  <select id=... value=\"all\" onChange={function onChange} className=... children=...>\n                                      ^^^^^^^^^^^^^^^^^^^\nIf you need interactivity, consider converting part of this to a Client Component.\n    at SmokeTestRunner.runAssertion (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:208:17)\n    at SmokeTestRunner.runStep (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:126:22)\n    at async SmokeTestRunner.run (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:238:7)\n    at async runWithAutoFix (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:299:5)"
+            }
+          ],
+          "screenshot": "/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/docs/screenshots/smoke-tests/ERROR-admin-full-4-Audit-Logs.png"
+        },
+        {
+          "step": "Settings",
+          "url": "/admin/settings",
+          "errors": [
+            {
+              "message": "Console/page errors detected: Failed to load resource: the server responded with a status of 404 (Not Found), Failed to load resource: the server responded with a status of 500 (Internal Server Error), Event handlers cannot be passed to Client Component props.\n  <select id=... value=\"all\" onChange={function onChange} className=... children=...>\n                                      ^^^^^^^^^^^^^^^^^^^\nIf you need interactivity, consider converting part of this to a Client Component.",
+              "stack": "Error: Console/page errors detected: Failed to load resource: the server responded with a status of 404 (Not Found), Failed to load resource: the server responded with a status of 500 (Internal Server Error), Event handlers cannot be passed to Client Component props.\n  <select id=... value=\"all\" onChange={function onChange} className=... children=...>\n                                      ^^^^^^^^^^^^^^^^^^^\nIf you need interactivity, consider converting part of this to a Client Component.\n    at SmokeTestRunner.runAssertion (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:208:17)\n    at SmokeTestRunner.runStep (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:126:22)\n    at async SmokeTestRunner.run (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:238:7)\n    at async runWithAutoFix (/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/scripts/run-smoke-tests.js:299:5)"
+            }
+          ],
+          "screenshot": "/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/docs/screenshots/smoke-tests/ERROR-admin-full-5-Settings.png"
+        }
+      ]
+    }
+  ],
+  "config": {
+    "baseURL": "http://localhost:3000",
+    "maxIterations": 3,
+    "headless": false,
+    "screenshotDir": "/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/docs/screenshots/smoke-tests",
+    "reportDir": "/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/commisocial/docs/validation",
+    "autoFix": true
+  }
+}

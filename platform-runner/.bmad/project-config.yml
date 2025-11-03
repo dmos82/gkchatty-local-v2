@@ -1,0 +1,100 @@
+# BMAD Project Configuration - Platform Runner
+# Created: 2025-10-28
+# Purpose: Project-specific settings for BMAD workflows
+
+project:
+  name: platform-runner
+  description: "Mario-style 2D platformer game with AI-generated pixel art sprites"
+  type: phaser-nextjs
+  version: "1.0.0"
+  created: "2025-10-28"
+
+# GKChatty Knowledge Base Configuration
+gkchatty:
+  user: dev
+  password: dev123
+  namespace: platform-runner
+  enforce_project_user: true
+  block_dev_user_uploads: true  # Enforce project-specific user
+  note: "All Platform Runner project documents use 'platform-runner' user for knowledge isolation."
+
+# Tech Stack
+tech_stack:
+  framework: Next.js 15
+  ui: React 19
+  game_engine: Phaser 3
+  styling: Tailwind CSS
+  sprites: PixelLab MCP (AI-generated)
+  deployment: Vercel
+
+# PixelLab Integration
+pixellab:
+  enabled: true
+  token: fcb0392c-15e9-4c8a-936d-15e05ec8b7e6
+  generation_phase: Phase 4 (before implementation)
+  sprites_required:
+    player:
+      - idle (48x48px)
+      - walk-left (48x48px)
+      - walk-right (48x48px)
+      - jump (48x48px)
+    enemies:
+      - goomba (32x32px)
+      - flying-enemy (40x40px)
+    collectibles:
+      - coin (24x24px)
+    tiles:
+      - platform (32x32px, 3 variations)
+
+# Validation Settings
+validation:
+  require_tests: true
+  require_type_check: true
+  require_lint: true
+  require_build: true
+  playwright_tests: true
+  orchestrate_build: true
+  performance_target: 60fps
+
+# Development
+development:
+  port: 3002  # Different from commisocial (3000)
+  hot_reload: true
+  strict_mode: true
+  game_viewport: 800x600
+
+# Workflow Settings
+workflows:
+  preferred: bmad-pro-build
+  auto_validation: true
+  auto_commit: false  # Require user approval
+  auto_push: false    # Require user approval
+
+# Current Phase
+current_phase:
+  bmad_workflow: "Phase 3 - Planning Complete"
+  next_step: "Phase 4 - Generate sprites with PixelLab → Implement game with RAG"
+
+# Project Contacts
+contacts:
+  owner: davidjmorin
+  developers:
+    - SuperClaude (AI)
+  reviewers:
+    - davidjmorin
+
+# Notes
+notes: |
+  This is a Builder Pro + PixelLab MCP integration stress test:
+  - Complete BMAD-Pro-Build workflow (6 phases)
+  - AI-generated sprites via PixelLab MCP (validated working)
+  - Phaser 3 game engine embedded in Next.js
+  - 92% token-efficient RAG pattern
+
+  Phase Status:
+  ✅ Phase 0: Requirements Complete (10 user stories)
+  ✅ Phase 1: Architecture Complete (15,000 lines)
+  ✅ Phase 2: Discovery Complete (Phaser patterns identified)
+  ✅ Phase 3: Planning Complete (18 tasks, 24 hours)
+  ⏳ Phase 4: Implementation (Next - generate sprites → build game)
+  ⏳ Phase 5: QA Review (7-phase validation with Playwright)

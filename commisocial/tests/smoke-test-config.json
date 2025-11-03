@@ -1,0 +1,80 @@
+{
+  "testSuites": {
+    "admin-full": {
+      "name": "Admin Full Flow",
+      "credentials": {
+        "email": "test-admin@commisocial.local",
+        "password": "TestAdmin123!"
+      },
+      "steps": [
+        {
+          "name": "Login",
+          "url": "/login",
+          "actions": [
+            { "type": "fill", "selector": "#email", "value": "{{credentials.email}}" },
+            { "type": "fill", "selector": "#password", "value": "{{credentials.password}}" },
+            { "type": "click", "selector": "button[type='submit']" },
+            { "type": "waitForNavigation", "expect": "/feed|/admin" }
+          ],
+          "assertions": [
+            { "type": "url", "contains": "/feed|/admin" },
+            { "type": "noErrors" }
+          ]
+        },
+        {
+          "name": "Admin Dashboard",
+          "url": "/admin",
+          "assertions": [
+            { "type": "url", "equals": "/admin" },
+            { "type": "selector", "exists": "text=User Management|text=Dashboard" },
+            { "type": "noErrors" }
+          ]
+        },
+        {
+          "name": "Users Page",
+          "url": "/admin/users",
+          "assertions": [
+            { "type": "selector", "exists": "table" },
+            { "type": "selector", "count": "tbody tr", "min": 1 },
+            { "type": "noErrors" }
+          ]
+        },
+        {
+          "name": "Audit Logs",
+          "url": "/admin/audit-logs",
+          "assertions": [
+            { "type": "url", "equals": "/admin/audit-logs" },
+            { "type": "noErrors" }
+          ]
+        },
+        {
+          "name": "Settings",
+          "url": "/admin/settings",
+          "assertions": [
+            { "type": "url", "equals": "/admin/settings" },
+            { "type": "noErrors" }
+          ]
+        }
+      ]
+    },
+    "user-signup": {
+      "name": "User Signup Flow",
+      "steps": [
+        {
+          "name": "Signup",
+          "url": "/signup",
+          "actions": [
+            { "type": "fill", "selector": "#username", "value": "testuser{{timestamp}}" },
+            { "type": "fill", "selector": "#email", "value": "test{{timestamp}}@test.com" },
+            { "type": "fill", "selector": "#password", "value": "TestPass123!" },
+            { "type": "click", "selector": "button[type='submit']" }
+          ],
+          "assertions": [
+            { "type": "url", "contains": "/feed" },
+            { "type": "noErrors" }
+          ]
+        }
+      ]
+    }
+  }
+}

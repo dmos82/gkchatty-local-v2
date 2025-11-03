@@ -14,6 +14,9 @@ import {
   ProviderStatus,
   ProviderStats,
 } from './types';
+import { ModelDetector } from './ModelDetector';
+import { OpenAIProvider } from './providers/OpenAIProvider';
+import { OllamaProvider } from './providers/OllamaProvider';
 
 /**
  * Singleton ProviderRegistry for managing embedding providers
@@ -61,11 +64,72 @@ export class ProviderRegistry {
     console.log('[ProviderRegistry] Initializing provider registry...');
 
     try {
-      // TODO: Auto-detect local models from HuggingFace cache
-      // This will be implemented in Step 6 (ModelDetector)
+      // Auto-detect local models
+      const detector = new ModelDetector();
+      const detectedModels = await detector.scanForModels();
+      console.log(`[ProviderRegistry] Detected ${detectedModels.length} local models`);
 
-      // TODO: Register default providers (OpenAI, Ollama)
-      // This will be implemented in Steps 3-4
+      // Get device info
+      const device = await detector.detectBestDevice();
+      const systemInfo = await detector.getSystemInfo();
+      console.log(`[ProviderRegistry] Best device: ${device}`);
+      console.log(`[ProviderRegistry] System: ${systemInfo.platform} ${systemInfo.arch}, ${systemInfo.memory.total} RAM`);
+
+      // Register Ollama providers for detected models
+      for (const model of detectedModels) {
+        if (model.id.startsWith('ollama-')) {
+          try {
+            const modelName = model.id.replace('ollama-', '');
+            const provider = new OllamaProvider({
+              model: modelName,
+            });
+            await this.registerProvider(provider);
+            console.log(`[ProviderRegistry] Registered Ollama provider: ${modelName}`);
+          } catch (error) {
+            console.warn(`[ProviderRegistry] Failed to register ${model.id}:`, error);
+          }
+        }
+      }
+
+      // Register OpenAI provider if API key is available
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          const provider = new OpenAIProvider({
+            apiKey: process.env.OPENAI_API_KEY,
+            model: 'text-embedding-3-small',
+          });
+          await this.registerProvider(provider);
+          console.log('[ProviderRegistry] Registered OpenAI provider');
+        } catch (error) {
+          console.warn('[ProviderRegistry] Failed to register OpenAI provider:', error);
+        }
+      }
+
+      // Set default active provider
+      if (this.providers.size > 0) {
+        // Prefer local models on Apple Silicon
+        let defaultProvider: string | null = null;
+
+        if (device === 'mps') {
+          // Look for Ollama nomic-embed-text (recommended for M2)
+          for (const id of this.providers.keys()) {
+            if (id.includes('nomic')) {
+              defaultProvider = id;
+              break;
+            }
+          }
+        }
+
+        // Fallback to first available provider
+        if (!defaultProvider) {
+          defaultProvider = Array.from(this.providers.keys())[0];
+        }
+
+        if (defaultProvider) {
+          await this.setActiveProvider(defaultProvider);
+          console.log(`[ProviderRegistry] Default provider set: ${defaultProvider}`);
+        }
+      }
 
       console.log('[ProviderRegistry] Registry initialized successfully');
     } catch (error) {
