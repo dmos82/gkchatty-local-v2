@@ -21,7 +21,8 @@ import userUpload from '../config/multerConfig';
 import { uploadFile, deleteFile } from '../utils/s3Helper';
 import crypto from 'crypto';
 import fs from 'fs';
-import { default as ChatSession, IChat as IChatSession, IChatMessage } from '../models/ChatModel'; // Import Chat model as ChatSession and its interfaces
+import { ChatModel as ChatSession } from '../utils/modelFactory'; // Import Chat model as ChatSession
+import { IChat as IChatSession, IChatMessage } from '../models/ChatModel'; // Import interfaces
 import { default as Persona, IPersona } from '../models/PersonaModel'; // Import Persona model as Persona and its interface
 import { getContext } from '../services/ragService'; // Corrected import from contextService to ragService
 import { getLogger } from '../utils/logger'; // Added import for getLogger

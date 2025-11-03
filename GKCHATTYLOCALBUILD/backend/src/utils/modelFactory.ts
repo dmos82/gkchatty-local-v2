@@ -33,6 +33,11 @@ export const SystemKbDocumentModel = USE_SQLITE
   ? require('./sqliteAdapter').SystemKbDocumentModel
   : require('../models/SystemKbDocument').SystemKbDocument;
 
+// Export Chat model (for chat history)
+export const ChatModel = USE_SQLITE
+  ? require('./sqliteAdapter').ChatModel
+  : require('../models/ChatModel').default;
+
 // Initialize database connection
 if (USE_SQLITE) {
   const { initializeDatabase } = require('./sqliteAdapter');

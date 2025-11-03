@@ -171,6 +171,26 @@ function createTables(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_systemkb_s3Key ON systemkbdocuments(s3Key);
     CREATE INDEX IF NOT EXISTS idx_systemkb_status ON systemkbdocuments(status);
     CREATE INDEX IF NOT EXISTS idx_systemkb_filename ON systemkbdocuments(filename);
+
+    -- ===== CHATS TABLE =====
+    CREATE TABLE IF NOT EXISTS chats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      _id TEXT UNIQUE NOT NULL DEFAULT (lower(hex(randomblob(12)))),
+      userId TEXT NOT NULL,
+      chatName TEXT NOT NULL DEFAULT 'New Chat',
+      messages TEXT DEFAULT '[]',
+      notes TEXT,
+      personaId TEXT,
+      currentSearchMode TEXT DEFAULT 'unified',
+      activeTenantKbId TEXT,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Chats indexes
+    CREATE INDEX IF NOT EXISTS idx_chats_userId ON chats(userId);
+    CREATE INDEX IF NOT EXISTS idx_chats_userId_updatedAt ON chats(userId, updatedAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_chats_userId_id ON chats(userId, _id);
   `);
 
   logger.info('Database tables created');
@@ -916,6 +936,320 @@ export class SystemKbDocumentModel {
     if (!row) return null;
 
     // Convert dates
+    if (row.createdAt) {
+      row.createdAt = new Date(row.createdAt);
+    }
+    if (row.updatedAt) {
+      row.updatedAt = new Date(row.updatedAt);
+    }
+
+    // Add Mongoose-like _id if not present
+    if (!row._id && row.id) {
+      row._id = row.id.toString();
+    }
+
+    return row;
+  }
+}
+
+/**
+ * Chat Model Adapter
+ *
+ * Handles chat conversations with embedded messages stored as JSON
+ */
+export class ChatModel {
+  /**
+   * Generate ObjectId-like string for message _id
+   */
+  private static generateObjectId(): string {
+    const timestamp = Math.floor(new Date().getTime() / 1000).toString(16);
+    const randomHex = () => Math.floor(Math.random() * 16).toString(16);
+    return timestamp + Array(16).fill(0).map(randomHex).join('');
+  }
+
+  /**
+   * Find chats by query
+   */
+  static find(query: any = {}): any[] {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM chats WHERE 1=1';
+    const params: any[] = [];
+
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id.toString ? query._id.toString() : query._id);
+    }
+
+    // Default sort by updatedAt DESC
+    sql += ' ORDER BY updatedAt DESC';
+
+    const rows = db.prepare(sql).all(...params);
+    return rows.map(row => this.deserialize(row));
+  }
+
+  /**
+   * Find single chat by query
+   */
+  static findOne(query: any): any | null {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM chats WHERE 1=1';
+    const params: any[] = [];
+
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id.toString ? query._id.toString() : query._id);
+    }
+
+    if (query.chatName) {
+      sql += ' AND chatName LIKE ?';
+      params.push(`%${query.chatName}%`);
+    }
+
+    const row = db.prepare(sql).get(...params);
+    return row ? this.deserialize(row) : null;
+  }
+
+  /**
+   * Find chat by ID
+   */
+  static findById(id: string | number): any | null {
+    const db = getDatabase();
+    const idStr = id.toString ? id.toString() : String(id);
+
+    const row = db.prepare('SELECT * FROM chats WHERE _id = ? OR id = ?').get(idStr, idStr);
+    return row ? this.deserialize(row) : null;
+  }
+
+  /**
+   * Create new chat
+   */
+  static create(chatData: any): any {
+    const db = getDatabase();
+
+    const stmt = db.prepare(`
+      INSERT INTO chats (
+        userId, chatName, messages, notes, personaId,
+        currentSearchMode, activeTenantKbId
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      chatData.userId ? (chatData.userId.toString ? chatData.userId.toString() : chatData.userId) : null,
+      chatData.chatName || 'New Chat',
+      JSON.stringify(chatData.messages || []),
+      chatData.notes || null,
+      chatData.personaId ? (chatData.personaId.toString ? chatData.personaId.toString() : chatData.personaId) : null,
+      chatData.currentSearchMode || 'unified',
+      chatData.activeTenantKbId ? (chatData.activeTenantKbId.toString ? chatData.activeTenantKbId.toString() : chatData.activeTenantKbId) : null
+    );
+
+    return this.findById(Number(result.lastInsertRowid));
+  }
+
+  /**
+   * Update chat by ID
+   */
+  static findByIdAndUpdate(id: string | number, updates: any): any | null {
+    const db = getDatabase();
+
+    const fields = [];
+    const values = [];
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (key === '_id' || key === 'id') continue;
+      if (typeof value === 'function') continue;
+      if (value === undefined) continue;
+
+      fields.push(`${key} = ?`);
+
+      // Handle ObjectId fields
+      if (key === 'userId' || key === 'personaId' || key === 'activeTenantKbId') {
+        values.push(value ? (value.toString ? value.toString() : String(value)) : null);
+      }
+      // Handle Date fields
+      else if (key === 'createdAt' || key === 'updatedAt') {
+        values.push(value ? new Date(value).toISOString() : new Date().toISOString());
+      }
+      // Handle messages array
+      else if (key === 'messages') {
+        values.push(Array.isArray(value) ? JSON.stringify(value) : value);
+      }
+      // Handle arrays and objects
+      else if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+        values.push(JSON.stringify(value));
+      }
+      // Primitives
+      else {
+        values.push(value);
+      }
+    }
+
+    fields.push('updatedAt = datetime(\'now\')');
+
+    if (fields.length === 0) {
+      return this.findById(id);
+    }
+
+    const idStr = id.toString ? id.toString() : String(id);
+    const sql = `UPDATE chats SET ${fields.join(', ')} WHERE _id = ? OR id = ?`;
+    values.push(idStr, idStr);
+
+    db.prepare(sql).run(...values);
+
+    return this.findById(id);
+  }
+
+  /**
+   * Delete chat by ID
+   */
+  static findByIdAndDelete(id: string | number): any | null {
+    const chat = this.findById(id);
+    if (!chat) return null;
+
+    const db = getDatabase();
+    const idStr = id.toString ? id.toString() : String(id);
+
+    db.prepare('DELETE FROM chats WHERE _id = ? OR id = ?').run(idStr, idStr);
+
+    return chat;
+  }
+
+  /**
+   * Add message to chat (helper method for MongoDB $push equivalent)
+   */
+  static addMessage(chatId: string | number, message: any): any | null {
+    const chat = this.findById(chatId);
+    if (!chat) return null;
+
+    // Parse existing messages
+    const messages = Array.isArray(chat.messages) ? chat.messages : JSON.parse(chat.messages || '[]');
+
+    // Add new message with auto-generated _id if not present
+    const newMessage = {
+      _id: message._id || this.generateObjectId(),
+      role: message.role,
+      content: message.content,
+      sources: message.sources || [],
+      metadata: message.metadata || null,
+      timestamp: message.timestamp || new Date().toISOString()
+    };
+
+    messages.push(newMessage);
+
+    // Update chat with new messages array
+    return this.findByIdAndUpdate(chatId, {
+      messages: messages,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  /**
+   * Delete message from chat (helper method for MongoDB $pull equivalent)
+   */
+  static deleteMessage(chatId: string | number, messageId: string): any | null {
+    const chat = this.findById(chatId);
+    if (!chat) return null;
+
+    // Parse existing messages
+    const messages = Array.isArray(chat.messages) ? chat.messages : JSON.parse(chat.messages || '[]');
+
+    // Filter out the message to delete
+    const filteredMessages = messages.filter((msg: any) => msg._id !== messageId);
+
+    // Update chat with filtered messages array
+    return this.findByIdAndUpdate(chatId, {
+      messages: filteredMessages,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  /**
+   * Get messages from chat with pagination (helper method for MongoDB $slice equivalent)
+   */
+  static getMessages(chatId: string | number, limit?: number, offset?: number): any[] {
+    const chat = this.findById(chatId);
+    if (!chat) return [];
+
+    // Parse messages
+    const messages = Array.isArray(chat.messages) ? chat.messages : JSON.parse(chat.messages || '[]');
+
+    // Apply pagination
+    if (limit !== undefined) {
+      if (offset !== undefined) {
+        return messages.slice(offset, offset + limit);
+      } else {
+        // Negative limit means "last N messages"
+        if (limit < 0) {
+          return messages.slice(limit);
+        }
+        return messages.slice(0, limit);
+      }
+    }
+
+    return messages;
+  }
+
+  /**
+   * Sort chats (chainable helper)
+   */
+  static sort(sortObj: any): any {
+    // SQLite sorting is done in the query
+    // This is a placeholder for Mongoose API compatibility
+    return this;
+  }
+
+  /**
+   * Limit results (chainable helper)
+   */
+  static limit(count: number): any {
+    // SQLite LIMIT is done in the query
+    // This is a placeholder for Mongoose API compatibility
+    return this;
+  }
+
+  /**
+   * Select fields (chainable helper)
+   */
+  static select(fields: string): any {
+    // SQLite SELECT is done in the query
+    // This is a placeholder for Mongoose API compatibility
+    return this;
+  }
+
+  /**
+   * Deserialize database row to chat object
+   */
+  private static deserialize(row: any): any | null {
+    if (!row) return null;
+
+    // Parse messages JSON array
+    if (row.messages) {
+      try {
+        row.messages = JSON.parse(row.messages);
+        // Convert message timestamps to Date objects
+        if (Array.isArray(row.messages)) {
+          row.messages = row.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+          }));
+        }
+      } catch (e) {
+        row.messages = [];
+      }
+    }
+
+    // Convert timestamps to Date objects
     if (row.createdAt) {
       row.createdAt = new Date(row.createdAt);
     }
