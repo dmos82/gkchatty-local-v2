@@ -191,6 +191,115 @@ function createTables(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_chats_userId ON chats(userId);
     CREATE INDEX IF NOT EXISTS idx_chats_userId_updatedAt ON chats(userId, updatedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_chats_userId_id ON chats(userId, _id);
+
+    -- ===== PERSONAS TABLE =====
+    CREATE TABLE IF NOT EXISTS personas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      _id TEXT UNIQUE NOT NULL DEFAULT (lower(hex(randomblob(12)))),
+      name TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      systemPrompt TEXT,
+      userId TEXT NOT NULL,
+      isActive INTEGER DEFAULT 0,
+      isDefault INTEGER DEFAULT 0,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Personas indexes
+    CREATE INDEX IF NOT EXISTS idx_personas_userId ON personas(userId);
+    CREATE INDEX IF NOT EXISTS idx_personas_isDefault ON personas(isDefault);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_userId_isActive ON personas(userId, isActive) WHERE isActive = 1;
+
+    -- ===== SETTINGS TABLE =====
+    CREATE TABLE IF NOT EXISTS settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      _id TEXT UNIQUE NOT NULL DEFAULT (lower(hex(randomblob(12)))),
+      key TEXT UNIQUE NOT NULL,
+      value TEXT NOT NULL,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Settings indexes
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
+
+    -- ===== FOLDERS TABLE =====
+    CREATE TABLE IF NOT EXISTS folders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      _id TEXT UNIQUE NOT NULL DEFAULT (lower(hex(randomblob(12)))),
+      name TEXT NOT NULL,
+      parentId TEXT,
+      knowledgeBaseId TEXT,
+      path TEXT NOT NULL,
+      ownerId TEXT NOT NULL,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Folders indexes
+    CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
+    CREATE INDEX IF NOT EXISTS idx_folders_ownerId ON folders(ownerId);
+    CREATE INDEX IF NOT EXISTS idx_folders_ownerId_parentId ON folders(ownerId, parentId);
+    CREATE INDEX IF NOT EXISTS idx_folders_knowledgeBaseId_parentId ON folders(knowledgeBaseId, parentId);
+    CREATE INDEX IF NOT EXISTS idx_folders_path_ownerId ON folders(path, ownerId);
+
+    -- ===== TENANT KNOWLEDGE BASES TABLE =====
+    CREATE TABLE IF NOT EXISTS tenant_knowledge_bases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      _id TEXT UNIQUE NOT NULL DEFAULT (lower(hex(randomblob(12)))),
+      name TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      description TEXT,
+      s3Prefix TEXT UNIQUE NOT NULL,
+      color TEXT DEFAULT '#6B7280',
+      icon TEXT,
+      shortName TEXT,
+      accessType TEXT DEFAULT 'restricted',
+      allowedRoles TEXT DEFAULT '[]',
+      allowedUsers TEXT DEFAULT '[]',
+      isActive INTEGER DEFAULT 1,
+      documentCount INTEGER DEFAULT 0,
+      createdBy TEXT NOT NULL,
+      lastModifiedBy TEXT,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Tenant Knowledge Bases indexes
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tkb_slug ON tenant_knowledge_bases(slug);
+    CREATE INDEX IF NOT EXISTS idx_tkb_isActive ON tenant_knowledge_bases(isActive);
+    CREATE INDEX IF NOT EXISTS idx_tkb_createdAt ON tenant_knowledge_bases(createdAt DESC);
+
+    -- ===== USER SETTINGS TABLE =====
+    CREATE TABLE IF NOT EXISTS user_settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      _id TEXT UNIQUE NOT NULL DEFAULT (lower(hex(randomblob(12)))),
+      userId TEXT UNIQUE NOT NULL,
+      customPrompt TEXT,
+      iconUrl TEXT,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- User Settings indexes
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_settings_userId ON user_settings(userId);
+
+    -- ===== FEEDBACK TABLE =====
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      _id TEXT UNIQUE NOT NULL DEFAULT (lower(hex(randomblob(12)))),
+      feedbackText TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      username TEXT NOT NULL,
+      chatId TEXT,
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Feedback indexes
+    CREATE INDEX IF NOT EXISTS idx_feedback_userId ON feedback(userId);
+    CREATE INDEX IF NOT EXISTS idx_feedback_chatId ON feedback(chatId);
+    CREATE INDEX IF NOT EXISTS idx_feedback_createdAt ON feedback(createdAt);
   `);
 
   logger.info('Database tables created');
@@ -1261,6 +1370,858 @@ export class ChatModel {
     if (!row._id && row.id) {
       row._id = row.id.toString();
     }
+
+    return row;
+  }
+}
+
+/**
+ * Persona Model Adapter
+ */
+export class PersonaModel {
+  static find(query: any = {}): any[] {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM personas WHERE 1=1';
+    const params: any[] = [];
+
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+    if (query.isDefault !== undefined) {
+      sql += ' AND isDefault = ?';
+      params.push(query.isDefault ? 1 : 0);
+    }
+    if (query.isActive !== undefined) {
+      sql += ' AND isActive = ?';
+      params.push(query.isActive ? 1 : 0);
+    }
+
+    const rows = db.prepare(sql).all(...params);
+    return rows.map(row => this.deserialize(row));
+  }
+
+  static findOne(query: any): any | null {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM personas WHERE 1=1';
+    const params: any[] = [];
+
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id);
+    }
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+    if (query.isActive !== undefined) {
+      sql += ' AND isActive = ?';
+      params.push(query.isActive ? 1 : 0);
+    }
+
+    sql += ' LIMIT 1';
+    const row = db.prepare(sql).get(...params);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static findById(id: string | number): any | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT * FROM personas WHERE _id = ? OR id = ?').get(id, id);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static create(personaData: any): any {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO personas (name, prompt, systemPrompt, userId, isActive, isDefault)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      personaData.name,
+      personaData.prompt,
+      personaData.systemPrompt || null,
+      personaData.userId ? personaData.userId.toString() : null,
+      personaData.isActive ? 1 : 0,
+      personaData.isDefault ? 1 : 0
+    );
+
+    return this.findById(Number(result.lastInsertRowid));
+  }
+
+  static findByIdAndUpdate(id: string | number, updates: any): any | null {
+    const persona = this.findById(id);
+    if (!persona) return null;
+
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    Object.keys(updates).forEach(key => {
+      const value = updates[key];
+      if (typeof value === 'function' || value === undefined) return;
+
+      if (key === 'isActive' || key === 'isDefault') {
+        fields.push(`${key} = ?`);
+        values.push(value ? 1 : 0);
+      } else if (key === 'userId') {
+        fields.push(`${key} = ?`);
+        values.push(value.toString ? value.toString() : value);
+      } else {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    });
+
+    fields.push('updatedAt = datetime(\'now\')');
+
+    const sql = `UPDATE personas SET ${fields.join(', ')} WHERE _id = ? OR id = ?`;
+    db.prepare(sql).run(...values, id, id);
+
+    return this.findById(id);
+  }
+
+  static findByIdAndDelete(id: string | number): any | null {
+    const persona = this.findById(id);
+    if (!persona) return null;
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM personas WHERE _id = ? OR id = ?').run(id, id);
+    return persona;
+  }
+
+  private static deserialize(row: any): any | null {
+    if (!row) return null;
+
+    // Convert INTEGER to boolean
+    if (row.isActive !== undefined) row.isActive = Boolean(row.isActive);
+    if (row.isDefault !== undefined) row.isDefault = Boolean(row.isDefault);
+
+    // Convert dates
+    if (row.createdAt) row.createdAt = new Date(row.createdAt);
+    if (row.updatedAt) row.updatedAt = new Date(row.updatedAt);
+
+    // Add Mongoose-like _id if not present
+    if (!row._id && row.id) row._id = row.id.toString();
+
+    return row;
+  }
+}
+
+/**
+ * Setting Model Adapter
+ */
+export class SettingModel {
+  static find(query: any = {}): any[] {
+    const db = getDatabase();
+    const rows = db.prepare('SELECT * FROM settings').all();
+    return rows.map(row => this.deserialize(row));
+  }
+
+  static findOne(query: any): any | null {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM settings WHERE 1=1';
+    const params: any[] = [];
+
+    if (query.key) {
+      sql += ' AND key = ?';
+      params.push(query.key);
+    }
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id);
+    }
+
+    sql += ' LIMIT 1';
+    const row = db.prepare(sql).get(...params);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static findById(id: string | number): any | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT * FROM settings WHERE _id = ? OR id = ?').get(id, id);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static create(settingData: any): any {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO settings (key, value)
+      VALUES (?, ?)
+    `);
+
+    const result = stmt.run(settingData.key, settingData.value);
+    return this.findById(Number(result.lastInsertRowid));
+  }
+
+  static findByIdAndUpdate(id: string | number, updates: any): any | null {
+    const setting = this.findById(id);
+    if (!setting) return null;
+
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    Object.keys(updates).forEach(key => {
+      const value = updates[key];
+      if (typeof value === 'function' || value === undefined) return;
+      fields.push(`${key} = ?`);
+      values.push(value);
+    });
+
+    fields.push('updatedAt = datetime(\'now\')');
+
+    const sql = `UPDATE settings SET ${fields.join(', ')} WHERE _id = ? OR id = ?`;
+    db.prepare(sql).run(...values, id, id);
+
+    return this.findById(id);
+  }
+
+  static findByIdAndDelete(id: string | number): any | null {
+    const setting = this.findById(id);
+    if (!setting) return null;
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM settings WHERE _id = ? OR id = ?').run(id, id);
+    return setting;
+  }
+
+  // Upsert helper (insert or update)
+  static upsert(key: string, value: string): any {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO settings (key, value, updatedAt)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updatedAt = datetime('now')
+    `);
+    stmt.run(key, value);
+    return this.findOne({ key });
+  }
+
+  private static deserialize(row: any): any | null {
+    if (!row) return null;
+
+    // Convert dates
+    if (row.createdAt) row.createdAt = new Date(row.createdAt);
+    if (row.updatedAt) row.updatedAt = new Date(row.updatedAt);
+
+    // Add Mongoose-like _id if not present
+    if (!row._id && row.id) row._id = row.id.toString();
+
+    return row;
+  }
+}
+
+/**
+ * Folder Model Adapter
+ */
+export class FolderModel {
+  static find(query: any = {}): any[] {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM folders WHERE 1=1';
+    const params: any[] = [];
+
+    if (query.ownerId) {
+      sql += ' AND ownerId = ?';
+      params.push(query.ownerId.toString ? query.ownerId.toString() : query.ownerId);
+    }
+    if (query.parentId !== undefined) {
+      if (query.parentId === null) {
+        sql += ' AND parentId IS NULL';
+      } else {
+        sql += ' AND parentId = ?';
+        params.push(query.parentId.toString ? query.parentId.toString() : query.parentId);
+      }
+    }
+    if (query.knowledgeBaseId) {
+      sql += ' AND knowledgeBaseId = ?';
+      params.push(query.knowledgeBaseId.toString ? query.knowledgeBaseId.toString() : query.knowledgeBaseId);
+    }
+    if (query.path) {
+      sql += ' AND path = ?';
+      params.push(query.path);
+    }
+
+    const rows = db.prepare(sql).all(...params);
+    return rows.map(row => this.deserialize(row));
+  }
+
+  static findOne(query: any): any | null {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM folders WHERE 1=1';
+    const params: any[] = [];
+
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id);
+    }
+    if (query.path) {
+      sql += ' AND path = ?';
+      params.push(query.path);
+    }
+    if (query.ownerId) {
+      sql += ' AND ownerId = ?';
+      params.push(query.ownerId.toString ? query.ownerId.toString() : query.ownerId);
+    }
+
+    sql += ' LIMIT 1';
+    const row = db.prepare(sql).get(...params);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static findById(id: string | number): any | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT * FROM folders WHERE _id = ? OR id = ?').get(id, id);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static create(folderData: any): any {
+    const db = getDatabase();
+
+    // Build path if not provided
+    let path = folderData.path;
+    if (!path) {
+      path = this.buildPath(folderData.name, folderData.parentId);
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO folders (name, parentId, knowledgeBaseId, path, ownerId)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      folderData.name,
+      folderData.parentId ? (folderData.parentId.toString ? folderData.parentId.toString() : folderData.parentId) : null,
+      folderData.knowledgeBaseId ? (folderData.knowledgeBaseId.toString ? folderData.knowledgeBaseId.toString() : folderData.knowledgeBaseId) : null,
+      path,
+      folderData.ownerId ? folderData.ownerId.toString() : null
+    );
+
+    return this.findById(Number(result.lastInsertRowid));
+  }
+
+  static findByIdAndUpdate(id: string | number, updates: any): any | null {
+    const folder = this.findById(id);
+    if (!folder) return null;
+
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    // Rebuild path if name or parentId changed
+    if (updates.name || updates.parentId !== undefined) {
+      const newName = updates.name || folder.name;
+      const newParentId = updates.parentId !== undefined ? updates.parentId : folder.parentId;
+      updates.path = this.buildPath(newName, newParentId);
+    }
+
+    Object.keys(updates).forEach(key => {
+      const value = updates[key];
+      if (typeof value === 'function' || value === undefined) return;
+
+      if (key === 'parentId' || key === 'knowledgeBaseId' || key === 'ownerId') {
+        fields.push(`${key} = ?`);
+        values.push(value ? (value.toString ? value.toString() : value) : null);
+      } else {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    });
+
+    fields.push('updatedAt = datetime(\'now\')');
+
+    const sql = `UPDATE folders SET ${fields.join(', ')} WHERE _id = ? OR id = ?`;
+    db.prepare(sql).run(...values, id, id);
+
+    return this.findById(id);
+  }
+
+  static findByIdAndDelete(id: string | number): any | null {
+    const folder = this.findById(id);
+    if (!folder) return null;
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM folders WHERE _id = ? OR id = ?').run(id, id);
+    return folder;
+  }
+
+  // Build path from parent hierarchy
+  static buildPath(name: string, parentId?: string | null): string {
+    if (!parentId) {
+      return '/' + name;
+    }
+
+    const parts = [name];
+    let currentParentId: string | null = parentId;
+    let depth = 0;
+    const MAX_DEPTH = 20; // Prevent infinite loops
+
+    while (currentParentId && depth < MAX_DEPTH) {
+      const parent = this.findById(currentParentId);
+      if (!parent) break;
+      parts.unshift(parent.name);
+      currentParentId = parent.parentId;
+      depth++;
+    }
+
+    return '/' + parts.join('/');
+  }
+
+  private static deserialize(row: any): any | null {
+    if (!row) return null;
+
+    // Convert dates
+    if (row.createdAt) row.createdAt = new Date(row.createdAt);
+    if (row.updatedAt) row.updatedAt = new Date(row.updatedAt);
+
+    // Add Mongoose-like _id if not present
+    if (!row._id && row.id) row._id = row.id.toString();
+
+    return row;
+  }
+}
+
+/**
+ * TenantKnowledgeBase Model Adapter
+ */
+export class TenantKnowledgeBaseModel {
+  static find(query: any = {}): any[] {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM tenant_knowledge_bases WHERE 1=1';
+    const params: any[] = [];
+
+    if (query.isActive !== undefined) {
+      sql += ' AND isActive = ?';
+      params.push(query.isActive ? 1 : 0);
+    }
+    if (query.slug) {
+      sql += ' AND slug = ?';
+      params.push(query.slug);
+    }
+    if (query.createdBy) {
+      sql += ' AND createdBy = ?';
+      params.push(query.createdBy.toString ? query.createdBy.toString() : query.createdBy);
+    }
+
+    sql += ' ORDER BY createdAt DESC';
+    const rows = db.prepare(sql).all(...params);
+    return rows.map(row => this.deserialize(row));
+  }
+
+  static findOne(query: any): any | null {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM tenant_knowledge_bases WHERE 1=1';
+    const params: any[] = [];
+
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id);
+    }
+    if (query.slug) {
+      sql += ' AND slug = ?';
+      params.push(query.slug);
+    }
+    if (query.s3Prefix) {
+      sql += ' AND s3Prefix = ?';
+      params.push(query.s3Prefix);
+    }
+
+    sql += ' LIMIT 1';
+    const row = db.prepare(sql).get(...params);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static findById(id: string | number): any | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT * FROM tenant_knowledge_bases WHERE _id = ? OR id = ?').get(id, id);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static create(kbData: any): any {
+    const db = getDatabase();
+
+    // Auto-generate slug if not provided
+    let slug = kbData.slug;
+    if (!slug && kbData.name) {
+      slug = kbData.name.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+
+    // Auto-generate s3Prefix if not provided
+    let s3Prefix = kbData.s3Prefix;
+    if (!s3Prefix && slug) {
+      s3Prefix = `tenant_kb/${slug}/`;
+    }
+
+    // Auto-generate shortName if not provided
+    let shortName = kbData.shortName;
+    if (!shortName && kbData.name) {
+      const words = kbData.name.split(' ');
+      shortName = words[0].substring(0, 10);
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO tenant_knowledge_bases (
+        name, slug, description, s3Prefix, color, icon, shortName,
+        accessType, allowedRoles, allowedUsers, isActive, documentCount,
+        createdBy, lastModifiedBy
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      kbData.name,
+      slug,
+      kbData.description || null,
+      s3Prefix,
+      kbData.color || '#6B7280',
+      kbData.icon || null,
+      shortName,
+      kbData.accessType || 'restricted',
+      JSON.stringify(kbData.allowedRoles || []),
+      JSON.stringify(kbData.allowedUsers || []),
+      kbData.isActive !== undefined ? (kbData.isActive ? 1 : 0) : 1,
+      kbData.documentCount || 0,
+      kbData.createdBy ? kbData.createdBy.toString() : null,
+      kbData.lastModifiedBy ? kbData.lastModifiedBy.toString() : null
+    );
+
+    return this.findById(Number(result.lastInsertRowid));
+  }
+
+  static findByIdAndUpdate(id: string | number, updates: any): any | null {
+    const kb = this.findById(id);
+    if (!kb) return null;
+
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    Object.keys(updates).forEach(key => {
+      const value = updates[key];
+      if (typeof value === 'function' || value === undefined) return;
+
+      if (key === 'isActive') {
+        fields.push(`${key} = ?`);
+        values.push(value ? 1 : 0);
+      } else if (key === 'allowedRoles' || key === 'allowedUsers') {
+        fields.push(`${key} = ?`);
+        values.push(JSON.stringify(value || []));
+      } else if (key === 'createdBy' || key === 'lastModifiedBy') {
+        fields.push(`${key} = ?`);
+        values.push(value ? (value.toString ? value.toString() : value) : null);
+      } else {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    });
+
+    fields.push('updatedAt = datetime(\'now\')');
+
+    const sql = `UPDATE tenant_knowledge_bases SET ${fields.join(', ')} WHERE _id = ? OR id = ?`;
+    db.prepare(sql).run(...values, id, id);
+
+    return this.findById(id);
+  }
+
+  static findByIdAndDelete(id: string | number): any | null {
+    const kb = this.findById(id);
+    if (!kb) return null;
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM tenant_knowledge_bases WHERE _id = ? OR id = ?').run(id, id);
+    return kb;
+  }
+
+  // Method to check if a user has access
+  static hasAccess(kb: any, userId: string, userRole?: string): boolean {
+    if (!kb.isActive) return false;
+    if (kb.accessType === 'public') return true;
+
+    if (kb.accessType === 'role-based' && userRole && kb.allowedRoles?.includes(userRole)) {
+      return true;
+    }
+
+    if (kb.allowedUsers?.some((id: string) => id === userId)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private static deserialize(row: any): any | null {
+    if (!row) return null;
+
+    // Parse JSON arrays
+    try {
+      row.allowedRoles = JSON.parse(row.allowedRoles || '[]');
+    } catch (e) {
+      row.allowedRoles = [];
+    }
+
+    try {
+      row.allowedUsers = JSON.parse(row.allowedUsers || '[]');
+    } catch (e) {
+      row.allowedUsers = [];
+    }
+
+    // Convert INTEGER to boolean
+    if (row.isActive !== undefined) row.isActive = Boolean(row.isActive);
+
+    // Convert dates
+    if (row.createdAt) row.createdAt = new Date(row.createdAt);
+    if (row.updatedAt) row.updatedAt = new Date(row.updatedAt);
+
+    // Add Mongoose-like _id if not present
+    if (!row._id && row.id) row._id = row.id.toString();
+
+    // Add hasAccess method
+    row.hasAccess = (userId: string, userRole?: string) => {
+      return TenantKnowledgeBaseModel.hasAccess(row, userId, userRole);
+    };
+
+    return row;
+  }
+}
+
+/**
+ * UserSettings Model Adapter
+ */
+export class UserSettingsModel {
+  static find(query: any = {}): any[] {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM user_settings WHERE 1=1';
+    const params: any[] = [];
+
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+
+    const rows = db.prepare(sql).all(...params);
+    return rows.map(row => this.deserialize(row));
+  }
+
+  static findOne(query: any): any | null {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM user_settings WHERE 1=1';
+    const params: any[] = [];
+
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id);
+    }
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+
+    sql += ' LIMIT 1';
+    const row = db.prepare(sql).get(...params);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static findById(id: string | number): any | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT * FROM user_settings WHERE _id = ? OR id = ?').get(id, id);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static create(settingsData: any): any {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO user_settings (userId, customPrompt, iconUrl)
+      VALUES (?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      settingsData.userId ? settingsData.userId.toString() : null,
+      settingsData.customPrompt || null,
+      settingsData.iconUrl || null
+    );
+
+    return this.findById(Number(result.lastInsertRowid));
+  }
+
+  static findByIdAndUpdate(id: string | number, updates: any): any | null {
+    const settings = this.findById(id);
+    if (!settings) return null;
+
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    Object.keys(updates).forEach(key => {
+      const value = updates[key];
+      if (typeof value === 'function' || value === undefined) return;
+
+      if (key === 'userId') {
+        fields.push(`${key} = ?`);
+        values.push(value ? (value.toString ? value.toString() : value) : null);
+      } else {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    });
+
+    fields.push('updatedAt = datetime(\'now\')');
+
+    const sql = `UPDATE user_settings SET ${fields.join(', ')} WHERE _id = ? OR id = ?`;
+    db.prepare(sql).run(...values, id, id);
+
+    return this.findById(id);
+  }
+
+  static findByIdAndDelete(id: string | number): any | null {
+    const settings = this.findById(id);
+    if (!settings) return null;
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM user_settings WHERE _id = ? OR id = ?').run(id, id);
+    return settings;
+  }
+
+  // Helper to find by userId
+  static findByUserId(userId: string): any | null {
+    return this.findOne({ userId });
+  }
+
+  private static deserialize(row: any): any | null {
+    if (!row) return null;
+
+    // Convert dates
+    if (row.createdAt) row.createdAt = new Date(row.createdAt);
+    if (row.updatedAt) row.updatedAt = new Date(row.updatedAt);
+
+    // Add Mongoose-like _id if not present
+    if (!row._id && row.id) row._id = row.id.toString();
+
+    return row;
+  }
+}
+
+/**
+ * Feedback Model Adapter
+ */
+export class FeedbackModel {
+  static find(query: any = {}): any[] {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM feedback WHERE 1=1';
+    const params: any[] = [];
+
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+    if (query.chatId) {
+      sql += ' AND chatId = ?';
+      params.push(query.chatId.toString ? query.chatId.toString() : query.chatId);
+    }
+
+    sql += ' ORDER BY createdAt DESC';
+    const rows = db.prepare(sql).all(...params);
+    return rows.map(row => this.deserialize(row));
+  }
+
+  static findOne(query: any): any | null {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM feedback WHERE 1=1';
+    const params: any[] = [];
+
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id);
+    }
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+
+    sql += ' LIMIT 1';
+    const row = db.prepare(sql).get(...params);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static findById(id: string | number): any | null {
+    const db = getDatabase();
+    const row = db.prepare('SELECT * FROM feedback WHERE _id = ? OR id = ?').get(id, id);
+    return row ? this.deserialize(row) : null;
+  }
+
+  static create(feedbackData: any): any {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO feedback (feedbackText, userId, username, chatId)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      feedbackData.feedbackText,
+      feedbackData.userId ? feedbackData.userId.toString() : null,
+      feedbackData.username,
+      feedbackData.chatId ? feedbackData.chatId.toString() : null
+    );
+
+    return this.findById(Number(result.lastInsertRowid));
+  }
+
+  static findByIdAndUpdate(id: string | number, updates: any): any | null {
+    const feedback = this.findById(id);
+    if (!feedback) return null;
+
+    const db = getDatabase();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    Object.keys(updates).forEach(key => {
+      const value = updates[key];
+      if (typeof value === 'function' || value === undefined) return;
+
+      if (key === 'userId' || key === 'chatId') {
+        fields.push(`${key} = ?`);
+        values.push(value ? (value.toString ? value.toString() : value) : null);
+      } else {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    });
+
+    const sql = `UPDATE feedback SET ${fields.join(', ')} WHERE _id = ? OR id = ?`;
+    db.prepare(sql).run(...values, id, id);
+
+    return this.findById(id);
+  }
+
+  static findByIdAndDelete(id: string | number): any | null {
+    const feedback = this.findById(id);
+    if (!feedback) return null;
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM feedback WHERE _id = ? OR id = ?').run(id, id);
+    return feedback;
+  }
+
+  // Helper to find by userId
+  static findByUserId(userId: string): any[] {
+    return this.find({ userId });
+  }
+
+  // Helper to find by chatId
+  static findByChatId(chatId: string): any[] {
+    return this.find({ chatId });
+  }
+
+  private static deserialize(row: any): any | null {
+    if (!row) return null;
+
+    // Convert date
+    if (row.createdAt) row.createdAt = new Date(row.createdAt);
+
+    // Add Mongoose-like _id if not present
+    if (!row._id && row.id) row._id = row.id.toString();
 
     return row;
   }

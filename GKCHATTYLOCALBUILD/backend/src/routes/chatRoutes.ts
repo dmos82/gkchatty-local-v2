@@ -5,9 +5,8 @@ import { getChatCompletion, getChatCompletionStream } from '../utils/openaiHelpe
 import { withRetry, DEFAULT_OPENAI_RETRY_CONFIG } from '../utils/retryHelper';
 import { ChatCompletionMessageParam as OpenAIChatCompletionMessageParam } from 'openai/resources/chat';
 import type { ChatCompletion } from 'openai/resources/chat/completions';
-import { ChatModel as Chat } from '../utils/modelFactory';
-import { IChat, IChatMessage } from '../models/ChatModel';
-import { UserModel as User } from '../utils/modelFactory';
+import { ChatModel as Chat, UserModel as User, IUser, IChat } from '../utils/modelFactory';
+import { IChatMessage } from '../models/ChatModel';
 import Setting from '../models/SettingModel';
 import { inspect } from 'util';
 import { getLogger } from '../utils/logger';
