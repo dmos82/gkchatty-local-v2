@@ -111,6 +111,7 @@ export const uploadSystemKb = async (req: Request, res: Response) => {
           fileSize: file.size,
           status: 'processing',
           statusDetail: 'Awaiting embedding',
+          folderId: req.body.folderId || null,
           createdAt: new Date(),
           updatedAt: new Date(),
         })) as ISystemKbDocumentRecord;

@@ -524,7 +524,20 @@ export const deleteItems = async (req: Request, res: Response) => {
     }
 
     // Delete documents that were directly selected
-    // For admins, also allow deletion of system documents
+    let userDocDeleted = 0;
+    let systemDocsDeleted = 0;
+
+    // For admins, delete from SystemKbDocument collection directly
+    if (isAdmin) {
+      log.info('deleteItems - Admin deleting from SystemKbDocument:', itemIds);
+      const systemDeleteResult = await SystemKbDocument.deleteMany({
+        _id: { $in: itemIds },
+      });
+      systemDocsDeleted = systemDeleteResult.deletedCount || 0;
+      log.info('deleteItems - SystemKbDocument deleted:', systemDocsDeleted);
+    }
+
+    // Also check UserDocument collection for regular user documents
     const docDeleteQuery: Record<string, unknown> = { _id: { $in: itemIds } };
 
     if (isAdmin) {
@@ -535,32 +548,13 @@ export const deleteItems = async (req: Request, res: Response) => {
       docDeleteQuery.userId = userId;
     }
 
-    // First, find documents to be deleted to get their s3Keys for system docs
-    const docsToDelete = await UserDocument.find(docDeleteQuery);
-    const systemDocsS3Keys = docsToDelete
-      .filter(doc => doc.sourceType === 'system')
-      .map(doc => doc.s3Key);
-
-    log.info('deleteItems - Documents to delete:', {
-      totalDocs: docsToDelete.length,
-      systemDocs: systemDocsS3Keys.length,
-      systemDocsS3Keys,
-    });
-
-    // Delete from UserDocument collection
     const deleteResult = await UserDocument.deleteMany(docDeleteQuery);
-
-    // Also delete system documents from SystemKbDocument collection if any
-    if (systemDocsS3Keys.length > 0) {
-      log.info('deleteItems - Deleting from SystemKbDocument collection:', systemDocsS3Keys);
-      await SystemKbDocument.deleteMany({
-        s3Key: { $in: systemDocsS3Keys },
-      });
-    }
+    userDocDeleted = deleteResult.deletedCount || 0;
 
     log.info('deleteItems - Delete results:', {
-      userDocDeleted: deleteResult.deletedCount,
-      systemDocsDeleted: systemDocsS3Keys.length,
+      userDocDeleted,
+      systemDocsDeleted,
+      totalDeleted: userDocDeleted + systemDocsDeleted,
     });
 
     return res.json({
