@@ -17,6 +17,15 @@ import {
 import { ModelDetector } from './ModelDetector';
 import { OpenAIProvider } from './providers/OpenAIProvider';
 import { OllamaProvider } from './providers/OllamaProvider';
+import {
+  ProviderNotFoundError,
+  ProviderInitializationError,
+  ProviderHealthCheckError,
+  normalizeError,
+  extractErrorDetails,
+} from './errors';
+import { CircuitBreaker } from './retry';
+import { ResourceMonitor, validateResources } from './resourceMonitor';
 
 /**
  * Singleton ProviderRegistry for managing embedding providers
@@ -39,10 +48,20 @@ export class ProviderRegistry {
   /** Health check interval handle */
   private healthCheckInterval: NodeJS.Timeout | null = null;
 
+  /** Circuit breakers for each provider */
+  private circuitBreakers: Map<string, CircuitBreaker> = new Map();
+
+  /** Resource monitor */
+  private resourceMonitor: ResourceMonitor;
+
   /**
    * Private constructor for singleton pattern
    */
   private constructor() {
+    // Initialize resource monitor
+    this.resourceMonitor = new ResourceMonitor();
+    this.resourceMonitor.start(60000); // Check every minute
+
     // Start health checks every 5 minutes
     this.startHealthChecks();
   }
@@ -148,11 +167,17 @@ export class ProviderRegistry {
     console.log(`[ProviderRegistry] Registering provider: ${info.id}`);
 
     try {
+      // Validate resources before registration
+      validateResources();
+
       // Initialize the provider
       await provider.initialize();
 
       // Store provider
       this.providers.set(info.id, provider);
+
+      // Initialize circuit breaker
+      this.circuitBreakers.set(info.id, new CircuitBreaker());
 
       // Initialize stats
       this.initializeStats(info.id);
@@ -166,8 +191,9 @@ export class ProviderRegistry {
 
       console.log(`[ProviderRegistry] Provider registered: ${info.id}`);
     } catch (error) {
-      console.error(`[ProviderRegistry] Failed to register provider ${info.id}:`, error);
-      throw new Error(`Failed to register provider: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const normalizedError = normalizeError(error, info.id);
+      console.error(`[ProviderRegistry] Failed to register provider ${info.id}:`, extractErrorDetails(normalizedError));
+      throw new ProviderInitializationError(info.id, normalizedError.message);
     }
   }
 
@@ -203,15 +229,25 @@ export class ProviderRegistry {
   public async setActiveProvider(providerId: string): Promise<void> {
     const provider = this.providers.get(providerId);
     if (!provider) {
-      throw new Error(`Provider not found: ${providerId}`);
+      throw new ProviderNotFoundError(providerId);
     }
 
     console.log(`[ProviderRegistry] Setting active provider: ${providerId}`);
 
+    // Check circuit breaker
+    const circuitBreaker = this.circuitBreakers.get(providerId);
+    if (circuitBreaker && !circuitBreaker.isAllowed()) {
+      throw new ProviderHealthCheckError(
+        providerId,
+        `Circuit breaker is ${circuitBreaker.getStats().state}`,
+        { circuitBreaker: circuitBreaker.getStats() }
+      );
+    }
+
     // Check provider health before activating
     const status = await this.checkProviderHealth(providerId);
     if (!status.healthy) {
-      throw new Error(`Cannot activate unhealthy provider: ${status.message}`);
+      throw new ProviderHealthCheckError(providerId, status.message);
     }
 
     this.activeProviderId = providerId;
@@ -225,12 +261,12 @@ export class ProviderRegistry {
    */
   public getActiveProvider(): EmbeddingProvider {
     if (!this.activeProviderId) {
-      throw new Error('No active provider set');
+      throw new ProviderNotFoundError('none', { reason: 'No active provider set' });
     }
 
     const provider = this.providers.get(this.activeProviderId);
     if (!provider) {
-      throw new Error(`Active provider not found: ${this.activeProviderId}`);
+      throw new ProviderNotFoundError(this.activeProviderId);
     }
 
     return provider;
@@ -286,7 +322,7 @@ export class ProviderRegistry {
   public getProviderInfo(providerId: string): ProviderInfo {
     const provider = this.providers.get(providerId);
     if (!provider) {
-      throw new Error(`Provider not found: ${providerId}`);
+      throw new ProviderNotFoundError(providerId);
     }
 
     return provider.getInfo();
@@ -317,6 +353,8 @@ export class ProviderRegistry {
    */
   private async checkProviderHealth(providerId: string): Promise<ProviderStatus> {
     const provider = this.providers.get(providerId);
+    const circuitBreaker = this.circuitBreakers.get(providerId);
+
     if (!provider) {
       return {
         healthy: false,
@@ -335,16 +373,29 @@ export class ProviderRegistry {
         lastChecked: new Date(),
       };
 
+      // Record success in circuit breaker
+      if (circuitBreaker) {
+        circuitBreaker.recordSuccess();
+      }
+
       this.healthCache.set(providerId, status);
       return status;
     } catch (error) {
+      const normalizedError = normalizeError(error, providerId);
+
       const status: ProviderStatus = {
         healthy: false,
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: normalizedError.message,
         lastChecked: new Date(),
       };
 
+      // Record failure in circuit breaker
+      if (circuitBreaker) {
+        circuitBreaker.recordFailure();
+      }
+
       this.healthCache.set(providerId, status);
+      console.warn(`[ProviderRegistry] Health check failed for ${providerId}:`, extractErrorDetails(normalizedError));
       return status;
     }
   }
@@ -448,6 +499,9 @@ export class ProviderRegistry {
     // Stop health checks
     this.stopHealthChecks();
 
+    // Stop resource monitoring
+    this.resourceMonitor.stop();
+
     // Clear active provider
     this.activeProviderId = null;
 
@@ -455,8 +509,60 @@ export class ProviderRegistry {
     this.providers.clear();
     this.stats.clear();
     this.healthCache.clear();
+    this.circuitBreakers.clear();
 
     console.log('[ProviderRegistry] Cleanup complete');
+  }
+
+  /**
+   * Get circuit breaker stats for a provider
+   * @param providerId - Provider ID
+   * @returns Circuit breaker stats or undefined
+   */
+  public getCircuitBreakerStats(providerId: string) {
+    const breaker = this.circuitBreakers.get(providerId);
+    return breaker ? breaker.getStats() : undefined;
+  }
+
+  /**
+   * Get circuit breaker stats for all providers
+   */
+  public getAllCircuitBreakerStats(): Record<string, any> {
+    const stats: Record<string, any> = {};
+    for (const [providerId, breaker] of this.circuitBreakers) {
+      stats[providerId] = breaker.getStats();
+    }
+    return stats;
+  }
+
+  /**
+   * Reset circuit breaker for a provider
+   * @param providerId - Provider ID
+   */
+  public resetCircuitBreaker(providerId: string): void {
+    const breaker = this.circuitBreakers.get(providerId);
+    if (breaker) {
+      breaker.reset();
+      console.log(`[ProviderRegistry] Circuit breaker reset for ${providerId}`);
+    }
+  }
+
+  /**
+   * Get current resource status
+   */
+  public getResourceStatus() {
+    return this.resourceMonitor.getStatus();
+  }
+
+  /**
+   * Create a fallback chain for embedding operations
+   * @param providerIds - List of provider IDs in fallback order
+   * @returns FallbackChain instance
+   */
+  public createFallbackChain(providerIds?: string[]) {
+    const { createFallbackChain } = require('./fallbackChain');
+    const ids = providerIds || Array.from(this.providers.keys());
+    return createFallbackChain(ids, (id: string) => this.getProvider(id));
   }
 }
 
