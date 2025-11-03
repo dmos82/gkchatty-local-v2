@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { config } from 'dotenv';
 import User from '../models/UserModel';
 import * as path from 'path';
+import { BCRYPT_SALT_ROUNDS } from '../config/constants';
 
 // Load environment variables from the correct path
 config({ path: path.resolve(__dirname, '../../.env') });
@@ -131,7 +132,7 @@ async function createAdminUser(): Promise<void> {
 
       // Step 3a: Update existing user's password
       console.log(`🔄 Step 3: Updating existing user's password...`);
-      const hashedPassword = await bcrypt.hash(args.password, 12);
+      const hashedPassword = await bcrypt.hash(args.password, BCRYPT_SALT_ROUNDS);
 
       existingUser.password = hashedPassword;
       existingUser.role = 'admin'; // Ensure admin role
@@ -160,8 +161,8 @@ async function createAdminUser(): Promise<void> {
       }
 
       // Hash password
-      const hashedPassword = await bcrypt.hash(args.password, 12);
-      console.log(`   - Password hashed successfully (bcrypt, 12 rounds)`);
+      const hashedPassword = await bcrypt.hash(args.password, BCRYPT_SALT_ROUNDS);
+      console.log(`   - Password hashed successfully (bcrypt, ${BCRYPT_SALT_ROUNDS} rounds)`);
 
       // Create new user document
       const newUser = new User({

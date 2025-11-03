@@ -9,7 +9,7 @@ import { UserDocument, IUserDocument } from '../models/UserDocument';
 import { SystemKbDocument } from '../models/SystemKbDocument'; // Added import for SystemKbDocument
 import User from '../models/UserModel';
 import bcrypt from 'bcryptjs';
-import { BCRYPT_ROUNDS } from '../config/security'; // HIGH-004: Centralized bcrypt work factor
+import { BCRYPT_SALT_ROUNDS } from '../config/constants';
 import { adminLimiter } from '../middleware/rateLimiter'; // Import admin rate limiter
 import { validatePasswordMiddleware } from '../middleware/passwordValidation'; // MEDIUM-005
 import { sanitizeInputMiddleware } from '../middleware/inputSanitization'; // MEDIUM-007
@@ -790,8 +790,8 @@ router.put(
       if (!user) {
         return res.status(404).json({ success: false, message: 'User not found.' });
       }
-      // HIGH-004: Use centralized bcrypt work factor (12)
-      user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+      // Use centralized bcrypt work factor
+      user.password = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
       user.forcePasswordChange = false; // Clear the force password change flag
       await user.save();
       logger.info({ userId: userIdToUpdate }, 'Password updated for user');
@@ -883,7 +883,7 @@ router.post(
 
       // Use provided password or generate temporary password
       const tempPassword = password || generateSecurePassword();
-      const hashedPassword = await bcrypt.hash(tempPassword, 12);
+      const hashedPassword = await bcrypt.hash(tempPassword, BCRYPT_SALT_ROUNDS);
       const shouldForcePasswordChange = !password; // Only force password change if password was auto-generated
 
       // Create new user
