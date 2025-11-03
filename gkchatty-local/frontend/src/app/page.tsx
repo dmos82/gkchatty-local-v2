@@ -31,7 +31,6 @@ import debounce from 'lodash.debounce'; // <-- ADD: Import debounce
 import ChatInterface from '@/components/ChatInterface';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import FileTreeView from '@/components/layout/FileTreeView';
-import DocumentSidebar from '@/components/layout/DocumentSidebar';
 import ChatNotesPanel from '@/components/layout/ChatNotesPanel';
 import FileTreeManager from '@/components/admin/FileTreeManager';
 

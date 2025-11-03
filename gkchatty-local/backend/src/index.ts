@@ -242,7 +242,7 @@ async function startServer() {
         );
         console.log(`[Admin Seeder] Database: ${mongoose.connection.db?.databaseName}`);
         console.log(`[Admin Seeder] Admin email: ${TEMP_ADMIN_EMAIL}`);
-        console.log(`[Admin Seeder] Temporary password: ${TEMP_ADMIN_PASSWORD}`);
+        console.log(`[Admin Seeder] Password set from environment variable (not logged for security)`);
       } else {
         console.log(
           `[Admin Seeder] User '${TEMP_ADMIN_USERNAME}' already exists. Skipping initial admin user seeding.`

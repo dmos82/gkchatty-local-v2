@@ -17,6 +17,7 @@ import { connectDB, disconnectDB } from '../utils/mongoHelper'; // Added: MongoD
 import { UserDocument } from '../models/UserDocument'; // Added: UserDocument model
 import { processAndEmbedDocument } from '../utils/documentProcessor'; // Ensure correct path
 import { KNOWLEDGE_BASE_S3_PREFIX } from '../config/storageConfig'; // <-- Import centralized config
+import { RAG_CONFIG } from '../config/ragConfig';
 
 // --- Configuration ---
 const CHROMA_URL = process.env.CHROMA_URL || 'http://localhost:8000';
@@ -25,8 +26,9 @@ const COLLECTION_NAME = 'system_knowledge';
 const API_KEY = process.env.OPENAI_API_KEY;
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 console.log(`[LoadScript] Using OpenAI key for embeddings with model: ${EMBEDDING_MODEL}`);
-const CHUNK_SIZE = 1000; // Characters per chunk
-const CHUNK_OVERLAP = 100; // Characters overlap between chunks
+// Use centralized RAG configuration for consistency
+const CHUNK_SIZE = RAG_CONFIG.CHUNK_SIZE;
+const CHUNK_OVERLAP = RAG_CONFIG.CHUNK_OVERLAP;
 
 // Type definitions for document processing
 interface DocumentChunk {

@@ -14,12 +14,12 @@ import { IngestionErrorCode } from '../types/errorCodes'; // For error handling
 import path from 'path'; // Import path
 import { KNOWLEDGE_BASE_S3_PREFIX } from '../config/storageConfig';
 import { getSystemKbNamespace, getUserNamespace } from './pineconeNamespace';
+import { RAG_CONFIG } from '../config/ragConfig';
 // import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'; // Remove or fix import
 
-// Constants (assuming these are defined elsewhere or should be)
-// Increased chunk size and overlap to prevent splitting related information
-const MAX_CHUNK_SIZE = 1500; // Increased from 1000 to capture more context
-const CHUNK_OVERLAP = 300; // Increased from 100 to ensure better continuity
+// Use centralized RAG configuration for consistency across the application
+const MAX_CHUNK_SIZE = RAG_CONFIG.CHUNK_SIZE;
+const CHUNK_OVERLAP = RAG_CONFIG.CHUNK_OVERLAP;
 
 // S3 Client (assuming configured elsewhere or configure here)
 // const s3Client = new S3Client({ region: process.env.AWS_REGION });

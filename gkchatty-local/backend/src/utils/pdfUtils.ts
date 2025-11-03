@@ -1,5 +1,6 @@
 import pdf from 'pdf-parse';
 import { getLogger } from './logger';
+import { RAG_CONFIG } from '../config/ragConfig';
 
 const log = getLogger('pdfUtils');
 
@@ -64,11 +65,12 @@ export async function extractPdfTextWithPages(pdfBuffer: Buffer): Promise<PageTe
 
 /**
  * Chunks text while preserving page number information (Now expects PageText[] structure).
+ * Uses centralized RAG configuration for default chunk size and overlap.
  */
 export function chunkTextWithPages(
   pages: PageText[],
-  chunkSize: number = 750,
-  overlap: number = 150
+  chunkSize: number = RAG_CONFIG.PDF_CHUNK_SIZE,
+  overlap: number = RAG_CONFIG.CHUNK_OVERLAP
 ): { text: string; pageNumbers: number[] }[] {
   const chunks: { text: string; pageNumbers: number[] }[] = [];
 
