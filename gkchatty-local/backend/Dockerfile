@@ -1,72 +1,62 @@
-# Stage 1: Dependencies
-FROM node:18-alpine AS dependencies
-WORKDIR /app
+# GKChatty Local - Backend Dockerfile
+# Multi-stage build for optimized production image
 
-# Install pnpm and Python (needed for sharp compilation fallback)
-RUN apk add --no-cache python3 make g++ && \
-    npm install -g pnpm@7.33.1
-
-# Copy only package files for better caching
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/api/package.json ./apps/api/
-COPY apps/web/package.json ./apps/web/
-COPY packages/types/package.json ./packages/types/
-
-# Install ALL dependencies for the API (including dev dependencies for build stage)
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --filter api --frozen-lockfile
-
-# Stage 2: Build
+# Stage 1: Build TypeScript
 FROM node:18-alpine AS builder
+
 WORKDIR /app
 
-# Install pnpm and build tools
-RUN apk add --no-cache python3 make g++ git py3-setuptools && \
-    npm install -g pnpm@7.33.1
-
-# Copy installed dependencies from previous stage
-COPY --from=dependencies /app/node_modules ./node_modules
-COPY --from=dependencies /app/apps/api/node_modules ./apps/api/node_modules
-
 # Copy package files
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/api/package.json ./apps/api/
-COPY apps/web/package.json ./apps/web/
-COPY packages/types/package.json ./packages/types/
+COPY package*.json ./
+COPY tsconfig.json ./
 
-# Copy source files
-COPY apps/api/tsconfig.json ./apps/api/
-COPY apps/api/src ./apps/api/src
-COPY packages/types/src ./packages/types/src
+# Install dependencies (including dev dependencies for build)
+RUN npm ci
 
-# Build the TypeScript code
-RUN pnpm --filter api build
+# Copy source code
+COPY src ./src
 
-# Stage 3: Production
-FROM node:18-alpine AS production
+# Build TypeScript
+RUN npm run build
+
+# Stage 2: Production image
+FROM node:18-alpine
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
+# Create app directory
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm@7.33.1
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
 
 # Copy package files
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/api/package.json ./apps/api/
-COPY apps/web/package.json ./apps/web/
-COPY packages/types/package.json ./packages/types/
+COPY package*.json ./
 
-# Install only production dependencies with cache mount
-RUN --mount=type=cache,id=pnpm-prod,target=/root/.local/share/pnpm/store \
-    pnpm install --filter api --frozen-lockfile --prod --ignore-scripts
+# Install production dependencies only
+RUN npm ci --only=production
 
-# Copy built application
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
+# Copy built application from builder stage
+COPY --from=builder /app/dist ./dist
 
-# Set production environment
-ENV NODE_ENV=production
+# Copy necessary files
+COPY .env.example ./.env
 
-# Expose the port the app runs on
-EXPOSE 3001
+# Create data directories
+RUN mkdir -p ./data/documents ./data/embeddings ./logs && \
+    chown -R nodejs:nodejs /app
 
-# Run the application
-CMD ["node", "apps/api/dist/index.js"]
+# Switch to non-root user
+USER nodejs
+
+# Expose port
+EXPOSE 6001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:6001/health || exit 1
+
+# Start application
+CMD ["node", "dist/index.js"]

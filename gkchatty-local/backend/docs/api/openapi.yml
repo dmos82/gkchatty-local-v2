@@ -1,0 +1,689 @@
+openapi: 3.0.3
+info:
+  title: GKChatty Local - Embedding Provider API
+  description: |
+    REST API for managing embedding providers in GKChatty Local.
+
+    ## Features
+    - Zero-cost local embeddings via Ollama
+    - API provider support (OpenAI, with more coming)
+    - Apple Silicon (M1/M2/M3) MPS acceleration
+    - Automatic model detection and health monitoring
+    - Performance benchmarking and cost tracking
+
+    ## Authentication
+    All endpoints require authentication via JWT token in Authorization header:
+    ```
+    Authorization: Bearer <your_jwt_token>
+    ```
+
+    ## Provider Types
+    - **Local Providers**: Run on your machine (Ollama, HuggingFace)
+    - **API Providers**: Cloud-based (OpenAI, Cohere, etc.)
+
+    ## Recommended Models
+    - **M2 Mac (24GB RAM)**: nomic-embed-text-v1.5 (768 dims)
+    - **M1 Mac (16GB RAM)**: all-MiniLM-L6-v2 (384 dims)
+    - **Intel Mac**: OpenAI text-embedding-3-small
+    - **Windows/Linux**: Depends on GPU (CUDA > CPU)
+
+  version: 1.0.0
+  contact:
+    name: GKChatty Development Team
+    email: support@gkchatty.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:6001/api
+    description: Local development server
+  - url: https://api.gkchatty.com/api
+    description: Production server
+
+tags:
+  - name: Providers
+    description: Manage embedding providers
+  - name: Discovery
+    description: Detect and scan for available models
+  - name: Health
+    description: Test provider health and performance
+  - name: System
+    description: System information and configuration
+
+paths:
+  /embeddings/providers:
+    get:
+      summary: List all registered providers
+      description: Returns a list of all embedding providers currently registered in the system
+      operationId: listProviders
+      tags:
+        - Providers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved provider list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderConfig'
+                  activeProvider:
+                    type: string
+                    nullable: true
+                    example: "ollama-nomic-embed-text"
+                  count:
+                    type: integer
+                    example: 3
+              examples:
+                success:
+                  value:
+                    success: true
+                    providers:
+                      - id: "ollama-nomic-embed-text"
+                        name: "Nomic Embed Text (Ollama)"
+                        type: "local"
+                        available: true
+                        dimensions: 768
+                        requiresApiKey: false
+                        estimatedCost: "$0 (local)"
+                      - id: "openai-text-embedding-3-small"
+                        name: "OpenAI text-embedding-3-small"
+                        type: "api"
+                        available: true
+                        dimensions: 1536
+                        requiresApiKey: true
+                        estimatedCost: "$0.020 per million tokens"
+                    activeProvider: "ollama-nomic-embed-text"
+                    count: 2
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /embeddings/scan:
+    post:
+      summary: Scan for available models
+      description: |
+        Auto-detect available embedding models and providers on the system.
+        Checks for:
+        - Ollama server availability
+        - HuggingFace cached models
+        - API provider credentials (OpenAI, etc.)
+
+        Returns recommendations based on detected hardware (MPS/CUDA/CPU).
+      operationId: scanModels
+      tags:
+        - Discovery
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Scan completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  localModels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DetectedModel'
+                  apiProviders:
+                    type: array
+                    items:
+                      type: string
+                    example: ["openai", "cohere"]
+                  recommended:
+                    type: string
+                    nullable: true
+                    example: "ollama-nomic-embed-text"
+                  timestamp:
+                    type: string
+                    format: date-time
+              examples:
+                withLocal:
+                  summary: With Ollama detected
+                  value:
+                    success: true
+                    localModels:
+                      - id: "ollama-nomic-embed-text"
+                        name: "Nomic Embed Text (Ollama)"
+                        type: "local"
+                        available: true
+                        requiresApiKey: false
+                        estimatedCost: "$0 (local)"
+                    apiProviders: ["openai"]
+                    recommended: "ollama-nomic-embed-text"
+                    timestamp: "2025-11-03T18:30:00.000Z"
+                apiOnly:
+                  summary: API providers only
+                  value:
+                    success: true
+                    localModels: []
+                    apiProviders: ["openai"]
+                    recommended: "openai-text-embedding-3-small"
+                    timestamp: "2025-11-03T18:30:00.000Z"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /embeddings/test:
+    post:
+      summary: Test provider health
+      description: |
+        Test a specific provider's health and performance by generating a test embedding.
+        Returns latency, dimensions, and provider metadata.
+      operationId: testProvider
+      tags:
+        - Health
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - providerId
+              properties:
+                providerId:
+                  type: string
+                  example: "ollama-nomic-embed-text"
+            examples:
+              testOllama:
+                value:
+                  providerId: "ollama-nomic-embed-text"
+              testOpenAI:
+                value:
+                  providerId: "openai-text-embedding-3-small"
+      responses:
+        '200':
+          description: Test completed (check 'healthy' field for result)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/HealthCheckSuccess'
+                  - $ref: '#/components/schemas/HealthCheckFailure'
+              examples:
+                healthy:
+                  summary: Healthy provider
+                  value:
+                    success: true
+                    providerId: "ollama-nomic-embed-text"
+                    healthy: true
+                    latency: 45
+                    dimensions: 768
+                    providerName: "Nomic Embed Text (Ollama)"
+                    requiresApiKey: false
+                    estimatedCost: "$0 (local)"
+                unhealthy:
+                  summary: Unhealthy provider
+                  value:
+                    success: false
+                    providerId: "ollama-nomic-embed-text"
+                    healthy: false
+                    error: "Connection refused: Ollama server not running"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Provider not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Provider not found: unknown-provider"
+
+  /embeddings/set-provider:
+    post:
+      summary: Switch active provider
+      description: |
+        Change the currently active embedding provider.
+
+        If the provider is not yet registered, the system will attempt to register it:
+        - For OpenAI providers: requires API key (in request body or env)
+        - For Ollama providers: registers automatically if server is running
+
+        The switch is immediate and affects all subsequent embedding operations.
+      operationId: setActiveProvider
+      tags:
+        - Providers
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - providerId
+              properties:
+                providerId:
+                  type: string
+                  example: "ollama-nomic-embed-text"
+                apiKey:
+                  type: string
+                  description: API key for API providers (optional if set in environment)
+                  example: "sk-..."
+            examples:
+              switchToOllama:
+                value:
+                  providerId: "ollama-nomic-embed-text"
+              switchToOpenAI:
+                value:
+                  providerId: "openai-text-embedding-3-small"
+                  apiKey: "sk-..."
+      responses:
+        '200':
+          description: Successfully switched provider
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  activeProvider:
+                    type: string
+                    example: "ollama-nomic-embed-text"
+                  message:
+                    type: string
+                    example: "Successfully switched to provider: ollama-nomic-embed-text"
+        '400':
+          description: Bad request (missing providerId or API key)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingProviderId:
+                  value:
+                    success: false
+                    message: "providerId is required"
+                missingApiKey:
+                  value:
+                    success: false
+                    message: "API key required for OpenAI provider"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Unknown provider type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Provider not found: unknown-provider"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /embeddings/benchmark:
+    get:
+      summary: Benchmark provider performance
+      description: |
+        Run a performance benchmark on the currently active provider.
+
+        Generates multiple test embeddings and calculates:
+        - Average, min, max latency
+        - Throughput (embeddings per second)
+        - Dimensions
+
+        **Warning**: Benchmarks with many samples may take time and consume API credits.
+      operationId: benchmarkProvider
+      tags:
+        - Health
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: samples
+          in: query
+          description: Number of test samples to run (1-100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: Benchmark completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  providerId:
+                    type: string
+                    example: "ollama-nomic-embed-text"
+                  providerName:
+                    type: string
+                    example: "Nomic Embed Text (Ollama)"
+                  samples:
+                    type: integer
+                    example: 10
+                  avgLatency:
+                    type: integer
+                    description: Average latency in milliseconds
+                    example: 45
+                  minLatency:
+                    type: integer
+                    description: Minimum latency in milliseconds
+                    example: 32
+                  maxLatency:
+                    type: integer
+                    description: Maximum latency in milliseconds
+                    example: 67
+                  throughput:
+                    type: number
+                    format: float
+                    description: Embeddings per second
+                    example: 22.22
+                  dimensions:
+                    type: integer
+                    example: 768
+                  timestamp:
+                    type: string
+                    format: date-time
+              examples:
+                fastLocal:
+                  summary: Fast local model (Ollama)
+                  value:
+                    success: true
+                    providerId: "ollama-nomic-embed-text"
+                    providerName: "Nomic Embed Text (Ollama)"
+                    samples: 10
+                    avgLatency: 45
+                    minLatency: 32
+                    maxLatency: 67
+                    throughput: 22.22
+                    dimensions: 768
+                    timestamp: "2025-11-03T18:30:00.000Z"
+                apiProvider:
+                  summary: API provider (OpenAI)
+                  value:
+                    success: true
+                    providerId: "openai-text-embedding-3-small"
+                    providerName: "OpenAI text-embedding-3-small"
+                    samples: 10
+                    avgLatency: 312
+                    minLatency: 289
+                    maxLatency: 445
+                    throughput: 3.21
+                    dimensions: 1536
+                    timestamp: "2025-11-03T18:30:00.000Z"
+        '400':
+          description: Invalid samples parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "samples must be between 1 and 100"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /embeddings/info:
+    get:
+      summary: Get system information
+      description: |
+        Returns detailed information about the current embedding setup:
+        - Storage mode (local/cloud)
+        - Active provider details
+        - Provider statistics (embeddings generated, tokens used, cost, etc.)
+        - Storage configuration
+      operationId: getSystemInfo
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved system information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  storageMode:
+                    type: string
+                    enum: [local, cloud]
+                    example: "local"
+                  activeProvider:
+                    type: string
+                    nullable: true
+                    example: "ollama-nomic-embed-text"
+                  providerInfo:
+                    $ref: '#/components/schemas/ProviderInfoWithStats'
+                  storageInfo:
+                    type: object
+                    description: Storage adapter configuration
+                  timestamp:
+                    type: string
+                    format: date-time
+              examples:
+                withProvider:
+                  value:
+                    success: true
+                    storageMode: "local"
+                    activeProvider: "ollama-nomic-embed-text"
+                    providerInfo:
+                      id: "ollama-nomic-embed-text"
+                      name: "Nomic Embed Text (Ollama)"
+                      type: "local"
+                      dimensions: 768
+                      requiresApiKey: false
+                      estimatedCost: "$0 (local)"
+                      stats:
+                        totalEmbeddings: 1247
+                        totalTokens: 45892
+                        totalCost: 0
+                        averageLatency: 45
+                        errorCount: 2
+                    storageInfo:
+                      mode: "local"
+                      documentsPath: "./data/documents"
+                      embeddingsPath: "./data/embeddings"
+                    timestamp: "2025-11-03T18:30:00.000Z"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+
+  schemas:
+    ProviderConfig:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "ollama-nomic-embed-text"
+        name:
+          type: string
+          example: "Nomic Embed Text (Ollama)"
+        type:
+          type: string
+          enum: [local, api]
+          example: "local"
+        available:
+          type: boolean
+          example: true
+        dimensions:
+          type: integer
+          example: 768
+        requiresApiKey:
+          type: boolean
+          example: false
+        estimatedCost:
+          type: string
+          example: "$0 (local)"
+
+    DetectedModel:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "ollama-nomic-embed-text"
+        name:
+          type: string
+          example: "Nomic Embed Text (Ollama)"
+        type:
+          type: string
+          enum: [local, api]
+        available:
+          type: boolean
+        requiresApiKey:
+          type: boolean
+        estimatedCost:
+          type: string
+
+    HealthCheckSuccess:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        providerId:
+          type: string
+        healthy:
+          type: boolean
+          example: true
+        latency:
+          type: integer
+          description: Latency in milliseconds
+        dimensions:
+          type: integer
+        providerName:
+          type: string
+        requiresApiKey:
+          type: boolean
+        estimatedCost:
+          type: string
+
+    HealthCheckFailure:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        providerId:
+          type: string
+        healthy:
+          type: boolean
+          example: false
+        error:
+          type: string
+
+    ProviderInfoWithStats:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [local, api]
+        dimensions:
+          type: integer
+        requiresApiKey:
+          type: boolean
+        estimatedCost:
+          type: string
+        stats:
+          type: object
+          properties:
+            totalEmbeddings:
+              type: integer
+              description: Total number of embeddings generated
+            totalTokens:
+              type: integer
+              description: Total tokens processed
+            totalCost:
+              type: number
+              format: float
+              description: Total cost in USD
+            averageLatency:
+              type: integer
+              description: Average latency in milliseconds
+            errorCount:
+              type: integer
+              description: Number of errors encountered
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+        error:
+          type: string
+          description: Detailed error message
+
+  responses:
+    UnauthorizedError:
+      description: Authentication required or token invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: "Unauthorized"
+            error: "Invalid or missing authentication token"
+
+    BadRequestError:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: "Internal server error"
+            error: "An unexpected error occurred"

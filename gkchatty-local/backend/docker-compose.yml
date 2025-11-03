@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # GKChatty Backend API
+  gkchatty-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gkchatty-backend
+    restart: unless-stopped
+    ports:
+      - "6001:6001"
+    environment:
+      - NODE_ENV=production
+      - PORT=6001
+      - GKCHATTY_STORAGE=local
+      - EMBEDDING_MODEL=nomic-embed-text-v1.5
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Point to Ollama container
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      # Persist data
+      - ./data:/app/data
+      # Persist logs
+      - ./logs:/app/logs
+      # Custom .env file (optional)
+      - ./.env:/app/.env:ro
+    networks:
+      - gkchatty-network
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Ollama Server (for local embeddings)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: gkchatty-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      # Persist models
+      - ollama-data:/root/.ollama
+    networks:
+      - gkchatty-network
+    # GPU support (uncomment if you have NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  gkchatty-network:
+    driver: bridge
+
+volumes:
+  # Persistent storage for Ollama models
+  ollama-data:
+    driver: local
