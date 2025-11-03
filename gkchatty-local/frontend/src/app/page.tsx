@@ -138,16 +138,6 @@ export default function Home() {
   const [newChatNotes, setNewChatNotes] = useState<string>('');
   // --- END ADDITION ---
 
-  // --- ADDED: State for User Documents ---
-  const [userDocuments, setUserDocuments] = useState<UserDocumentDisplay[]>([]);
-  const [isLoadingUserDocs, setIsLoadingUserDocs] = useState(false);
-  const [userDocsError, setUserDocsError] = useState<string | null>(null);
-  // --- END ADDITION ---
-
-  // --- ADDED: State to track if initial user document fetch has been attempted ---
-  const [hasAttemptedUserDocsFetch, setHasAttemptedUserDocsFetch] = useState(false);
-  // --- END ADDITION ---
-
   // --- ADDED: State to track selected tab in right sidebar ---
   const [selectedTab, setSelectedTab] = useState<string>('notes');
   // --- END ADDITION ---
@@ -310,62 +300,6 @@ export default function Home() {
   }, [messages]);
 
   // Note: Search mode persistence is now handled by SearchModeContext
-
-  // --- ADDED: Function to fetch user documents ---
-  const fetchUserDocuments = useCallback(async () => {
-    if (!user) return; // Need user authentication
-
-    console.log('[fetchUserDocuments] Fetching user documents...');
-    setIsLoadingUserDocs(true);
-    setUserDocsError(null);
-    // No need to setHasAttemptedUserDocsFetch(false) here, only on explicit refresh action
-
-    const apiUrl = `${API_BASE_URL}/api/documents`;
-
-    try {
-      const response = await fetch(apiUrl, { credentials: 'include' });
-
-      if (!response.ok) {
-        let errorMsg = `API Error: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMsg = errorData.message || errorMsg;
-        } catch {
-          /* Ignore parsing error */
-        }
-        if (response.status === 401) await logout(); // Logout on auth error
-        throw new Error(errorMsg);
-      }
-
-      const data = await response.json();
-      if (data.success && Array.isArray(data.documents)) {
-        console.log(`[fetchUserDocuments] Fetched ${data.documents.length} user documents.`);
-        setUserDocuments(data.documents);
-      } else {
-        console.error('[fetchUserDocuments] Invalid data format:', data);
-        throw new Error('Failed to load documents (Invalid format).');
-      }
-    } catch (err: any) {
-      console.error('[fetchUserDocuments] Fetch Error:', err);
-      setUserDocsError(err.message || 'An unknown error occurred.');
-      setUserDocuments([]); // Clear documents on error
-      // Optionally show toast
-      toast({ title: 'Error Loading My Docs', description: err.message, variant: 'destructive' });
-    } finally {
-      setIsLoadingUserDocs(false);
-      setHasAttemptedUserDocsFetch(true); // Mark that an attempt has been made
-    }
-  }, [user, logout, toast]); // Removed setIsLoadingUserDocs, setUserDocsError, setUserDocuments from deps as they are setters
-  // --- END ADDITION ---
-
-  // --- ADDED: Effect to fetch user documents when user is available ---
-  useEffect(() => {
-    // Fetch user docs when user is available and hasn't been attempted yet
-    if (user && !hasAttemptedUserDocsFetch && !isLoadingUserDocs) {
-      fetchUserDocuments();
-    }
-  }, [user, hasAttemptedUserDocsFetch, isLoadingUserDocs, fetchUserDocuments]);
-  // --- END ADDITION ---
 
   // --- Handlers ---
 
@@ -979,17 +913,6 @@ export default function Home() {
       isUserDocsSelected ? 'user' : 'system'
     );
   }, [isUserDocsSelected]);
-
-  // --- ADDED: Adapter function for DocumentSidebar click ---
-  const handleUserDocumentSelect = (
-    docId: string,
-    sourceType: 'system',
-    originalFileName: string
-  ) => {
-    // Override sourceType to 'user' for documents from My Docs
-    handleDocumentSelect(docId, originalFileName, 'user');
-  };
-  // --- END ADDITION ---
 
   // --- ADDED: Handler to update chat name via API ---
   const handleUpdateChatName = async (chatId: string, newName: string) => {
