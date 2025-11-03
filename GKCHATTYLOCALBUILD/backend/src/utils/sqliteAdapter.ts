@@ -339,11 +339,27 @@ export class UserModel {
 
   /**
    * Find user by ID
+   * Returns a chainable query object to support Mongoose-style .select()
    */
-  static findById(id: string | number): any | null {
+  static findById(id: string | number): any {
     const db = getDatabase();
-    const row = db.prepare('SELECT * FROM users WHERE _id = ? OR id = ?').get(id, id);
-    return row ? this.deserialize(row) : null;
+
+    // Return a query object with select() method for Mongoose compatibility
+    return {
+      select: (fields: string) => {
+        const fieldsArray = fields.split(' ').filter(f => f.trim());
+        const selectFields = fieldsArray.length > 0 ? fieldsArray.join(', ') : '*';
+
+        const row = db.prepare(`SELECT ${selectFields} FROM users WHERE _id = ? OR id = ?`).get(id, id);
+        return row ? UserModel.deserialize(row) : null;
+      },
+      // If select() is not called, return the full object
+      then: (resolve: any, reject: any) => {
+        const row = db.prepare('SELECT * FROM users WHERE _id = ? OR id = ?').get(id, id);
+        const result = row ? UserModel.deserialize(row) : null;
+        return resolve(result);
+      }
+    };
   }
 
   /**
