@@ -292,8 +292,13 @@ export function normalizeError(error: any, providerId?: string): EmbeddingError 
     return error;
   }
 
+  // Timeout errors (check before network errors)
+  if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+    return new TimeoutError(providerId || 'unknown', 30000, { originalError: error.message });
+  }
+
   // Network errors
-  if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') {
+  if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
     return new NetworkError(error.message, { originalError: error.code });
   }
 
@@ -328,11 +333,6 @@ export function normalizeError(error: any, providerId?: string): EmbeddingError 
         statusText: error.response.statusText,
       });
     }
-  }
-
-  // Timeout errors
-  if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
-    return new TimeoutError(providerId || 'unknown', 30000, { originalError: error.message });
   }
 
   // Generic error
