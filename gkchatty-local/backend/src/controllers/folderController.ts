@@ -138,7 +138,7 @@ const buildTree = (folders: IFolder[], documents: Record<string, unknown>[]): Fo
 export const getFolderTree = async (req: Request, res: Response) => {
   try {
     const userId = req.user?._id;
-    const { knowledgeBase } = req.query;
+    const { knowledgeBase, sourceType } = req.query;
 
     if (!userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -155,9 +155,16 @@ export const getFolderTree = async (req: Request, res: Response) => {
       userId: userId?.toString(),
       isAdmin,
       knowledgeBase,
+      sourceType,
     });
 
-    if (knowledgeBase) {
+    // If sourceType=user is explicitly requested, force user documents view
+    if (sourceType === 'user') {
+      log.info('getFolderTree - Forcing user documents view (sourceType=user)');
+      folderQuery.ownerId = userId;
+      docQuery.userId = userId;
+      docQuery.sourceType = 'user';
+    } else if (knowledgeBase) {
       folderQuery.knowledgeBaseId = knowledgeBase;
       docQuery.tenantKbId = knowledgeBase;
       docQuery.sourceType = 'tenant';
@@ -184,15 +191,23 @@ export const getFolderTree = async (req: Request, res: Response) => {
     // Fetch folders and documents
     let documents: Record<string, unknown>[] = [];
 
-    if (isAdmin && !knowledgeBase) {
+    // If sourceType=user is explicitly requested, ALWAYS use UserDocument collection
+    if (sourceType === 'user') {
+      log.info('getFolderTree - Fetching from UserDocument collection (sourceType=user)');
+      documents = (await UserDocument.find(docQuery).sort({
+        originalFileName: 1,
+      })) as unknown as Record<string, unknown>[];
+    } else if (isAdmin && !knowledgeBase) {
       // For admin viewing system KB, ONLY fetch from SystemKbDocument collection
       // User documents should NOT appear in the admin System KB dashboard
+      log.info('getFolderTree - Fetching from SystemKbDocument collection (admin, no KB)');
       documents = (await SystemKbDocument.find({}).sort({ filename: 1 })) as unknown as Record<
         string,
         unknown
       >[];
     } else {
       // For other cases, use regular UserDocument query
+      log.info('getFolderTree - Fetching from UserDocument collection (default)');
       documents = (await UserDocument.find(docQuery).sort({
         originalFileName: 1,
       })) as unknown as Record<string, unknown>[];
