@@ -33,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import FileTreeView from '@/components/layout/FileTreeView';
 import ChatNotesPanel from '@/components/layout/ChatNotesPanel';
 import FileTreeManager from '@/components/admin/FileTreeManager';
+import { MobileNav } from '@/components/layout/MobileNav';
 
 // Define SourceDocument type
 interface SourceDocument {
@@ -975,23 +976,25 @@ export default function Home() {
   return (
     <ProtectedRoute>
       <div className="flex h-screen bg-background text-foreground p-4 relative">
-        {/* 1. Left Sidebar */}
-        <Sidebar
-          user={user}
-          activeView={activeView}
-          setActiveView={setActiveView}
-          chats={chats}
-          selectedChatId={selectedChatIdFromSidebar}
-          isLoadingChats={isLoadingChats}
-          handleNewChat={handleNewChat}
-          handleSelectChat={handleSelectChat}
-          handleConfirmDelete={handleConfirmDelete}
-          onDeleteAllChats={() => setIsAlertAllOpen(true)}
-          isAlertAllOpen={isAlertAllOpen}
-          setIsAlertAllOpen={setIsAlertAllOpen}
-          handleLogout={logout}
-          onUpdateChatName={handleUpdateChatName}
-        />
+        {/* 1. Left Sidebar - Hidden on mobile */}
+        <div className="hidden md:block">
+          <Sidebar
+            user={user}
+            activeView={activeView}
+            setActiveView={setActiveView}
+            chats={chats}
+            selectedChatId={selectedChatIdFromSidebar}
+            isLoadingChats={isLoadingChats}
+            handleNewChat={handleNewChat}
+            handleSelectChat={handleSelectChat}
+            handleConfirmDelete={handleConfirmDelete}
+            onDeleteAllChats={() => setIsAlertAllOpen(true)}
+            isAlertAllOpen={isAlertAllOpen}
+            setIsAlertAllOpen={setIsAlertAllOpen}
+            handleLogout={logout}
+            onUpdateChatName={handleUpdateChatName}
+          />
+        </div>
 
         {/* 2. Center Main Content Area */}
         <div
@@ -999,12 +1002,29 @@ export default function Home() {
         >
           {/* Header */}
           <header className="p-4 bg-background flex items-center justify-between flex-shrink-0">
-            <div>
+            <div className="flex items-center gap-3">
+              {/* Mobile Navigation - Hamburger Menu */}
+              <MobileNav
+                user={user}
+                activeView={activeView}
+                setActiveView={setActiveView}
+                chats={chats}
+                selectedChatId={selectedChatIdFromSidebar}
+                isLoadingChats={isLoadingChats}
+                handleNewChat={handleNewChat}
+                handleSelectChat={handleSelectChat}
+                handleConfirmDelete={handleConfirmDelete}
+                onDeleteAllChats={() => setIsAlertAllOpen(true)}
+                isAlertAllOpen={isAlertAllOpen}
+                setIsAlertAllOpen={setIsAlertAllOpen}
+                handleLogout={logout}
+                onUpdateChatName={handleUpdateChatName}
+              />
               <h2 className="text-lg font-semibold">
                 <span className="text-yellow-500">GK</span>CHATTY
               </h2>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
               {/* Unified Search Toggle */}
               <UnifiedSearchToggle />
               {/* Theme Toggle Switch */}
