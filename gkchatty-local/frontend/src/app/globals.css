@@ -127,6 +127,76 @@ html.dark body {
    MOBILE OPTIMIZATION STYLES
    ======================================== */
 
+/* Scale down UI elements by 10% on mobile/tablet to fit better */
+@media (max-width: 1024px) {
+  * {
+    --mobile-scale: 0.9;
+  }
+
+  /* Scale padding, margins, and gaps */
+  button, a, div, section, aside, nav, header, footer {
+    padding: calc(var(--original-padding, 1rem) * var(--mobile-scale, 1));
+  }
+
+  /* Scale gaps in flex/grid layouts */
+  .flex, .grid, [class*="flex-"], [class*="grid-"] {
+    gap: calc(var(--original-gap, 0.5rem) * var(--mobile-scale, 1));
+  }
+}
+
+/* Compact spacing for mobile devices */
+@media (max-width: 768px) {
+  /* Reduce padding/margins by 10% */
+  .p-1 { padding: 0.225rem !important; }
+  .p-2 { padding: 0.45rem !important; }
+  .p-3 { padding: 0.675rem !important; }
+  .p-4 { padding: 0.9rem !important; }
+  .p-5 { padding: 1.125rem !important; }
+  .p-6 { padding: 1.35rem !important; }
+  .p-8 { padding: 1.8rem !important; }
+
+  .px-1 { padding-left: 0.225rem !important; padding-right: 0.225rem !important; }
+  .px-2 { padding-left: 0.45rem !important; padding-right: 0.45rem !important; }
+  .px-3 { padding-left: 0.675rem !important; padding-right: 0.675rem !important; }
+  .px-4 { padding-left: 0.9rem !important; padding-right: 0.9rem !important; }
+  .px-6 { padding-left: 1.35rem !important; padding-right: 1.35rem !important; }
+
+  .py-1 { padding-top: 0.225rem !important; padding-bottom: 0.225rem !important; }
+  .py-2 { padding-top: 0.45rem !important; padding-bottom: 0.45rem !important; }
+  .py-3 { padding-top: 0.675rem !important; padding-bottom: 0.675rem !important; }
+  .py-4 { padding-top: 0.9rem !important; padding-bottom: 0.9rem !important; }
+
+  .m-1 { margin: 0.225rem !important; }
+  .m-2 { margin: 0.45rem !important; }
+  .m-3 { margin: 0.675rem !important; }
+  .m-4 { margin: 0.9rem !important; }
+
+  .gap-1 { gap: 0.225rem !important; }
+  .gap-2 { gap: 0.45rem !important; }
+  .gap-3 { gap: 0.675rem !important; }
+  .gap-4 { gap: 0.9rem !important; }
+
+  /* Reduce icon sizes */
+  svg, .icon {
+    width: calc(var(--icon-size, 1.5rem) * 0.9);
+    height: calc(var(--icon-size, 1.5rem) * 0.9);
+  }
+
+  /* Reduce border radius slightly */
+  .rounded { border-radius: 0.225rem !important; }
+  .rounded-md { border-radius: 0.27rem !important; }
+  .rounded-lg { border-radius: 0.36rem !important; }
+}
+
+/* Tablet (iPad) specific adjustments */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .p-4 { padding: 0.9rem !important; }
+  .p-6 { padding: 1.35rem !important; }
+  .px-4 { padding-left: 0.9rem !important; padding-right: 0.9rem !important; }
+  .py-4 { padding-top: 0.9rem !important; padding-bottom: 0.9rem !important; }
+  .gap-4 { gap: 0.9rem !important; }
+}
+
 /* Safe area padding for iOS notch/home indicator */
 @layer utilities {
   .pb-safe {
