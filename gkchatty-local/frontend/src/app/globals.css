@@ -77,13 +77,28 @@
   * {
     @apply border-border;
   }
-  
+
   body {
     @apply bg-background text-foreground;
     height: 100vh;
     overflow: hidden;
   }
-  
+
+  /* Allow scrolling on mobile for login/auth pages */
+  @media (max-width: 768px) {
+    body {
+      overflow: auto;
+      min-height: 100vh;
+      height: auto;
+    }
+
+    #__next {
+      min-height: 100vh;
+      height: auto;
+      overflow: visible;
+    }
+  }
+
   #__next {
     height: 100vh;
     overflow: hidden;
