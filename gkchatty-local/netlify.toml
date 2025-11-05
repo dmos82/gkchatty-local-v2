@@ -1,6 +1,6 @@
 [build]
   base = "frontend"
-  command = "pnpm install && pnpm build"
+  command = "cd .. && pnpm install --filter @gkchatty/web && cd frontend && pnpm build"
   publish = ".next"
 
 [build.environment]
