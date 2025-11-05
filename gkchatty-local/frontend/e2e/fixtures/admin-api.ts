@@ -31,7 +31,7 @@ async function getAdminToken(): Promise<string> {
 
   if (!response.ok) {
     const error = await response.text();
-    logger.error({ status: response.status, error }, 'Admin login failed');
+    logger.error(`Admin login failed (status=${response.status}): ${error}`);
     throw new Error(`Admin login failed: ${response.statusText}`);
   }
 
@@ -87,7 +87,7 @@ export async function createTestUser(options: CreateUserOptions): Promise<any> {
 
   if (!response.ok) {
     const error = await response.text();
-    logger.error({ status: response.status, error, username }, 'User creation failed');
+    logger.error(`User creation failed (status=${response.status}, username=${username}): ${error}`);
     throw new Error(`Failed to create user ${username}: ${response.statusText} - ${error}`);
   }
 
@@ -119,7 +119,7 @@ export async function deleteTestUser(userId: string): Promise<void> {
 
   if (!response.ok) {
     const error = await response.text();
-    logger.warn({ status: response.status, error, userId }, 'User deletion failed (may already be deleted)');
+    logger.warn(`User deletion failed (status=${response.status}, userId=${userId}): ${error} (may already be deleted)`);
     // Don't throw - user may already be deleted
     return;
   }
