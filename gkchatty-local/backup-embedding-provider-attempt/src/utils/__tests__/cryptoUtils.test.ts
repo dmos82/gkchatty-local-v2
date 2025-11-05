@@ -323,7 +323,7 @@ describe('cryptoUtils', () => {
 
     it('should maintain data integrity across multiple encryptions and decryptions', () => {
       const data = {
-        apiKey: 'sk-proj-abc123',
+        apiKey: 'test-api-key-abc123',
         password: 'SuperSecret123!',
         metadata: { timestamp: Date.now(), user: 'admin' },
       };
@@ -346,7 +346,7 @@ describe('cryptoUtils', () => {
 
     it('should successfully encrypt and decrypt sensitive data patterns', () => {
       const sensitiveData = [
-        'sk-proj-1234567890abcdefghijklmnopqrstuvwxyz', // OpenAI API key format
+        'test-openai-key-mock-value', // OpenAI API key format
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0', // JWT format
         'postgres://user:password@localhost:5432/database', // Connection string
         'mongodb+srv://username:password@cluster.mongodb.net/database', // MongoDB connection
