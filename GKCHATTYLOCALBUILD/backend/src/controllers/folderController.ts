@@ -1,8 +1,11 @@
 import { Request, Response } from 'express';
-import { Folder, IFolder } from '../models/FolderModel';
+import { FolderModel as Folder } from '../utils/modelFactory';
 import { UserDocumentModel as UserDocument } from '../utils/modelFactory';
 import { SystemKbDocumentModel as SystemKbDocument } from '../utils/modelFactory';
 import { getLogger } from '../utils/logger';
+
+// Import IFolder interface for type checking
+import { IFolder } from '../models/FolderModel';
 
 const log = getLogger('folderController');
 
@@ -238,10 +241,17 @@ export const getFolderTree = async (req: Request, res: Response) => {
       tree,
     });
   } catch (error: unknown) {
-    log.error('Error fetching folder tree:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    log.error('[getFolderTree] DETAILED ERROR:', {
+      errorMessage,
+      errorStack,
+      errorType: error instanceof Error ? error.constructor.name : typeof error,
+    });
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch folder tree',
+      error: errorMessage,
     });
   }
 };
@@ -276,15 +286,13 @@ export const createFolder = async (req: Request, res: Response) => {
     }
 
     // Create folder
-    const folder = new Folder({
+    const folder = await Folder.create({
       name,
       parentId: parentId || null,
       knowledgeBaseId,
       ownerId: userId,
-      path: '/', // Will be updated by pre-save hook
+      path: '/', // Will be calculated by FolderModel.create
     });
-
-    await folder.save();
 
     return res.status(201).json({
       success: true,

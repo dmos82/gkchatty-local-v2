@@ -1,0 +1,8 @@
+This document belongs exclusively to Tenant B. It contains TENANT_B_SECRET_DATA that should never be visible to Tenant A.
+
+Tenant B Confidential Information:
+- Company Name: TenantB Inc
+- Secret Code: BRAVO-2025-002
+- Access Level: Restricted to Tenant B users only
+
+This data must remain isolated within Tenant B's namespace and should never leak to other tenants.

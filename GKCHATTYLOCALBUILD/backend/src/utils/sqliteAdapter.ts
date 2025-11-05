@@ -310,25 +310,49 @@ function createTables(database: Database.Database) {
  */
 export class UserModel {
   /**
-   * Find user by username
+   * Find user by username, email, or _id
+   * Supports both simple queries and $or operator
    */
-  static findOne(query: { username?: string; email?: string; _id?: string }): any | null {
+  static findOne(query: { username?: string; email?: string; _id?: string; $or?: any[] }): any | null {
     const db = getDatabase();
 
     let sql = 'SELECT * FROM users WHERE 1=1';
     const params: any[] = [];
 
-    if (query.username) {
-      sql += ' AND username = ?';
-      params.push(query.username);
-    }
-    if (query.email) {
-      sql += ' AND email = ?';
-      params.push(query.email);
-    }
-    if (query._id) {
-      sql += ' AND _id = ?';
-      params.push(query._id);
+    // Handle $or operator for Mongoose compatibility
+    if (query.$or && Array.isArray(query.$or)) {
+      const orConditions: string[] = [];
+      for (const condition of query.$or) {
+        if (condition.username) {
+          orConditions.push('username = ?');
+          params.push(condition.username);
+        }
+        if (condition.email) {
+          orConditions.push('email = ?');
+          params.push(condition.email);
+        }
+        if (condition._id) {
+          orConditions.push('_id = ?');
+          params.push(condition._id);
+        }
+      }
+      if (orConditions.length > 0) {
+        sql += ' AND (' + orConditions.join(' OR ') + ')';
+      }
+    } else {
+      // Handle standard AND queries
+      if (query.username) {
+        sql += ' AND username = ?';
+        params.push(query.username);
+      }
+      if (query.email) {
+        sql += ' AND email = ?';
+        params.push(query.email);
+      }
+      if (query._id) {
+        sql += ' AND _id = ?';
+        params.push(query._id);
+      }
     }
 
     sql += ' LIMIT 1';
@@ -348,9 +372,18 @@ export class UserModel {
     return {
       select: (fields: string) => {
         const fieldsArray = fields.split(' ').filter(f => f.trim());
-        const selectFields = fieldsArray.length > 0 ? fieldsArray.join(', ') : '*';
 
-        const row = db.prepare(`SELECT ${selectFields} FROM users WHERE _id = ? OR id = ?`).get(id, id);
+        // Always include _id or id for Mongoose compatibility
+        const fieldsSet = new Set(fieldsArray);
+        if (!fieldsSet.has('_id') && !fieldsSet.has('id')) {
+          fieldsSet.add('_id');
+          fieldsSet.add('id');
+        }
+
+        const selectFields = Array.from(fieldsSet).join(', ');
+        const sql = `SELECT ${selectFields} FROM users WHERE _id = ? OR id = ?`;
+        const row = db.prepare(sql).get(id, id);
+
         return row ? UserModel.deserialize(row) : null;
       },
       // If select() is not called, return the full object
@@ -364,8 +397,9 @@ export class UserModel {
 
   /**
    * Find all users matching query
+   * Returns a chainable query object with .select() method for Mongoose compatibility
    */
-  static find(query: any = {}): any[] {
+  static find(query: any = {}): any {
     const db = getDatabase();
 
     let sql = 'SELECT * FROM users';
@@ -377,8 +411,87 @@ export class UserModel {
       params.push(...Object.values(query));
     }
 
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.deserialize(row));
+    // Store query state
+    let selectedFields: string | null = null;
+    let sortField: string | null = null;
+    let sortDirection: number = 1;
+
+    // Return chainable query object
+    const queryObject: any = {
+      select: (fields: string) => {
+        selectedFields = fields;
+        return queryObject; // Return self for chaining
+      },
+      sort: (sortOptions: any) => {
+        // Handle Mongoose-style sort({ field: 1 }) or sort({ field: -1 })
+        if (typeof sortOptions === 'object') {
+          const [field, direction] = Object.entries(sortOptions)[0];
+          sortField = field;
+          sortDirection = Number(direction) || 1;
+        }
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          // Build final SQL
+          let finalSql = sql;
+
+          if (selectedFields) {
+            const fieldsArray = selectedFields.split(' ').filter(f => f.trim());
+
+            // Check if this is exclusion (fields starting with '-') or inclusion
+            const isExclusion = fieldsArray.some(f => f.startsWith('-'));
+
+            if (isExclusion) {
+              // Exclusion mode: get all fields except excluded ones
+              const excludedFields = fieldsArray.map(f => f.replace('-', ''));
+              // For SQLite, we need to manually exclude fields by selecting only the non-excluded ones
+              // This is handled in deserialization by removing excluded fields from result
+              // For now, keep SELECT * and filter in JavaScript
+            } else {
+              // Inclusion mode: select only specified fields
+              const fieldsSet = new Set(fieldsArray);
+              // Always include _id or id for proper deserialization
+              if (!fieldsSet.has('_id') && !fieldsSet.has('id')) {
+                fieldsSet.add('_id');
+                fieldsSet.add('id');
+              }
+              const selectFields = Array.from(fieldsSet).join(', ');
+              finalSql = finalSql.replace('SELECT *', `SELECT ${selectFields}`);
+            }
+          }
+
+          if (sortField) {
+            finalSql += ` ORDER BY ${sortField} ${sortDirection === 1 ? 'ASC' : 'DESC'}`;
+          }
+
+          const rows = db.prepare(finalSql).all(...params);
+          let results = rows.map(row => UserModel.deserialize(row));
+
+          // Handle field exclusion if needed
+          if (selectedFields) {
+            const fieldsArray = selectedFields.split(' ').filter(f => f.trim());
+            const isExclusion = fieldsArray.some(f => f.startsWith('-'));
+
+            if (isExclusion) {
+              const excludedFields = fieldsArray.map(f => f.replace('-', ''));
+              results = results.map(obj => {
+                const filtered = { ...obj };
+                excludedFields.forEach(field => delete filtered[field]);
+                return filtered;
+              });
+            }
+          }
+
+          return resolve(results);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   /**
@@ -643,27 +756,105 @@ export class DocumentModel {
 export class UserDocumentModel {
   /**
    * Find documents by query
+   * Returns a chainable query object with .sort() method for Mongoose compatibility
+   * Supports $or operator for complex queries
    */
-  static find(query: any = {}): any[] {
+  static find(query: any = {}): any {
     const db = getDatabase();
 
     let sql = 'SELECT * FROM userdocuments';
     const params: any[] = [];
 
+    // Build WHERE clause
     if (Object.keys(query).length > 0) {
-      const conditions = Object.keys(query).map(key => `${key} = ?`);
-      sql += ' WHERE ' + conditions.join(' AND ');
-      params.push(...Object.values(query));
+      const conditions = [];
+
+      // Handle $or operator
+      if (query.$or && Array.isArray(query.$or)) {
+        const orConditions = query.$or.map((orQuery: any) => {
+          const orParts = [];
+          for (const [key, value] of Object.entries(orQuery)) {
+            orParts.push(`${key} = ?`);
+            params.push(value);
+          }
+          return `(${orParts.join(' AND ')})`;
+        });
+        conditions.push(`(${orConditions.join(' OR ')})`);
+      } else {
+        // Simple equality queries
+        for (const [key, value] of Object.entries(query)) {
+          conditions.push(`${key} = ?`);
+          params.push(value);
+        }
+      }
+
+      if (conditions.length > 0) {
+        sql += ' WHERE ' + conditions.join(' AND ');
+      }
     }
 
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.deserialize(row));
+    // Store query state
+    let sortField: string | null = null;
+    let sortDirection: number = 1;
+    let selectFields: string | null = null;
+
+    // Return chainable query object
+    const queryObject: any = {
+      select: (fields: string) => {
+        selectFields = fields;
+        return queryObject; // Return self for chaining
+      },
+      sort: (sortOptions: any) => {
+        // Handle Mongoose-style sort({ field: 1 }) or sort({ field: -1 })
+        if (typeof sortOptions === 'object') {
+          const [field, direction] = Object.entries(sortOptions)[0];
+          sortField = field;
+          sortDirection = Number(direction) || 1;
+        }
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          // Build final SQL
+          let finalSql = sql;
+
+          if (sortField) {
+            finalSql += ` ORDER BY ${sortField} ${sortDirection === 1 ? 'ASC' : 'DESC'}`;
+          }
+
+          const rows = db.prepare(finalSql).all(...params);
+          let results = rows.map(row => UserDocumentModel.deserialize(row));
+
+          // Apply select if specified
+          if (selectFields) {
+            const fields = selectFields.split(' ').filter(f => f.trim());
+            results = results.map(doc => {
+              const selected: any = {};
+              fields.forEach(field => {
+                if (doc[field] !== undefined) {
+                  selected[field] = doc[field];
+                }
+              });
+              return selected;
+            });
+          }
+
+          return resolve(results);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   /**
    * Find one document by query
+   * Returns a chainable query object with .select() method for Mongoose compatibility
    */
-  static findOne(query: any): any | null {
+  static findOne(query: any): any {
     const db = getDatabase();
 
     let sql = 'SELECT * FROM userdocuments WHERE 1=1';
@@ -692,18 +883,104 @@ export class UserDocumentModel {
 
     sql += ' LIMIT 1';
 
-    const row = db.prepare(sql).get(...params);
-    return row ? this.deserialize(row) : null;
+    // Store select fields
+    let selectFields: string | null = null;
+
+    // Return chainable query object
+    const queryObject: any = {
+      select: (fields: string) => {
+        selectFields = fields;
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          const row = db.prepare(sql).get(...params);
+
+          if (!row) {
+            return resolve(null);
+          }
+
+          let result = UserDocumentModel.deserialize(row);
+
+          // Apply select if specified
+          if (selectFields) {
+            const fields = selectFields.split(' ').filter(f => f.trim());
+            const selected: any = {};
+            fields.forEach(field => {
+              if (result[field] !== undefined) {
+                selected[field] = result[field];
+              }
+            });
+            result = selected;
+          }
+
+          return resolve(result);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   /**
    * Find document by ID
+   * Returns a chainable query object with .select() method for Mongoose compatibility
    */
-  static findById(id: string | number): any | null {
+  static findById(id: string | number): any {
     const db = getDatabase();
     const idStr = id.toString ? id.toString() : String(id);
-    const row = db.prepare('SELECT * FROM userdocuments WHERE _id = ? OR id = ?').get(idStr, idStr);
-    return row ? this.deserialize(row) : null;
+
+    // Store select fields
+    let selectFields: string | null = null;
+
+    // Return chainable query object
+    const queryObject: any = {
+      select: (fields: string) => {
+        selectFields = fields;
+        return queryObject; // Return self for chaining
+      },
+      populate: (path: string) => {
+        // No-op for SQLite (no relationships)
+        return queryObject;
+      },
+      lean: () => {
+        // No-op (already plain objects)
+        return queryObject;
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          const row = db.prepare('SELECT * FROM userdocuments WHERE _id = ? OR id = ?').get(idStr, idStr);
+
+          if (!row) {
+            return resolve(null);
+          }
+
+          let result = UserDocumentModel.deserialize(row);
+
+          // Apply select if specified
+          if (selectFields) {
+            const fields = selectFields.split(' ').filter(f => f.trim());
+            const selected: any = {};
+            fields.forEach(field => {
+              if (result[field] !== undefined) {
+                selected[field] = result[field];
+              }
+            });
+            result = selected;
+          }
+
+          return resolve(result);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   /**
@@ -878,6 +1155,42 @@ export class UserDocumentModel {
   /**
    * Deserialize database row
    */
+  /**
+   * Count documents matching query
+   */
+  static countDocuments(query: any = {}): number {
+    const db = getDatabase();
+
+    let sql = 'SELECT COUNT(*) as count FROM userdocuments';
+    const params: any[] = [];
+
+    if (Object.keys(query).length > 0) {
+      // Handle MongoDB-style date range queries
+      if (query.createdAt && typeof query.createdAt === 'object') {
+        const conditions = [];
+        if (query.createdAt.$gte) {
+          conditions.push('uploadTimestamp >= ?');
+          params.push(new Date(query.createdAt.$gte).toISOString());
+        }
+        if (query.createdAt.$lte) {
+          conditions.push('uploadTimestamp <= ?');
+          params.push(new Date(query.createdAt.$lte).toISOString());
+        }
+        if (conditions.length > 0) {
+          sql += ' WHERE ' + conditions.join(' AND ');
+        }
+      } else {
+        // Simple equality queries
+        const conditions = Object.keys(query).map(key => `${key} = ?`);
+        sql += ' WHERE ' + conditions.join(' AND ');
+        params.push(...Object.values(query));
+      }
+    }
+
+    const result = db.prepare(sql).get(...params) as { count: number };
+    return result.count;
+  }
+
   private static deserialize(row: any): any | null {
     if (!row) return null;
 
@@ -910,8 +1223,9 @@ export class UserDocumentModel {
 export class SystemKbDocumentModel {
   /**
    * Find documents by query
+   * Returns a chainable query object with .sort() method for Mongoose compatibility
    */
-  static find(query: any = {}): any[] {
+  static find(query: any = {}): any {
     const db = getDatabase();
 
     let sql = 'SELECT * FROM systemkbdocuments';
@@ -923,8 +1237,76 @@ export class SystemKbDocumentModel {
       params.push(...Object.values(query));
     }
 
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.deserialize(row));
+    // Store query state
+    let sortField: string | null = null;
+    let sortDirection: number = 1;
+    let selectedFields: string | null = null;
+
+    // Return chainable query object
+    const queryObject: any = {
+      select: (fields: string) => {
+        selectedFields = fields;
+        return queryObject; // Return self for chaining
+      },
+      sort: (sortOptions: any) => {
+        // Handle Mongoose-style sort({ field: 1 }) or sort({ field: -1 })
+        if (typeof sortOptions === 'object') {
+          const [field, direction] = Object.entries(sortOptions)[0];
+          sortField = field;
+          sortDirection = Number(direction) || 1;
+        }
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          // Build final SQL
+          let finalSql = sql;
+
+          if (sortField) {
+            finalSql += ` ORDER BY ${sortField} ${sortDirection === 1 ? 'ASC' : 'DESC'}`;
+          }
+
+          const rows = db.prepare(finalSql).all(...params);
+          let results = rows.map(row => SystemKbDocumentModel.deserialize(row));
+
+          // Handle field selection if specified
+          if (selectedFields) {
+            const fieldsArray = selectedFields.split(' ').filter(f => f.trim());
+            const isExclusion = fieldsArray.some(f => f.startsWith('-'));
+
+            if (isExclusion) {
+              const excludedFields = fieldsArray.map(f => f.replace('-', ''));
+              results = results.map(obj => {
+                const filtered = { ...obj };
+                excludedFields.forEach(field => delete filtered[field]);
+                return filtered;
+              });
+            } else {
+              // Inclusion mode - only keep specified fields
+              const fieldsSet = new Set(fieldsArray);
+              if (!fieldsSet.has('_id') && !fieldsSet.has('id')) {
+                fieldsSet.add('_id');
+                fieldsSet.add('id');
+              }
+              results = results.map(obj => {
+                const filtered: any = {};
+                fieldsSet.forEach(field => {
+                  if (field in obj) filtered[field] = obj[field];
+                });
+                return filtered;
+              });
+            }
+          }
+
+          return resolve(results);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   /**
@@ -957,12 +1339,60 @@ export class SystemKbDocumentModel {
 
   /**
    * Find document by ID
+   * Returns a chainable query object with .select() method for Mongoose compatibility
    */
-  static findById(id: string | number): any | null {
+  static findById(id: string | number): any {
     const db = getDatabase();
     const idStr = id.toString ? id.toString() : String(id);
-    const row = db.prepare('SELECT * FROM systemkbdocuments WHERE _id = ? OR id = ?').get(idStr, idStr);
-    return row ? this.deserialize(row) : null;
+
+    // Store select fields
+    let selectFields: string | null = null;
+
+    // Return chainable query object
+    const queryObject: any = {
+      select: (fields: string) => {
+        selectFields = fields;
+        return queryObject; // Return self for chaining
+      },
+      populate: (path: string) => {
+        // No-op for SQLite (no relationships)
+        return queryObject;
+      },
+      lean: () => {
+        // No-op (already plain objects)
+        return queryObject;
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          const row = db.prepare('SELECT * FROM systemkbdocuments WHERE _id = ? OR id = ?').get(idStr, idStr);
+
+          if (!row) {
+            return resolve(null);
+          }
+
+          let result = SystemKbDocumentModel.deserialize(row);
+
+          // Apply select if specified
+          if (selectFields) {
+            const fields = selectFields.split(' ').filter(f => f.trim());
+            const selected: any = {};
+            fields.forEach(field => {
+              if (result[field] !== undefined) {
+                selected[field] = result[field];
+              }
+            });
+            result = selected;
+          }
+
+          return resolve(result);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   /**
@@ -1055,6 +1485,42 @@ export class SystemKbDocumentModel {
   }
 
   /**
+   * Count documents matching query
+   */
+  static countDocuments(query: any = {}): number {
+    const db = getDatabase();
+
+    let sql = 'SELECT COUNT(*) as count FROM systemkbdocuments';
+    const params: any[] = [];
+
+    if (Object.keys(query).length > 0) {
+      // Handle MongoDB-style date range queries
+      if (query.createdAt && typeof query.createdAt === 'object') {
+        const conditions = [];
+        if (query.createdAt.$gte) {
+          conditions.push('createdAt >= ?');
+          params.push(new Date(query.createdAt.$gte).toISOString());
+        }
+        if (query.createdAt.$lte) {
+          conditions.push('createdAt <= ?');
+          params.push(new Date(query.createdAt.$lte).toISOString());
+        }
+        if (conditions.length > 0) {
+          sql += ' WHERE ' + conditions.join(' AND ');
+        }
+      } else {
+        // Simple equality queries
+        const conditions = Object.keys(query).map(key => `${key} = ?`);
+        sql += ' WHERE ' + conditions.join(' AND ');
+        params.push(...Object.values(query));
+      }
+    }
+
+    const result = db.prepare(sql).get(...params) as { count: number };
+    return result.count;
+  }
+
+  /**
    * Deserialize database row
    */
   private static deserialize(row: any): any | null {
@@ -1094,8 +1560,9 @@ export class ChatModel {
 
   /**
    * Find chats by query
+   * Returns a chainable query object with .select() and .sort() methods for Mongoose compatibility
    */
-  static find(query: any = {}): any[] {
+  static find(query: any = {}): any {
     const db = getDatabase();
     let sql = 'SELECT * FROM chats WHERE 1=1';
     const params: any[] = [];
@@ -1110,17 +1577,72 @@ export class ChatModel {
       params.push(query._id.toString ? query._id.toString() : query._id);
     }
 
-    // Default sort by updatedAt DESC
-    sql += ' ORDER BY updatedAt DESC';
+    // Store query state for chaining
+    let selectFields: string | null = null;
+    let sortField: string | null = null;
+    let sortDirection: number = -1; // Default DESC
 
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.deserialize(row));
+    // Return chainable query object
+    const queryObject: any = {
+      select: (fields: string) => {
+        selectFields = fields;
+        return queryObject; // Return self for chaining
+      },
+      sort: (sortOptions: any) => {
+        // Handle Mongoose-style sort({ field: 1 }) or sort({ field: -1 })
+        if (typeof sortOptions === 'object') {
+          const [field, direction] = Object.entries(sortOptions)[0];
+          sortField = field;
+          sortDirection = Number(direction) || 1;
+        }
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          // Build final SQL
+          let finalSql = sql;
+
+          // Add sorting (default to updatedAt DESC if not specified)
+          if (sortField) {
+            finalSql += ` ORDER BY ${sortField} ${sortDirection === 1 ? 'ASC' : 'DESC'}`;
+          } else {
+            finalSql += ' ORDER BY updatedAt DESC';
+          }
+
+          // Execute query
+          const rows = db.prepare(finalSql).all(...params);
+          let results = rows.map(row => ChatModel.deserialize(row));
+
+          // Apply select if specified
+          if (selectFields) {
+            const fields = selectFields.split(' ').filter(f => f.trim());
+            results = results.map(chat => {
+              const selected: any = {};
+              fields.forEach(field => {
+                if (chat[field] !== undefined) {
+                  selected[field] = chat[field];
+                }
+              });
+              return selected;
+            });
+          }
+
+          return resolve(results);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   /**
    * Find single chat by query
+   * Returns a chainable query object with .sort() method for Mongoose compatibility
    */
-  static findOne(query: any): any | null {
+  static findOne(query: any): any {
     const db = getDatabase();
     let sql = 'SELECT * FROM chats WHERE 1=1';
     const params: any[] = [];
@@ -1140,8 +1662,47 @@ export class ChatModel {
       params.push(`%${query.chatName}%`);
     }
 
-    const row = db.prepare(sql).get(...params);
-    return row ? this.deserialize(row) : null;
+    // Store query state for chaining
+    let sortField: string | null = null;
+    let sortDirection: number = -1; // Default DESC
+
+    // Return chainable query object
+    const queryObject: any = {
+      sort: (sortOptions: any) => {
+        // Handle Mongoose-style sort({ field: 1 }) or sort({ field: -1 })
+        if (typeof sortOptions === 'object') {
+          const [field, direction] = Object.entries(sortOptions)[0];
+          sortField = field;
+          sortDirection = Number(direction) || 1;
+        }
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          // Build final SQL
+          let finalSql = sql;
+
+          // Add sorting if specified
+          if (sortField) {
+            finalSql += ` ORDER BY ${sortField} ${sortDirection === 1 ? 'ASC' : 'DESC'}`;
+          }
+
+          // Add LIMIT 1 for findOne
+          finalSql += ' LIMIT 1';
+
+          // Execute query
+          const row = db.prepare(finalSql).get(...params);
+          const result = row ? ChatModel.deserialize(row) : null;
+
+          return resolve(result);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   /**
@@ -1389,13 +1950,103 @@ export class ChatModel {
 
     return row;
   }
+
+  /**
+   * Count documents matching query
+   */
+  static countDocuments(query: any = {}): number {
+    const db = getDatabase();
+
+    let sql = 'SELECT COUNT(*) as count FROM chats';
+    const params: any[] = [];
+
+    if (Object.keys(query).length > 0) {
+      // Handle MongoDB-style date range queries
+      if (query.createdAt && typeof query.createdAt === 'object') {
+        const conditions = [];
+        if (query.createdAt.$gte) {
+          conditions.push('createdAt >= ?');
+          params.push(new Date(query.createdAt.$gte).toISOString());
+        }
+        if (query.createdAt.$lte) {
+          conditions.push('createdAt <= ?');
+          params.push(new Date(query.createdAt.$lte).toISOString());
+        }
+        if (conditions.length > 0) {
+          sql += ' WHERE ' + conditions.join(' AND ');
+        }
+      } else {
+        // Simple equality queries
+        const conditions = Object.keys(query).map(key => `${key} = ?`);
+        sql += ' WHERE ' + conditions.join(' AND ');
+        params.push(...Object.values(query));
+      }
+    }
+
+    const result = db.prepare(sql).get(...params) as { count: number };
+    return result.count;
+  }
+
+  /**
+   * Aggregate pipeline (simplified for message count)
+   */
+  static aggregate(pipeline: any[]): any[] {
+    const db = getDatabase();
+
+    // This is a simplified implementation for the specific use case in admin stats
+    // which is counting total messages across all chats
+
+    // Check if this is the message count aggregation pattern
+    const hasGroupStage = pipeline.some(stage => stage.$group);
+
+    if (hasGroupStage) {
+      // Build base SQL query
+      let sql = 'SELECT * FROM chats';
+      const params: any[] = [];
+
+      // Handle $match stage (date filtering)
+      const matchStage = pipeline.find(stage => stage.$match);
+      if (matchStage && matchStage.$match.createdAt) {
+        const conditions = [];
+        if (matchStage.$match.createdAt.$gte) {
+          conditions.push('createdAt >= ?');
+          params.push(new Date(matchStage.$match.createdAt.$gte).toISOString());
+        }
+        if (matchStage.$match.createdAt.$lte) {
+          conditions.push('createdAt <= ?');
+          params.push(new Date(matchStage.$match.createdAt.$lte).toISOString());
+        }
+        if (conditions.length > 0) {
+          sql += ' WHERE ' + conditions.join(' AND ');
+        }
+      }
+
+      // Execute query and count messages
+      const rows = db.prepare(sql).all(...params);
+      const chats = rows.map(row => this.deserialize(row));
+
+      // Calculate total messages
+      const totalMessages = chats.reduce((sum, chat) => {
+        return sum + (chat.messages ? chat.messages.length : 0);
+      }, 0);
+
+      return [{ totalMessages }];
+    }
+
+    // Default: return empty array
+    return [];
+  }
 }
 
 /**
  * Persona Model Adapter
  */
 export class PersonaModel {
-  static find(query: any = {}): any[] {
+  /**
+   * Find all personas matching query
+   * Returns a chainable query object with .sort() method for Mongoose compatibility
+   */
+  static find(query: any = {}): any {
     const db = getDatabase();
     let sql = 'SELECT * FROM personas WHERE 1=1';
     const params: any[] = [];
@@ -1413,8 +2064,47 @@ export class PersonaModel {
       params.push(query.isActive ? 1 : 0);
     }
 
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.deserialize(row));
+    // Store query state
+    let sortField: string | null = null;
+    let sortDirection: number = 1;
+
+    // Return chainable query object
+    const queryObject: any = {
+      sort: (sortOptions: any) => {
+        // Handle Mongoose-style sort({ field: 1 }) or sort({ field: -1 })
+        if (typeof sortOptions === 'object') {
+          const [field, direction] = Object.entries(sortOptions)[0];
+          sortField = field;
+          sortDirection = Number(direction) || 1;
+        }
+        return queryObject; // Return self for chaining
+      },
+      lean: () => {
+        // Mongoose .lean() returns plain JS objects instead of Mongoose documents
+        // For SQLite, we already return plain objects, so this is a no-op
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          // Build final SQL
+          let finalSql = sql;
+
+          if (sortField) {
+            finalSql += ` ORDER BY ${sortField} ${sortDirection === 1 ? 'ASC' : 'DESC'}`;
+          }
+
+          const rows = db.prepare(finalSql).all(...params);
+          const results = rows.map(row => PersonaModel.deserialize(row));
+
+          return resolve(results);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   static findOne(query: any): any | null {
@@ -1504,6 +2194,235 @@ export class PersonaModel {
     const db = getDatabase();
     db.prepare('DELETE FROM personas WHERE _id = ? OR id = ?').run(id, id);
     return persona;
+  }
+
+  /**
+   * Find one document matching query and update it
+   * Returns a chainable query object with .lean() method for Mongoose compatibility
+   */
+  static findOneAndUpdate(query: any, updates: any, options: any = {}): any {
+    const db = getDatabase();
+
+    // Build WHERE clause from query
+    let sql = 'SELECT * FROM personas WHERE 1=1';
+    const params: any[] = [];
+
+    if (query._id) {
+      sql += ' AND _id = ?';
+      params.push(query._id.toString ? query._id.toString() : query._id);
+    }
+    if (query.userId) {
+      sql += ' AND userId = ?';
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+    if (query.isActive !== undefined) {
+      sql += ' AND isActive = ?';
+      params.push(query.isActive ? 1 : 0);
+    }
+
+    sql += ' LIMIT 1';
+
+    // Return chainable query object
+    const queryObject: any = {
+      lean: () => {
+        // Mongoose .lean() returns plain JS objects
+        // For SQLite, we already return plain objects, so this is a no-op
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          // Find the document first
+          const row = db.prepare(sql).get(...params);
+
+          if (!row) {
+            return resolve(null);
+          }
+
+          // Build UPDATE statement
+          const fields: string[] = [];
+          const values: any[] = [];
+
+          Object.keys(updates).forEach(key => {
+            const value = updates[key];
+            if (typeof value === 'function' || value === undefined) return;
+            if (key === '$set') {
+              // Handle Mongoose $set operator
+              Object.keys(value).forEach(setKey => {
+                const setValue = value[setKey];
+                if (setKey === 'isActive' || setKey === 'isDefault') {
+                  fields.push(`${setKey} = ?`);
+                  values.push(setValue ? 1 : 0);
+                } else if (setKey === 'userId' || setKey === 'activePersonaId') {
+                  fields.push(`${setKey} = ?`);
+                  values.push(setValue ? (setValue.toString ? setValue.toString() : setValue) : null);
+                } else {
+                  fields.push(`${setKey} = ?`);
+                  values.push(setValue);
+                }
+              });
+            } else {
+              // Direct field updates
+              if (key === 'isActive' || key === 'isDefault') {
+                fields.push(`${key} = ?`);
+                values.push(value ? 1 : 0);
+              } else if (key === 'userId') {
+                fields.push(`${key} = ?`);
+                values.push(value.toString ? value.toString() : value);
+              } else {
+                fields.push(`${key} = ?`);
+                values.push(value);
+              }
+            }
+          });
+
+          if (fields.length > 0) {
+            fields.push('updatedAt = datetime(\'now\')');
+            const updateSql = `UPDATE personas SET ${fields.join(', ')} WHERE _id = ?`;
+            db.prepare(updateSql).run(...values, row._id || row.id);
+          }
+
+          // Return updated document if options.new is true (default Mongoose behavior)
+          if (options.new) {
+            const updatedRow = db.prepare('SELECT * FROM personas WHERE _id = ?').get(row._id || row.id);
+            return resolve(PersonaModel.deserialize(updatedRow));
+          } else {
+            // Return original document
+            return resolve(PersonaModel.deserialize(row));
+          }
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
+  }
+
+  /**
+   * Delete one document matching query
+   * Returns object with deletedCount property for Mongoose compatibility
+   */
+  static deleteOne(query: any, options: any = {}): any {
+    // Return thenable object
+    return {
+      then: (resolve: any, reject: any) => {
+        try {
+          const db = getDatabase();
+          let sql = 'DELETE FROM personas WHERE 1=1';
+          const params: any[] = [];
+
+          if (query._id) {
+            sql += ' AND _id = ?';
+            params.push(query._id.toString ? query._id.toString() : query._id);
+          }
+          if (query.userId) {
+            sql += ' AND userId = ?';
+            params.push(query.userId.toString ? query.userId.toString() : query.userId);
+          }
+
+          sql += ' LIMIT 1';
+
+          const result = db.prepare(sql).run(...params);
+          return resolve({ deletedCount: result.changes || 0 });
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+  }
+
+  /**
+   * Delete many documents matching query
+   * Returns object with deletedCount property for Mongoose compatibility
+   */
+  static deleteMany(query: any, options: any = {}): any {
+    // Return thenable object
+    return {
+      then: (resolve: any, reject: any) => {
+        try {
+          const db = getDatabase();
+          let sql = 'DELETE FROM personas WHERE 1=1';
+          const params: any[] = [];
+
+          if (query.userId) {
+            sql += ' AND userId = ?';
+            params.push(query.userId.toString ? query.userId.toString() : query.userId);
+          }
+          if (query.isActive !== undefined) {
+            sql += ' AND isActive = ?';
+            params.push(query.isActive ? 1 : 0);
+          }
+
+          const result = db.prepare(sql).run(...params);
+          return resolve({ deletedCount: result.changes || 0 });
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+  }
+
+  /**
+   * Update many documents matching query
+   * Returns object with modifiedCount property for Mongoose compatibility
+   */
+  static updateMany(query: any, updates: any, options: any = {}): any {
+    // Return thenable object
+    return {
+      then: (resolve: any, reject: any) => {
+        try {
+          const db = getDatabase();
+
+          // Build WHERE clause
+          let sql = 'UPDATE personas SET ';
+          const params: any[] = [];
+          const fields: string[] = [];
+
+          // Handle updates
+          Object.keys(updates).forEach(key => {
+            const value = updates[key];
+            if (typeof value === 'function' || value === undefined) return;
+
+            if (key === 'isActive' || key === 'isDefault') {
+              fields.push(`${key} = ?`);
+              params.push(value ? 1 : 0);
+            } else if (key === 'userId') {
+              fields.push(`${key} = ?`);
+              params.push(value.toString ? value.toString() : value);
+            } else {
+              fields.push(`${key} = ?`);
+              params.push(value);
+            }
+          });
+
+          if (fields.length === 0) {
+            return resolve({ modifiedCount: 0, matchedCount: 0 });
+          }
+
+          fields.push('updatedAt = datetime(\'now\')');
+          sql += fields.join(', ') + ' WHERE 1=1';
+
+          // Add WHERE conditions
+          if (query.userId) {
+            sql += ' AND userId = ?';
+            params.push(query.userId.toString ? query.userId.toString() : query.userId);
+          }
+          if (query.isActive !== undefined) {
+            sql += ' AND isActive = ?';
+            params.push(query.isActive ? 1 : 0);
+          }
+
+          const result = db.prepare(sql).run(...params);
+          return resolve({
+            modifiedCount: result.changes || 0,
+            matchedCount: result.changes || 0
+          });
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
   }
 
   private static deserialize(row: any): any | null {
@@ -1634,7 +2553,11 @@ export class SettingModel {
  * Folder Model Adapter
  */
 export class FolderModel {
-  static find(query: any = {}): any[] {
+  /**
+   * Find folders by query
+   * Returns a chainable query object with .sort() method for Mongoose compatibility
+   */
+  static find(query: any = {}): any {
     const db = getDatabase();
     let sql = 'SELECT * FROM folders WHERE 1=1';
     const params: any[] = [];
@@ -1660,8 +2583,42 @@ export class FolderModel {
       params.push(query.path);
     }
 
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.deserialize(row));
+    // Store query state
+    let sortField: string | null = null;
+    let sortDirection: number = 1;
+
+    // Return chainable query object
+    const queryObject: any = {
+      sort: (sortOptions: any) => {
+        // Handle Mongoose-style sort({ field: 1 }) or sort({ field: -1 })
+        if (typeof sortOptions === 'object') {
+          const [field, direction] = Object.entries(sortOptions)[0];
+          sortField = field;
+          sortDirection = Number(direction) || 1;
+        }
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: (resolve: any, reject: any) => {
+        try {
+          // Build final SQL
+          let finalSql = sql;
+
+          if (sortField) {
+            finalSql += ` ORDER BY ${sortField} ${sortDirection === 1 ? 'ASC' : 'DESC'}`;
+          }
+
+          const rows = db.prepare(finalSql).all(...params);
+          const results = rows.map(row => FolderModel.deserialize(row));
+
+          return resolve(results);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   static findOne(query: any): any | null {
@@ -1803,7 +2760,11 @@ export class FolderModel {
  * TenantKnowledgeBase Model Adapter
  */
 export class TenantKnowledgeBaseModel {
-  static find(query: any = {}): any[] {
+  /**
+   * Find all tenant knowledge bases matching query
+   * Returns a chainable query object with .populate() and .sort() methods for Mongoose compatibility
+   */
+  static find(query: any = {}): any {
     const db = getDatabase();
     let sql = 'SELECT * FROM tenant_knowledge_bases WHERE 1=1';
     const params: any[] = [];
@@ -1821,9 +2782,52 @@ export class TenantKnowledgeBaseModel {
       params.push(query.createdBy.toString ? query.createdBy.toString() : query.createdBy);
     }
 
-    sql += ' ORDER BY createdAt DESC';
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.deserialize(row));
+    // Store query state
+    const populateFields: Array<{ path: string; select?: string }> = [];
+    let sortField: string = 'createdAt';
+    let sortDirection: number = -1;
+
+    // Return chainable query object
+    const queryObject: any = {
+      populate: (path: string, select?: string) => {
+        populateFields.push({ path, select });
+        return queryObject; // Return self for chaining
+      },
+      sort: (sortOptions: any) => {
+        // Handle Mongoose-style sort({ field: 1 }) or sort({ field: -1 })
+        if (typeof sortOptions === 'object') {
+          const [field, direction] = Object.entries(sortOptions)[0];
+          sortField = field;
+          sortDirection = Number(direction) || 1;
+        }
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: async (resolve: any, reject: any) => {
+        try {
+          // Build final SQL
+          let finalSql = sql;
+          finalSql += ` ORDER BY ${sortField} ${sortDirection === 1 ? 'ASC' : 'DESC'}`;
+
+          const rows = db.prepare(finalSql).all(...params);
+          let results = rows.map(row => TenantKnowledgeBaseModel.deserialize(row));
+
+          // Handle population (for SQLite, we'll just leave the IDs as-is since UserModel is migrated)
+          // In a full implementation, we'd fetch related records from users table
+          // For now, populate fields will remain as IDs
+          if (populateFields.length > 0) {
+            // TODO: Implement actual population by querying users table
+            // For now, just return results with IDs
+          }
+
+          return resolve(results);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   static findOne(query: any): any | null {
@@ -1849,10 +2853,49 @@ export class TenantKnowledgeBaseModel {
     return row ? this.deserialize(row) : null;
   }
 
-  static findById(id: string | number): any | null {
+  /**
+   * Find tenant knowledge base by ID
+   * Returns a chainable query object with .populate() method for Mongoose compatibility
+   */
+  static findById(id: string | number): any {
     const db = getDatabase();
-    const row = db.prepare('SELECT * FROM tenant_knowledge_bases WHERE _id = ? OR id = ?').get(id, id);
-    return row ? this.deserialize(row) : null;
+
+    // Store query state
+    const populateFields: Array<{ path: string; select?: string }> = [];
+
+    // Return chainable query object
+    const queryObject: any = {
+      populate: (path: string, select?: string) => {
+        populateFields.push({ path, select });
+        return queryObject; // Return self for chaining
+      },
+      // Make it thenable so it can be awaited (executes the query)
+      then: async (resolve: any, reject: any) => {
+        try {
+          const row = db.prepare('SELECT * FROM tenant_knowledge_bases WHERE _id = ? OR id = ?').get(id, id);
+
+          if (!row) {
+            return resolve(null);
+          }
+
+          const result = TenantKnowledgeBaseModel.deserialize(row);
+
+          // Handle population (for SQLite, we'll just leave the IDs as-is since UserModel is migrated)
+          // In a full implementation, we'd fetch related records from users table
+          // For now, populate fields will remain as IDs
+          if (populateFields.length > 0) {
+            // TODO: Implement actual population by querying users table
+            // For now, just return result with IDs
+          }
+
+          return resolve(result);
+        } catch (err) {
+          return reject(err);
+        }
+      }
+    };
+
+    return queryObject;
   }
 
   static create(kbData: any): any {
@@ -2007,7 +3050,7 @@ export class TenantKnowledgeBaseModel {
  * UserSettings Model Adapter
  */
 export class UserSettingsModel {
-  static find(query: any = {}): any[] {
+  static find(query: any = {}): any {
     const db = getDatabase();
     let sql = 'SELECT * FROM user_settings WHERE 1=1';
     const params: any[] = [];
@@ -2018,7 +3061,17 @@ export class UserSettingsModel {
     }
 
     const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.deserialize(row));
+    const results = rows.map(row => this.deserialize(row));
+
+    // Return chainable object with sort method
+    return {
+      sort: (sortOptions: any) => results, // SQLite already handles ORDER BY in query
+      map: (fn: any) => results.map(fn),
+      length: results.length,
+      [Symbol.iterator]: function* () {
+        yield* results;
+      }
+    };
   }
 
   static findOne(query: any): any | null {
@@ -2098,6 +3151,104 @@ export class UserSettingsModel {
     const db = getDatabase();
     db.prepare('DELETE FROM user_settings WHERE _id = ? OR id = ?').run(id, id);
     return settings;
+  }
+
+  /**
+   * Mongoose-compatible findOneAndUpdate method
+   * Handles $set operator and upsert option
+   */
+  static findOneAndUpdate(query: any, update: any, options: any = {}): any | null {
+    const db = getDatabase();
+
+    // Handle $set operator (Mongoose syntax)
+    const updateData = update.$set || update;
+
+    // Find existing record
+    const existing = this.findOne(query);
+
+    if (!existing && options.upsert) {
+      // Create new record if upsert is true
+      const newRecord: any = { ...query, ...updateData };
+      const stmt = db.prepare(`
+        INSERT INTO user_settings (userId, customPrompt, iconUrl)
+        VALUES (?, ?, ?)
+      `);
+
+      const result = stmt.run(
+        newRecord.userId ? newRecord.userId.toString() : null,
+        newRecord.customPrompt || null,
+        newRecord.iconUrl || null
+      );
+
+      const created = this.findById(Number(result.lastInsertRowid));
+
+      // Add toObject method to result
+      if (created) {
+        created.toObject = () => ({ ...created });
+      }
+
+      return created;
+    } else if (!existing) {
+      return null;
+    }
+
+    // Update existing record
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    Object.keys(updateData).forEach(key => {
+      const value = updateData[key];
+      if (typeof value === 'function' || value === undefined) return;
+
+      fields.push(`${key} = ?`);
+      values.push(value);
+    });
+
+    if (fields.length === 0) return existing;
+
+    fields.push('updatedAt = datetime(\'now\')');
+
+    const sql = `UPDATE user_settings SET ${fields.join(', ')} WHERE _id = ? OR id = ?`;
+    db.prepare(sql).run(...values, existing._id || existing.id, existing._id || existing.id);
+
+    const updated = this.findById(existing._id || existing.id);
+
+    // Add toObject method to result
+    if (updated) {
+      updated.toObject = () => ({ ...updated });
+    }
+
+    return options.new ? updated : existing;
+  }
+
+  /**
+   * Mongoose-compatible findOneAndDelete method
+   */
+  static findOneAndDelete(query: any): any | null {
+    const db = getDatabase();
+    const existing = this.findOne(query);
+
+    if (!existing) return null;
+
+    // Build WHERE clause from query
+    const whereClauses: string[] = [];
+    const params: any[] = [];
+
+    if (query._id) {
+      whereClauses.push('_id = ?');
+      params.push(query._id);
+    }
+    if (query.userId) {
+      whereClauses.push('userId = ?');
+      params.push(query.userId.toString ? query.userId.toString() : query.userId);
+    }
+
+    if (whereClauses.length === 0) return null;
+
+    const sql = `DELETE FROM user_settings WHERE ${whereClauses.join(' AND ')}`;
+    db.prepare(sql).run(...params);
+
+    return existing;
   }
 
   // Helper to find by userId

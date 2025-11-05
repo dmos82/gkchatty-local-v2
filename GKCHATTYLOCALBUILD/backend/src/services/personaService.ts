@@ -35,14 +35,14 @@ export const createPersona = async (
       throw new Error(`Persona prompt must be ${PERSONA_PROMPT_MAX_LENGTH} characters or less`);
     }
 
-    const persona = new PersonaModel({
+    // Use PersonaModel.create() for SQLite compatibility
+    const savedPersona = await PersonaModel.create({
       name: name.trim(),
       prompt: prompt.trim(),
       userId: new mongoose.Types.ObjectId(userId),
       isActive: false, // New personas are inactive by default
     });
 
-    const savedPersona = await persona.save();
     log.debug(`[PersonaService] Created persona "${name}" for user ${userId}`);
     return savedPersona;
   } catch (error) {

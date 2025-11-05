@@ -92,9 +92,15 @@ const buildTree = (folders: IFolder[], documents: Record<string, unknown>[]): Fo
         parent.children.push(node);
         docsWithFolder++;
       }
-    } else if (!node.parentId) {
+    } else {
+      // Add to root if no parentId OR if parentId references non-existent folder (orphaned document)
       rootFolders.push(node);
       docsWithoutFolder++;
+      if (node.parentId) {
+        log.debug(
+          `[buildTree] Document ${node.name} has folderId ${node.parentId} but folder not found - adding to root`
+        );
+      }
     }
   });
 

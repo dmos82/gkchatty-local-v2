@@ -1,6 +1,6 @@
 import 'dotenv/config';
-// import https from 'https'; // Remove unused import
-// import fs from 'fs'; // Remove unused import if only used for certs
+import https from 'https';
+import fs from 'fs';
 import * as cookieParserModule from 'cookie-parser';
 const cookieParser = cookieParserModule.default || cookieParserModule;
 import Setting from './models/SettingModel'; // Ensure uppercase 'M'
@@ -72,7 +72,7 @@ import { pinoLogger } from './utils/logger'; // Import base pinoLogger
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import { standardLimiter } from './middleware/rateLimiter'; // Import rate limiters
-import { DEFAULT_API_PORT, DEFAULT_FRONTEND_PORT } from './config/constants';
+import { DEFAULT_API_PORT, DEFAULT_FRONTEND_PORT, BCRYPT_SALT_ROUNDS } from './config/constants';
 import * as helmetModule from 'helmet'; // HIGH-005: Import helmet.js for security headers
 const helmet = helmetModule.default || helmetModule;
 
@@ -129,15 +129,22 @@ app.use(
         scriptSrc: ["'self'", "'unsafe-inline'"], // Allow inline scripts for development
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: ["'self'"],
+        // Allow connections to both localhost and network IPs for mobile testing
+        connectSrc: ["'self'", 'http://localhost:*', 'http://192.168.1.*:*', 'http://127.0.0.1:*'],
         fontSrc: ["'self'"],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],
         frameSrc: ["'none'"],
+        // Remove upgrade-insecure-requests for local HTTP development with mobile devices
+        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
       },
     },
     crossOriginEmbedderPolicy: false, // Disable for CORS compatibility
     crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow cross-origin resource sharing
+    // Disable HSTS for local development to allow HTTP
+    strictTransportSecurity: process.env.NODE_ENV === 'production'
+      ? { maxAge: 31536000, includeSubDomains: true }
+      : false,
   })
 );
 
@@ -226,7 +233,7 @@ async function startServer() {
         console.log(
           `[Admin Seeder] User '${TEMP_ADMIN_USERNAME}' not found. Seeding initial admin user...`
         );
-        const hashedPassword = await bcrypt.hash(TEMP_ADMIN_PASSWORD, 12);
+        const hashedPassword = await bcrypt.hash(TEMP_ADMIN_PASSWORD, BCRYPT_SALT_ROUNDS);
         const tempAdmin = new User({
           username: TEMP_ADMIN_USERNAME,
           password: hashedPassword,
@@ -360,12 +367,14 @@ async function startServer() {
 
         const allowedOriginsExplicit = [process.env.CORS_ORIGIN || '']; // Explicit whitelist (prod site)
         const netlifyPreviewRegex = /\.netlify\.app$/i; // Any subdomain ending with .netlify.app
+        const localNetworkRegex = /^http:\/\/192\.168\.\d+\.\d+:4003$/i; // Any local network IP on port 4003
 
         // Check against all allowed origins (including localhost for development)
         const isAllowed =
           allowedOrigins.includes(origin) ||
           allowedOriginsExplicit.includes(origin) ||
-          netlifyPreviewRegex.test(origin);
+          netlifyPreviewRegex.test(origin) ||
+          localNetworkRegex.test(origin);
 
         if (isAllowed) {
           console.log(`[CORS] ✅ Allowing origin: ${origin}`);
@@ -404,6 +413,30 @@ async function startServer() {
     // Version Endpoint (for deployment verification)
     app.use('/api/version', versionRoutes);
     console.log('>>> [App Setup] /api/version route registered.');
+
+    // Mobile Connectivity Test Endpoint (for debugging mobile auth issues)
+    app.get('/api/mobile-test', (req: Request, res: Response) => {
+      const origin = req.headers.origin || 'N/A';
+      const userAgent = req.headers['user-agent'] || 'N/A';
+      const ip = req.ip || req.socket.remoteAddress || 'N/A';
+
+      console.log('=== MOBILE TEST REQUEST ===');
+      console.log('Origin:', origin);
+      console.log('IP:', ip);
+      console.log('User-Agent:', userAgent);
+      console.log('All headers:', JSON.stringify(req.headers, null, 2));
+      console.log('=========================');
+
+      res.json({
+        success: true,
+        origin,
+        ip,
+        userAgent,
+        message: 'Mobile connectivity test successful - backend is reachable',
+        timestamp: new Date().toISOString(),
+      });
+    });
+    console.log('>>> [App Setup] /api/mobile-test route registered.');
 
     // Add request logging *after* CORS, *before* JSON parsing
     app.use((req: Request, res: Response, next: NextFunction) => {
@@ -687,13 +720,15 @@ async function startServer() {
       res.status(statusCode).json(errorResponse);
     });
 
-    // --- Start Server (HTTP Only) ---
-    console.log('Starting HTTP server...');
-    const server = http
+    // --- Start Server (HTTP + HTTPS) ---
+    console.log('Starting servers...');
+
+    // HTTP server (for desktop localhost access)
+    const httpServer = http
       .createServer(app)
       .listen(port, '0.0.0.0', () => {
         console.log(`🚀 HTTP API Server listening on port ${port}`);
-        console.log('GKCHATTY Backend: Application STARTED successfully!');
+        console.log('   Desktop: http://localhost:' + port);
         logApiConfiguration();
       })
       .on('error', (err: Error & { code?: string }) => {
@@ -705,31 +740,77 @@ async function startServer() {
         process.exit(1);
       });
 
-    // --- Graceful Shutdown (applies to HTTP server) ---
-    process.on('SIGTERM', async () => {
-      console.log('SIGTERM signal received. Starting graceful shutdown...');
+    // HTTPS server (for mobile network access) - Optional if certs exist
+    let httpsServer: https.Server | null = null;
+    const httpsPort = (port + 1); // 4002 for HTTPS
+    const certPath = '/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/gkchatty-local/192.168.1.67+2.pem';
+    const keyPath = '/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/gkchatty-local/192.168.1.67+2-key.pem';
 
+    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+      try {
+        const httpsOptions = {
+          key: fs.readFileSync(keyPath),
+          cert: fs.readFileSync(certPath),
+        };
+
+        httpsServer = https
+          .createServer(httpsOptions, app)
+          .listen(httpsPort, '0.0.0.0', () => {
+            console.log(`🔒 HTTPS API Server listening on port ${httpsPort}`);
+            console.log('   Mobile: https://192.168.1.67:' + httpsPort);
+            console.log('GKCHATTY Backend: HTTP + HTTPS servers STARTED successfully!');
+          })
+          .on('error', (err: Error & { code?: string }) => {
+            if (err.code === 'EADDRINUSE') {
+              console.error(`Error: Port ${httpsPort} is already in use.`);
+            } else {
+              console.error('Failed to start HTTPS server:', err);
+            }
+            // Don't exit - HTTP server can still work
+            console.log('Continuing with HTTP only...');
+          });
+      } catch (error) {
+        console.error('Failed to load SSL certificates:', error);
+        console.log('Continuing with HTTP only...');
+      }
+    } else {
+      console.log('SSL certificates not found. Running HTTP only.');
+      console.log('For mobile HTTPS support, run: mkcert 192.168.1.67 localhost 127.0.0.1');
+    }
+
+    const server = httpServer; // Keep reference for graceful shutdown
+
+    // --- Graceful Shutdown (applies to both HTTP and HTTPS servers) ---
+    const shutdownServers = async () => {
       // Close rate limiter Redis connection
       const { closeRateLimiter } = await import('./middleware/rateLimiter');
       await closeRateLimiter();
 
+      // Close HTTP server
       server.close(() => {
-        console.log('Server closed. Exiting process.');
-        process.exit(0);
+        console.log('HTTP server closed.');
+
+        // Close HTTPS server if it exists
+        if (httpsServer) {
+          httpsServer.close(() => {
+            console.log('HTTPS server closed. Exiting process.');
+            process.exit(0);
+          });
+        } else {
+          console.log('Exiting process.');
+          process.exit(0);
+        }
       });
+    };
+
+    process.on('SIGTERM', async () => {
+      console.log('SIGTERM signal received. Starting graceful shutdown...');
+      await shutdownServers();
     });
 
     process.on('SIGINT', async () => {
       console.log('SIGINT signal received. Starting graceful shutdown...');
-
-      // Close rate limiter Redis connection
-      const { closeRateLimiter } = await import('./middleware/rateLimiter');
-      await closeRateLimiter();
-
-      server.close(() => {
-        console.log('Server closed. Exiting process.');
-        process.exit(0);
-      });
+      await shutdownServers();
     });
   } catch (error) {
     // Use pinoLogger for fatal startup errors

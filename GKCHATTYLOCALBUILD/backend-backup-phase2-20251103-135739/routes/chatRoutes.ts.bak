@@ -1,0 +1,636 @@
+import express, { Request, Response, Router } from 'express';
+import mongoose, { Types } from 'mongoose';
+import { protect, checkSession } from '../middleware/authMiddleware';
+import {
+  generateEmbeddings,
+  getChatCompletion,
+  getChatCompletionStream,
+} from '../utils/openaiHelper';
+import { withRetry, DEFAULT_OPENAI_RETRY_CONFIG } from '../utils/retryHelper';
+import { ChatCompletionMessageParam as OpenAIChatCompletionMessageParam } from 'openai/resources/chat';
+import type { ChatCompletion } from 'openai/resources/chat/completions';
+import Chat, { IChat, IChatMessage } from '../models/ChatModel';
+import { queryVectors } from '../utils/pineconeService';
+import { UserDocument } from '../models/UserDocument'; // Import UserDocument model
+import User from '../models/UserModel'; // Corrected Import: Use the default export
+import { SystemKbDocument } from '../models/SystemKbDocument'; // ADDED: Import SystemKbDocument
+import PersonaModel from '../models/PersonaModel'; // ADDED: Import PersonaModel for new persona system
+import { getMainKbSystemPrompt } from '../services/settingsService'; // ADDED: Import main KB system prompt service
+import UserSettings from '../models/UserSettings'; // Import UserSettings for icon URL functionality
+import { inspect } from 'util';
+import { getLogger } from '../utils/logger';
+
+const router: Router = express.Router();
+
+const log = getLogger('chatRoute');
+
+// --- START ADDITION: Model Pricing ---
+// NOTE: Update these placeholder values with ACCURATE pricing for your models!
+// Prices are per 1,000,000 tokens for consistency with some provider docs
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  // Prices per MILLION tokens (Input, Output)
+  'gpt-4o': { input: 5.0, output: 15.0 },
+  'gpt-4o-mini': { input: 0.15, output: 0.6 },
+  'gpt-4-turbo': { input: 10.0, output: 30.0 }, // Example: 2024-04-09 pricing
+  'gpt-3.5-turbo-0125': { input: 0.5, output: 1.5 },
+  // Fallback/default - set to 0 or a sensible default
+  default: { input: 0, output: 0 },
+};
+// --- END ADDITION: Model Pricing ---
+
+// --- START ADDITION: Conversational Turn Detection Helpers ---
+const USER_FACING_SOURCE_RELEVANCE_THRESHOLD = 0.81; // Initial value based on analysis
+
+const isQueryShortAndGeneral = (query: string): boolean => {
+  const lcQuery = query.toLowerCase().trim();
+  const wordCount = lcQuery.split(/\s+/).length;
+  // Patterns for common greetings or very short conversational phrases
+  const conversationalPatterns = [
+    /^hi$/,
+    /^hello$/,
+    /^hey$/,
+    /^how are you/,
+    /^(thanks|thank you)/,
+    /^ok$/,
+    /^okay$/,
+    /^bye$/,
+    /^goodbye$/,
+    /what('s| is| are) up/,
+    /how('s| is) it going/,
+  ];
+
+  if (wordCount <= 5 && conversationalPatterns.some(p => p.test(lcQuery))) {
+    return true;
+  }
+  // More generic check for short queries that don't look like typical RAG questions
+  if (
+    wordCount <= 3 &&
+    !lcQuery.includes('what') &&
+    !lcQuery.includes('who') &&
+    !lcQuery.includes('where') &&
+    !lcQuery.includes('when') &&
+    !lcQuery.includes('why') &&
+    !lcQuery.includes('how') &&
+    !lcQuery.includes('explain') &&
+    !lcQuery.includes('tell me about')
+  ) {
+    return true;
+  }
+  return false;
+};
+
+const isAnswerConversational = (answer: string): boolean => {
+  const lcAnswer = answer.toLowerCase().trim();
+  // Simple heuristic: short answers not containing typical RAG keywords
+  if (
+    lcAnswer.length < 100 &&
+    !lcAnswer.includes('document') &&
+    !lcAnswer.includes('source') &&
+    !lcAnswer.includes('context')
+  ) {
+    const aiGreetingPatterns = [
+      /^(hello|hi|hey) there(!)?/,
+      /how can i help you/,
+      /how can i assist you/,
+      /^(you're|you are) welcome(!)?/,
+      /^(i'm|i am) doing well/,
+      /^(i'm|i am) just an ai/,
+      /i do not have personal experiences/,
+    ];
+    if (aiGreetingPatterns.some(p => p.test(lcAnswer))) {
+      return true;
+    }
+    // If the answer is very short, it's likely conversational
+    if (lcAnswer.split(/\s+/).length <= 10) {
+        return true;
+    }
+  }
+  return false;
+};
+// --- END ADDITION: Conversational Turn Detection Helpers ---
+
+// Apply protect and checkSession middleware to all chat routes
+router.use(protect, checkSession);
+
+// New Stricter System Prompt (Task 69) - Kept for fallback
+const STRICT_SYSTEM_PROMPT = `You are an AI assistant for Gold Key Insurance. Your ONLY task is to answer the user's question based STRICTLY and SOLELY on the provided context snippets below. Do NOT use any external knowledge or make assumptions. If the answer is explicitly found in the context, provide it concisely. If the answer is NOT explicitly found within the provided snippets, you MUST respond with the exact phrase: 'The provided documents do not contain specific information to answer that question.' Do not add any pleasantries or extra information to this specific phrase.`;
+
+// Utility: safely stringify objects that may contain circular references
+function safeStringify(obj: any): string {
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch (_) {
+    return inspect(obj, { depth: null, colors: false });
+  }
+}
+
+// POST /api/chats - Handle chat queries and persist history
+router.post('/', async (req: Request, res: Response): Promise<void | Response> => {
+  // Diagnostic log for Render preview (PR31)
+  log.debug(
+    { path: req.path, method: req.method },
+    `PR31_CHAT_ROUTE_HIT_TEST_V2: Request received for /api/chat at ${new Date().toISOString()}`
+  );
+  console.log('GKCHATTY Backend: /api/chats route hit. Request received.'); // General log
+
+  const userId = req.user && '_id' in req.user ? req.user._id : req.user?.userId;
+  // Fetch User document early
+  let userDoc: (mongoose.Document<unknown, object, any> & any & Required<{ _id: unknown; }>) | null = 
+    null;
+  
+  if (userId) {
+    try {
+      userDoc = await User.findById(userId).select(
+        'isPersonaEnabled canCustomizePersona activePersonaId'
+      );
+    } catch (fetchError: any) {
+      log.error({ userId, error: fetchError }, 'Error fetching User');
+    }
+  }
+
+  log.info({ userId }, 'Received chat request');
+
+  const {
+    query,
+    history = [],
+    chatId,
+    isNotesInitiated,
+    initialChatName: requestedChatName,
+    knowledgeBaseTarget = 'unified',
+    personaEnabled: personaEnabledFromRequest,
+    customPrompt: customPromptFromRequest,
+    personaId: personaIdFromRequest,
+  } = req.body as Record<string, any>;
+
+  // ✅ ADDED: Comprehensive persona diagnostic logging
+  console.log(`[Persona Debug] Received personaEnabled:`, personaEnabledFromRequest);
+  console.log(`[Persona Debug] Received customPrompt:`, customPromptFromRequest);
+  console.log(`[Persona Debug] Received personaId:`, personaIdFromRequest || 'None provided in payload');
+
+  if (!userId) {
+    log.error('[Chat] Critical: userId missing after protect middleware.');
+    return res
+      .status(401)
+      .json({ success: false, message: 'Authentication error: User ID could not be determined.' });
+  }
+
+  // Validate knowledgeBaseTarget
+  if (knowledgeBaseTarget !== 'unified' && knowledgeBaseTarget !== 'user' && knowledgeBaseTarget !== 'system') {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Invalid knowledgeBaseTarget value. Must be "unified", "user", or "system".' 
+    });
+  }
+
+  // Log the knowledge base target for debugging
+  log.info(
+    { userId, knowledgeBaseTarget },
+    `[Chat Route] Query with knowledgeBaseTarget: ${knowledgeBaseTarget}`
+  );
+
+  // Handle chat creation initiated by notes without a query
+  if (isNotesInitiated === true && !query) {
+    try {
+      const defaultChatName =
+        typeof requestedChatName === 'string' && requestedChatName.trim()
+          ? requestedChatName.trim()
+          : 'New Chat (from Notes)';
+
+      log.info(
+        { userId, chatName: defaultChatName },
+        `[Chat Persistence] Creating new chat for notes for user`
+      );
+      const newChat: IChat = new Chat({
+        userId: new mongoose.Types.ObjectId(userId.toString()),
+        chatName: defaultChatName,
+        messages: [], // Start with empty messages
+        notes: '', // Initialize with empty notes
+      });
+      await newChat.save();
+      log.info(
+        { userId, chatId: newChat._id, chatName: defaultChatName },
+        `[Chat Persistence] New chat for notes created`
+      );
+      return res.status(201).json({
+        success: true,
+        message: 'Chat created successfully for notes.',
+        chatId: (newChat._id as Types.ObjectId).toString(),
+        chatName: newChat.chatName,
+        messages: newChat.messages,
+        notes: newChat.notes,
+      });
+    } catch (dbError: any) {
+      log.error({ error: dbError, userId }, '[Chat Persistence] Error creating new chat for notes:');
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create chat for notes.',
+        error: dbError.message,
+      });
+    }
+  }
+
+  // Existing logic: if query is missing (and not notesInitiated), it's an error.
+  if (!query) {
+    return res.status(400).json({ success: false, message: 'Query is required.' });
+  }
+
+  // --- START: Always Search Both (System KB & User Docs) ---
+  log.info(
+    { userId },
+    `[Chat Route] Unified Search: Always querying System KB and User Docs for user`
+  );
+  // --- END: Always Search Both ---
+
+  // Log with actual userId now that auth is enabled
+  log.info({ userId, queryPreview: query.substring(0, 50), chatId }, `[Chat] Received query from user`);
+
+  try {
+    const MIN_SOURCE_SCORE_THRESHOLD = 0;
+    const originalQuery = query;
+    const queryForEmbedding = originalQuery.toLowerCase();
+
+    log.debug({ originalQuery }, `[Chat RAG Debug] Original query`);
+    log.debug({ queryForEmbedding }, `[Chat RAG Debug] Query used for embedding`);
+
+    log.debug('[Chat] Generating embedding for lowercased query...');
+    const queryEmbedding = await generateEmbeddings([queryForEmbedding]);
+    if (!queryEmbedding || queryEmbedding.length === 0 || queryEmbedding[0].length === 0) {
+      throw new Error('Failed to generate query embedding.');
+    }
+    log.info('[Chat] Query embedding generated successfully.');
+
+    // --- START TARGETED KNOWLEDGE BASE SEARCH ---
+    const KEYWORD_SEARCH_LIMIT = 5;
+    const SEMANTIC_SEARCH_TOP_K = 15; // Fetch more for potential boosting/merging
+    const KWD_BOOST_FACTOR = 1.5;
+
+    let systemKeywordDocIds: string[] = [];
+    let userKeywordDocIds: string[] = [];
+    let systemResults: any = { matches: [] };
+    let userResults: any = { matches: [] };
+
+    // Execute search based on target
+    if (knowledgeBaseTarget === 'unified' || knowledgeBaseTarget === 'system') {
+      // Query System KB
+      systemResults = await (async () => {
+        log.debug('[Chat Hybrid] Querying System KB...');
+        // System KB Keyword Search
+        try {
+          if (knowledgeBaseTarget === 'unified' || knowledgeBaseTarget === 'system') {
+            const systemKeywordFilter: mongoose.FilterQuery<any> = {
+              // No sourceType filter needed if querying SystemKbDocument directly
+              originalFileName: { $regex: queryForEmbedding, $options: 'i' },
+            };
+            // CORRECTED: Use SystemKbDocument model for System KB keyword search
+            const systemKeywordDocs = await SystemKbDocument.find(systemKeywordFilter)
+              .select('_id filename') // SystemKbDocument uses 'filename'
+              .limit(KEYWORD_SEARCH_LIMIT)
+              .lean();
+            systemKeywordDocIds = systemKeywordDocs.map(doc => doc._id.toString());
+            log.debug(
+              { count: systemKeywordDocs.length }, 
+              `[Chat Hybrid - System KB] Keyword search (SystemKbDocument) found potential documents.`
+            );
+          }
+        } catch (mongoError: any) {
+          log.error(
+            { error: mongoError }, 
+            '[Chat Hybrid - System KB] Error during MongoDB keyword search (SystemKbDocument):'
+          );
+        }
+
+        // System KB Semantic Search
+        if (knowledgeBaseTarget === 'unified' || knowledgeBaseTarget === 'system') {
+          const systemPineconeFilter: Record<string, any> = { sourceType: 'system' };
+          const systemNamespace = 'system-kb';
+          log.debug(
+            { namespace: systemNamespace, filter: systemPineconeFilter },
+            `[Chat Hybrid - System KB] Querying Pinecone`
+          );
+          const systemQueryResults = await queryVectors(
+            queryEmbedding[0],
+            SEMANTIC_SEARCH_TOP_K,
+            systemPineconeFilter,
+            systemNamespace
+          );
+          log.debug(
+            { count: systemQueryResults?.matches?.length ?? 0 },
+            `[Chat Hybrid - System KB] Pinecone query found matches.`
+          );
+          return systemQueryResults;
+        }
+        return { matches: [] };
+      })();
+    }
+
+    if (knowledgeBaseTarget === 'unified' || knowledgeBaseTarget === 'user') {
+      // Query User Documents
+      userResults = await (async () => {
+        log.debug({ userId }, '[Chat Hybrid] Querying User Documents...');
+        // User Docs Keyword Search
+        try {
+          if (knowledgeBaseTarget === 'unified' || knowledgeBaseTarget === 'user') {
+            const userKeywordFilter: mongoose.FilterQuery<any> = {
+              sourceType: 'user',
+              userId: userId, // Filter by user
+              originalFileName: { $regex: queryForEmbedding, $options: 'i' },
+            };
+            const userKeywordDocs = await UserDocument.find(userKeywordFilter)
+              .select('_id originalFileName')
+              .limit(KEYWORD_SEARCH_LIMIT)
+              .lean();
+            userKeywordDocIds = userKeywordDocs.map(doc => doc._id.toString());
+            log.debug(
+              { count: userKeywordDocs.length, userId },
+              `[Chat Hybrid - User Docs] Keyword search found potential documents for user.`
+            );
+          }
+        } catch (mongoError: any) {
+          log.error(
+            { error: mongoError, userId },
+            `[Chat Hybrid - User Docs] Error during MongoDB keyword search for user:`
+          );
+        }
+
+        // User Docs Semantic Search
+        if (knowledgeBaseTarget === 'unified' || knowledgeBaseTarget === 'user') {
+          const userPineconeFilter: Record<string, any> = {
+            sourceType: 'user',
+            userId: userId.toString(),
+          };
+          const userNamespace = undefined; // Default namespace
+          log.debug(
+            { namespace: 'default', filter: userPineconeFilter, userId }, 
+            `[Chat Hybrid - User Docs] Querying Pinecone`
+          );
+          const userQueryResults = await queryVectors(
+            queryEmbedding[0],
+            SEMANTIC_SEARCH_TOP_K,
+            userPineconeFilter,
+            userNamespace
+          );
+          log.debug(
+            { count: userQueryResults?.matches?.length ?? 0, userId },
+            `[Chat Hybrid - User Docs] Pinecone query found matches for user.`
+          );
+          return userQueryResults;
+        }
+        return { matches: [] };
+      })();
+    }
+
+    // --- Combine and Process All Results ---
+    let allCombinedSources: any[] = [];
+    const allKeywordDocIds = [...new Set([...systemKeywordDocIds, ...userKeywordDocIds])]; // Combine and deduplicate keyword doc IDs
+
+    const mapResults = (queryResults: any, actualSourceType: 'system' | 'user') => {
+      if (queryResults && queryResults.matches && queryResults.matches.length > 0) {
+        return queryResults.matches.map((match: any) => {
+          const docId = match.metadata?.documentId;
+          const isKeywordMatch = docId && allKeywordDocIds.includes(docId);
+          const boostedScore = isKeywordMatch ? match.score * KWD_BOOST_FACTOR : match.score;
+          
+          // Log raw metadata for System KB items
+          if (actualSourceType === 'system') {
+            log.debug(
+              { id: match.id },
+              `[mapResults - SystemKB] Raw Pinecone metadata for match ID`
+            );
+          }
+
+          return {
+            id: match.id, // Pinecone vector ID (chunk ID)
+            score: match.score,
+            boostedScore: boostedScore,
+            isKeywordMatch: isKeywordMatch,
+            text: match.metadata?.text || match.metadata?.textContent || '', // Try textContent as fallback
+            pageNumbers: match.metadata?.pageNumbers || [],
+            fileName: match.metadata?.originalFileName || match.metadata?.fileName || 'Unknown File', // Try fileName as fallback
+            documentId: docId || null, // MongoDB document _id
+            chunkIndex:
+              typeof match.metadata?.chunkIndex === 'number' ? match.metadata.chunkIndex : -1,
+            type: match.metadata?.sourceType || actualSourceType,
+            origin: actualSourceType === 'system' ? 'System KB' : 'My Document',
+            snippet: match.metadata?.text || match.metadata?.textContent || '', // Also try textContent for snippet
+            pineconeMetadata: match.metadata || {} // Pass raw metadata
+          };
+        });
+      }
+      return [];
+    };
+
+    const systemMappedSources = mapResults(systemResults, 'system');
+    const userMappedSources = mapResults(userResults, 'user');
+
+    // DIAGNOSIS LOGGING A: Raw results after Pinecone query
+    console.log('[RAG DIAGNOSIS A] Raw Pinecone results - System KB matches:', systemResults.matches?.length || 0);
+    console.log('[RAG DIAGNOSIS A] Raw Pinecone results - User Docs matches:', userResults.matches?.length || 0);
+    console.log('[RAG DIAGNOSIS A] Raw System matches:', JSON.stringify(systemResults.matches?.slice(0, 3), null, 2));
+    console.log('[RAG DIAGNOSIS A] Raw User matches:', JSON.stringify(userResults.matches?.slice(0, 3), null, 2));
+
+    allCombinedSources = [...systemMappedSources, ...userMappedSources];
+
+    // Sort all combined sources by boosted score
+    allCombinedSources.sort((a, b) => b.boostedScore - a.boostedScore);
+    log.debug(
+      { count: allCombinedSources.length, topScore: allCombinedSources[0]?.boostedScore },
+      `[Chat Hybrid] Total combined sources before filtering`
+    );
+
+    // --- END TARGETED KNOWLEDGE BASE SEARCH ---
+
+    // 4. Build Context and Final Sources from Combined Results (Prioritize Keyword Matches)
+    let context = '';
+    const FINAL_CONTEXT_LIMIT = 5; // Slightly increased limit for combined search
+    const finalSourcesForLlm: any[] = [];
+    const addedChunkIds = new Set<string>(); // Track added chunk IDs (Pinecone vector IDs)
+
+    log.debug(
+      { count: allKeywordDocIds.length },
+      `[Chat RAG] Building final context from all sources. Prioritizing keyword matches...`
+    );
+
+    // First pass: Add top chunk from each keyword-matched document
+    const keywordMatchedSourcesToAdd = new Map<string, any>();
+    for (const source of allCombinedSources) {
+      if (!source.id) {
+        log.warn(
+          { fileName: source.fileName, docId: source.documentId },
+          `[Chat RAG Priority] Skipping source without ID`
+        );
+        continue;
+      }
+      if (source.documentId && allKeywordDocIds.includes(source.documentId)) {
+        if (!keywordMatchedSourcesToAdd.has(source.documentId)) {
+          keywordMatchedSourcesToAdd.set(source.documentId, source);
+        }
+      }
+    }
+
+    for (const source of Array.from(keywordMatchedSourcesToAdd.values())) {
+      if (finalSourcesForLlm.length >= FINAL_CONTEXT_LIMIT) break;
+      if (source.text && source.id && !addedChunkIds.has(source.id)) {
+        finalSourcesForLlm.push(source);
+        addedChunkIds.add(source.id);
+        log.debug(
+          { fileName: source.fileName, origin: source.origin, docId: source.documentId, chunkId: source.id, score: source.boostedScore.toFixed(4) },
+          `[Chat RAG Priority] Added Keyword Match Chunk`
+        );
+      }
+    }
+
+    log.debug(
+      { count: finalSourcesForLlm.length },
+      `[Chat RAG] Added ${finalSourcesForLlm.length} sources from prioritized keyword matches. Filling remaining slots...`
+    );
+
+    // Second pass: Fill remaining slots with best non-keyword-matched semantic results
+    for (const source of allCombinedSources) {
+      if (finalSourcesForLlm.length >= FINAL_CONTEXT_LIMIT) {
+        log.debug(`[Chat RAG] Reached final context limit (${FINAL_CONTEXT_LIMIT}).`);
+        break;
+      }
+      if (!source.id) {
+        log.warn(
+          { fileName: source.fileName, docId: source.documentId },
+          `[Chat RAG Fill] Skipping source without ID`
+        );
+        continue;
+      }
+      if (source.text && !addedChunkIds.has(source.id)) {
+        finalSourcesForLlm.push(source);
+        addedChunkIds.add(source.id);
+        log.debug(
+          { fileName: source.fileName, origin: source.origin, docId: source.documentId, chunkId: source.id, score: source.boostedScore.toFixed(4), keyword: source.isKeywordMatch },
+          `[Chat RAG Fill] Added Semantic Match Chunk`
+        );
+      } else if (!source.text) {
+        // UPDATED WARNING LOG
+        log.warn(
+          { fileName: source.fileName, origin: source.origin, docId: source.documentId, chunkId: source.id },
+          `[Chat RAG Fill] Semantic source ${source.fileName} (Origin: ${source.origin}, DocID: ${source.documentId}, ChunkID: ${source.id}) has no text in its Pinecone metadata, skipping. Pinecone Metadata: ${JSON.stringify(source.pineconeMetadata, null, 2)}`
+        );
+      } else if (addedChunkIds.has(source.id)) {
+        log.debug(
+          { chunkId: source.id, fileName: source.fileName, origin: source.origin },
+          `[Chat RAG Fill] Chunk ${source.id} (${source.fileName}, Origin: ${source.origin}) already added, skipping.`
+        );
+      }
+    }
+
+    log.debug(
+      { finalSourcesForLlm },
+      '[RAG DEBUG] finalSourcesForLlm before context map:'
+    );
+    context = finalSourcesForLlm.map(s => s.text).join('\n\n---\n\n');
+    log.debug(
+      { contextLength: context.length, first300Chars: context.substring(0, 300) },
+      '[RAG DEBUG] Generated context string (first 300 chars):'
+    );
+
+    if (!context.trim()) {
+      log.debug('[Chat RAG] No relevant context found after processing combined results.');
+      // Updated fallback message for unified search
+      context = `No relevant context found in System Knowledge Base or your personal documents for the query "${originalQuery}".`;
+    }
+
+    // --- RAG DEBUG LOGGING ---
+    log.debug(`\n--- START RAG DEBUG LOG (Unified Hybrid) ---`);
+    log.debug({ originalQuery }, '[RAG DEBUG] User Query (Original)');
+    log.debug(
+      { keywordDocIds: JSON.stringify(allKeywordDocIds) },
+      '[RAG DEBUG] Keyword Matched Doc IDs (All Sources)'
+    );
+    log.debug(
+      { finalRankedSources: JSON.stringify(
+        finalSourcesForLlm.map(s => ({
+          fn: s.fileName,
+          origin: s.origin,
+          docId: s.documentId,
+          score: s.boostedScore,
+          kw: s.isKeywordMatch,
+        })),
+        null,
+        2
+      ) },
+      '[RAG DEBUG] Final Ranked Sources Sent for Context'
+    );
+    log.debug({ context }, '[RAG DEBUG] Context Text Sent to LLM:\n---\n${context}\n---');
+    log.debug(`--- END RAG DEBUG LOG (Unified Hybrid) ---
+`);
+
+    // --- START: Enhanced Persona Management System Integration ---
+    let effectiveSystemPrompt = STRICT_SYSTEM_PROMPT; // Default fallback
+    let promptSource = 'Strict Default Fallback'; // Default source for logging
+
+    try {
+      // Step 1: Check for active user persona (highest priority)
+      if (userDoc?.activePersonaId) {
+        console.log(`[Enhanced Persona] User has activePersonaId: ${userDoc.activePersonaId}`);
+        
+        try {
+          const activePersona = await PersonaModel.findOne({
+            _id: userDoc.activePersonaId,
+            userId: userDoc._id,
+            isActive: true
+          });
+
+          if (activePersona && activePersona.prompt) {
+            effectiveSystemPrompt = activePersona.prompt;
+            promptSource = `Active User Persona: "${activePersona.name}"`;
+            console.log(`[Enhanced Persona] Using active persona "${activePersona.name}": "${effectiveSystemPrompt.substring(0, 150)}..."`);
+          } else {
+            console.warn(`[Enhanced Persona] Active persona ${userDoc.activePersonaId} not found or invalid. Falling back to main KB prompt.`);
+            // Persona not found or invalid, fall through to main KB prompt
+          }
+        } catch (personaError) {
+          console.error(`[Enhanced Persona] Error fetching active persona ${userDoc.activePersonaId}:`, personaError);
+          // Continue to fallback logic
+        }
+      } else {
+        console.log(`[Enhanced Persona] No active persona set for user ${userDoc?._id}`);
+      }
+
+      // Step 2: If no active persona, use main KB system prompt (default fallback)
+      if (promptSource === 'Strict Default Fallback') {
+        console.log(`[Enhanced Persona] Fetching main KB system prompt...`);
+        
+        try {
+          const mainKbPrompt = await getMainKbSystemPrompt();
+          if (mainKbPrompt && mainKbPrompt.trim()) {
+            effectiveSystemPrompt = mainKbPrompt;
+            promptSource = 'Main KB System Prompt';
+            console.log(`[Enhanced Persona] Using main KB system prompt: "${effectiveSystemPrompt.substring(0, 150)}..."`);
+          } else {
+            console.log(`[Enhanced Persona] Main KB system prompt not configured or empty. Using strict default.`);
+            // Keep STRICT_SYSTEM_PROMPT as fallback
+          }
+        } catch (mainKbError) {
+          console.error(`[Enhanced Persona] Error fetching main KB system prompt:`, mainKbError);
+          // Keep STRICT_SYSTEM_PROMPT as fallback
+        }
+      }
+    } catch (error) {
+      console.error(`[Enhanced Persona] Unexpected error in persona system:`, error);
+      // Keep STRICT_SYSTEM_PROMPT as ultimate fallback
+    }
+    
+    // Assign the final prompt to systemPromptText
+    const systemPromptText = effectiveSystemPrompt;
+    
+    console.log(`[Enhanced Persona] Final system prompt being sent to LLM (source: ${promptSource}): "${systemPromptText.substring(0, 150)}..."`);
+
+    // --- Logging for Debugging ---
+    const chatLogInfo = {
+        userId: userDoc?._id?.toString(),
+        activePersonaId: userDoc?.activePersonaId?.toString() || null,
+        effectiveSystemPromptSource: promptSource,
+        effectiveSystemPromptPreview: systemPromptText.substring(0, 100) + '...',
+        // Legacy fields for backward compatibility (deprecated)
+        frontendPersonaEnabled: personaEnabledFromRequest || false,
+        frontendCustomPrompt: customPromptFromRequest ? customPromptFromRequest.substring(0, 50) + '...' : null,
+    };
+    log.info(chatLogInfo, 'GKCHATTY Backend: Enhanced persona system prompt determined.');
+    // --- END: Enhanced Persona Management System Integration ---
+
+    // 8. Build history (using the fetched or fallback systemPromptText)

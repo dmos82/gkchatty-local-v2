@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Feedback from '../models/Feedback.model';
+import { FeedbackModel as Feedback } from '../utils/modelFactory';
 import mongoose from 'mongoose';
 import { createErrorResponse } from '../utils/errorResponse';
 import { UserModel as User } from '../utils/modelFactory';

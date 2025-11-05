@@ -522,7 +522,7 @@ router.get('/verify', protect, checkSession, (req, res) => {
   res.status(200).json({
     message: 'Token verified successfully.',
     user: {
-      ...user._doc, // Spread the mongoose document
+      ...(user._doc || user), // Spread the mongoose document or plain SQLite object
       forcePasswordChange: user.forcePasswordChange || false, // Ensure this field is included
     },
   });

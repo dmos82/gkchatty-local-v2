@@ -17,13 +17,13 @@ import { uploadLimiter } from '../middleware/rateLimiter';
 
 // Import the configured multer instance (ensure it uses memoryStorage)
 import userUpload from '../config/multerConfig';
-// Import S3 helper functions
-import { uploadFile, deleteFile } from '../utils/s3Helper';
+// Import storage interface (abstracts S3 and local filesystem)
+import storage from '../utils/storageInterface';
 import crypto from 'crypto';
 import fs from 'fs';
-import { ChatModel as ChatSession } from '../utils/modelFactory'; // Import Chat model as ChatSession
+import { ChatModel as ChatSession, PersonaModel as Persona } from '../utils/modelFactory'; // Import Chat model as ChatSession and Persona from modelFactory
 import { IChat as IChatSession, IChatMessage } from '../models/ChatModel'; // Import interfaces
-import { default as Persona, IPersona } from '../models/PersonaModel'; // Import Persona model as Persona and its interface
+import { IPersona } from '../models/PersonaModel'; // Import Persona interface
 import { getContext } from '../services/ragService'; // Corrected import from contextService to ragService
 import { getLogger } from '../utils/logger'; // Added import for getLogger
 
@@ -479,240 +479,8 @@ router.post(
   handleDocumentUpload
 );
 
-// OPTIONS handler for /api/documents/get-presigned-url - Handle CORS preflight
-router.options('/get-presigned-url', (req: Request, res: Response) => {
-  log.debug('[CORS Preflight] OPTIONS request for /api/documents/get-presigned-url');
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.sendStatus(204);
-});
-
-// POST /api/documents/get-presigned-url - Generate pre-signed URL for direct S3 upload
-router.post(
-  '/get-presigned-url',
-  protect,
-  checkSession,
-  uploadLimiter,
-  async (req: Request, res: Response): Promise<void | Response> => {
-    const correlationId = String(req.id || uuidv4());
-
-    try {
-      log.info(`[PreSignedURL - ${correlationId}] === PRESIGNED URL GENERATION ENTRY ===`);
-
-      const { fileName, fileType, fileSize, tenantKbId } = req.body;
-      const userId = req.user?._id?.toString();
-
-      // Validate inputs
-      if (!fileName || !fileType || !fileSize) {
-        log.info(
-          `[PreSignedURL - ${correlationId}] Sending error response: Missing required fields`
-        );
-        return res.status(400).json({
-          success: false,
-          message: 'Missing required fields: fileName, fileType, and fileSize are required.',
-        });
-      }
-
-      if (!userId) {
-        log.info(
-          `[PreSignedURL - ${correlationId}] Sending error response: Authentication required`
-        );
-        return res.status(401).json({ success: false, message: 'Authentication required.' });
-      }
-
-      // If tenantKbId is provided, validate user has access
-      if (tenantKbId) {
-        const { TenantKnowledgeBase } = await import('../models/TenantKnowledgeBase');
-        const { UserKBAccess } = await import('../models/UserKBAccess');
-
-        const kb = await TenantKnowledgeBase.findById(tenantKbId);
-        if (!kb) {
-          log.info(`[PreSignedURL - ${correlationId}] Invalid tenant KB ID: ${tenantKbId}`);
-          return res.status(404).json({
-            success: false,
-            message: 'Knowledge base not found.',
-          });
-        }
-
-        // Check if user has access - admins always have access
-        const isAdmin = req.user?.role === 'admin';
-        const userAccess = await UserKBAccess.findOne({ userId });
-        const hasAccess =
-          isAdmin ||
-          kb.accessType === 'public' ||
-          (userAccess && userAccess.enabledKnowledgeBases.includes(tenantKbId));
-
-        if (!hasAccess) {
-          log.info(
-            `[PreSignedURL - ${correlationId}] User ${userId} does not have access to KB ${tenantKbId}`
-          );
-          return res.status(403).json({
-            success: false,
-            message: 'You do not have access to upload to this knowledge base.',
-          });
-        }
-      }
-
-      // Validate file size (25MB limit for Excel, 15MB for images, 100MB for audio, 10MB for others)
-      const isExcel =
-        fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        fileType === 'application/vnd.ms-excel' ||
-        fileType === 'application/vnd.ms-excel.sheet.macroEnabled.12';
-      const isImage = fileType.startsWith('image/');
-      const isAudio = fileType.startsWith('audio/');
-      const isVideo = fileType.startsWith('video/');
-
-      let maxSize = 15 * 1024 * 1024; // Default 15MB (50% increase from 10MB)
-      if (isExcel) {
-        maxSize = 37.5 * 1024 * 1024; // 37.5MB for Excel (50% increase from 25MB)
-      } else if (isImage) {
-        maxSize = 22.5 * 1024 * 1024; // 22.5MB for images (50% increase from 15MB)
-      } else if (isAudio) {
-        maxSize = 37.5 * 1024 * 1024; // 37.5MB for audio files (50% increase from 25MB)
-      } else if (isVideo) {
-        maxSize = 150 * 1024 * 1024; // 150MB for video files (50% increase from 100MB)
-      }
-
-      if (fileSize > maxSize) {
-        log.info(
-          `[PreSignedURL - ${correlationId}] Sending error response: File too large (${fileSize} bytes, max: ${maxSize})`
-        );
-        const maxSizeMB = maxSize / (1024 * 1024);
-        return res.status(400).json({
-          success: false,
-          message: `File too large. Maximum size is ${maxSizeMB}MB for ${
-            isExcel
-              ? 'Excel'
-              : isImage
-                ? 'image'
-                : isAudio
-                  ? 'audio'
-                  : isVideo
-                    ? 'video'
-                    : 'this type of'
-          } files.`,
-        });
-      }
-
-      // Validate file type
-      const allowedTypes = [
-        'application/pdf',
-        'text/plain',
-        'text/markdown',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-        'application/vnd.ms-excel', // .xls
-        'application/vnd.ms-excel.sheet.macroEnabled.12', // .xlsm
-        // Image types
-        'image/jpeg',
-        'image/jpg',
-        'image/png',
-        'image/gif',
-        'image/bmp',
-        'image/webp',
-        'image/tiff',
-        // Audio types
-        'audio/mpeg',
-        'audio/wav',
-        'audio/mp4',
-        'audio/x-m4a', // M4A files sometimes report as this
-        'audio/m4a', // Alternative M4A MIME type
-        'audio/aac',
-        'audio/ogg',
-        'audio/flac',
-        'audio/webm',
-        // Video types
-        'video/mp4',
-        'video/mpeg',
-        'video/quicktime',
-        'video/x-msvideo',
-        'video/x-ms-wmv',
-        'video/x-flv',
-        'video/webm',
-        'video/x-matroska',
-        'video/x-m4v',
-      ];
-      if (!allowedTypes.includes(fileType)) {
-        log.info(
-          `[PreSignedURL - ${correlationId}] Sending error response: Invalid file type (${fileType})`
-        );
-        return res.status(400).json({
-          success: false,
-          message:
-            'Invalid file type. Only PDF, TXT, Markdown, Excel, image, audio, and video files are allowed.',
-        });
-      }
-
-      // Import S3 helper function
-      const { getPresignedUrlForPut } = await import('../utils/s3Helper');
-
-      // Generate unique S3 key based on whether it's for tenant KB or user docs
-      const fileExtension = path.extname(fileName);
-      let s3Key: string;
-
-      if (tenantKbId) {
-        // For tenant KB uploads, use the KB's S3 prefix
-        const { TenantKnowledgeBase } = await import('../models/TenantKnowledgeBase');
-        const kb = await TenantKnowledgeBase.findById(tenantKbId);
-        s3Key = `${kb!.s3Prefix}${uuidv4()}${fileExtension || '.unknown'}`;
-      } else {
-        // For regular user uploads
-        s3Key = `user_docs/${userId}/${uuidv4()}${fileExtension || '.unknown'}`;
-      }
-
-      log.info(
-        `[PreSignedURL - ${correlationId}] Generating pre-signed URL for file: ${fileName}, Type: ${fileType}, S3 Key: ${s3Key}`
-      );
-
-      // === ADD DEBUG LOGGING ===
-      log.debug(
-        `[S3 PreSign DEBUG] Preparing to sign. Filename: ${fileName}, Input ContentType: ${fileType}`
-      );
-      log.debug(`[S3 PreSign DEBUG] S3 Key: ${s3Key}, Bucket: ${process.env.AWS_BUCKET_NAME}`);
-
-      // Generate pre-signed URL with 5-minute expiry
-      const presignedUrl = await getPresignedUrlForPut(s3Key, fileType, 300);
-
-      // === ADD MORE DEBUG LOGGING ===
-      log.debug(
-        `[S3 PreSign DEBUG] Generated Signed URL (first 200 chars): ${presignedUrl.substring(0, 200)}...`
-      );
-
-      // Parse URL to check for checksum parameters
-      try {
-        const url = new URL(presignedUrl);
-        const hasChecksumParams =
-          url.searchParams.has('x-amz-checksum-crc32') ||
-          url.searchParams.has('x-amz-sdk-checksum-algorithm');
-        log.debug(`[S3 PreSign DEBUG] URL has checksum parameters: ${hasChecksumParams}`);
-        if (hasChecksumParams) {
-          log.warn(`[S3 PreSign DEBUG] WARNING: Checksum parameters detected in URL!`);
-        }
-      } catch (urlErr) {
-        log.error(`[S3 PreSign DEBUG] Error parsing URL for debug:`, urlErr);
-      }
-
-      log.info(
-        `[PreSignedURL - ${correlationId}] Successfully generated pre-signed URL for S3 key: ${s3Key}`
-      );
-
-      return res.status(200).json({
-        success: true,
-        presignedUrl,
-        s3Key,
-        expiresIn: 300,
-        tenantKbId: tenantKbId || null,
-      });
-    } catch (error) {
-      log.error(`[PreSignedURL - ${correlationId}] Error generating pre-signed URL:`, error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to generate upload URL. Please try again.',
-      });
-    }
-  }
-);
+// NOTE: /get-presigned-url endpoint removed - replaced by /api/upload/document
+// All file uploads now use direct multipart upload via /api/upload/document
 
 // OPTIONS handler for /api/documents/process-uploaded-file - Handle CORS preflight
 router.options('/process-uploaded-file', (req: Request, res: Response) => {
@@ -780,13 +548,14 @@ router.post(
         `[ProcessUploaded - ${correlationId}] Processing uploaded file: ${originalFileName}, S3 Key: ${s3Key}${tenantKbId ? `, Tenant KB: ${tenantKbId}` : ''}`
       );
 
-      // Import necessary functions
-      const { getFileStream } = await import('../utils/s3Helper');
+      // Import storage interface
+      const storageInterface = await import('../utils/storageInterface');
+      const storage = storageInterface.default;
 
-      // Read file from S3 to calculate content hash
-      log.info(`[ProcessUploaded - ${correlationId}] Reading file from S3 for hash calculation`);
+      // Read file from storage to calculate content hash
+      log.info(`[ProcessUploaded - ${correlationId}] Reading file from storage for hash calculation`);
 
-      const stream = await getFileStream(s3Key);
+      const stream = await storage.getFileStream(s3Key);
       const chunks: Buffer[] = [];
 
       // Collect chunks from stream
@@ -1457,44 +1226,33 @@ const handleServeUserDocument = async (req: Request, res: Response, next: NextFu
     }
 
     log.debug(
-      `[Serve Doc] Constructed S3 key for presigned URL: ${s3KeyForFetch}. Bucket: ${document.s3Bucket}`
+      `[Serve Doc] Fetching file from storage: ${s3KeyForFetch}`
     );
     // --- END: Added Logging ---
-    // const fileStream = await getFileStream(s3KeyForFetch); // Old direct stream logic
 
-    // New: Generate a presigned URL instead of streaming
-    const { getPresignedUrlForView } = await import('../utils/s3Helper');
+    // Fetch file from storage (local or S3)
+    const storageInterface = await import('../utils/storageInterface');
+    const storage = storageInterface.default;
 
-    // CRITICAL FIX: Always use the current bucket from environment regardless of what's stored in the document
-    // This ensures we're looking in the right bucket no matter where the document record says it was originally stored
-    const currentBucket = process.env.AWS_BUCKET_NAME || 'local';
-    const bucketForPresignedUrl = currentBucket;
+    log.debug(`[Serve Doc] Retrieving file buffer for: ${s3KeyForFetch}`);
+    const fileBuffer = await storage.getFile(s3KeyForFetch);
 
-    log.debug(
-      `[Serve Doc] BUCKET FIX: Document record has bucket=${document.s3Bucket}, but we're using current bucket=${currentBucket}`
-    );
-
-    log.debug(
-      `[Serve Doc] Using bucket for presigned URL: ${bucketForPresignedUrl}, S3 key: ${s3KeyForFetch}`
-    );
-
-    const presignedUrl = await getPresignedUrlForView(s3KeyForFetch, 3600, bucketForPresignedUrl); // 1 hour expiry with bucket override
-
-    if (!presignedUrl) {
-      log.error(`[Serve Doc] Failed to generate presigned URL for key: ${s3KeyForFetch}`);
+    if (!fileBuffer) {
+      log.error(`[Serve Doc] Failed to retrieve file for key: ${s3KeyForFetch}`);
       return res
         .status(500)
-        .json({ success: false, message: 'Could not generate secure link for the document.' });
+        .json({ success: false, message: 'Could not retrieve document file.' });
     }
 
-    log.debug(`[Serve Doc] Generated presigned URL for ${document.originalFileName}`);
+    log.debug(`[Serve Doc] File retrieved successfully: ${document.originalFileName} (${fileBuffer.length} bytes)`);
 
-    return res.status(200).json({
-      success: true,
-      url: presignedUrl,
-      fileName: document.originalFileName, // Send filename for context
-      message: 'Presigned URL generated successfully.',
-    });
+    // Set appropriate headers for file download/viewing
+    res.setHeader('Content-Type', document.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${document.originalFileName}"`);
+    res.setHeader('Content-Length', fileBuffer.length.toString());
+
+    // Send file buffer
+    return res.send(fileBuffer);
 
     // --- START: Modified Original Catch Block ---
   } catch (error) {
@@ -1606,10 +1364,11 @@ router.get(
           .json({ success: false, message: 'Document file information is incomplete.' });
       }
 
-      // Get file stream from S3
-      const { getFileStream } = await import('../utils/s3Helper');
+      // Get file stream from storage
+      const storageInterface = await import('../utils/storageInterface');
+      const storage = storageInterface.default;
 
-      // Construct S3 key
+      // Construct storage key
       let s3KeyForFetch: string;
       if (document.s3Key.includes('/') || document.s3Key.includes('.')) {
         s3KeyForFetch = document.s3Key;
@@ -1621,9 +1380,9 @@ router.get(
         s3KeyForFetch = `${prefix}/${document.s3Key}.${document.file_extension}`;
       }
 
-      log.debug(`[Download Doc] Fetching from S3: ${s3KeyForFetch}`);
+      log.debug(`[Download Doc] Fetching from storage: ${s3KeyForFetch}`);
 
-      const fileStream = await getFileStream(s3KeyForFetch);
+      const fileStream = await storage.getFileStream(s3KeyForFetch);
 
       // Set headers for download
       res.setHeader('Content-Type', document.mimeType);
@@ -1720,17 +1479,17 @@ const handleDeleteDocument = async (req: Request, res: Response, next: NextFunct
     await deleteVectorsByFilter({ documentId: docId });
     log.debug(`[Delete Single Doc] Pinecone deletion complete for doc ID: ${docId}`);
 
-    // Delete S3 object
-    if (document.s3Bucket && document.s3Key) {
+    // Delete file from storage (local or S3)
+    if (document.s3Key) {
       try {
-        log.debug(`[Delete Single Doc] Deleting S3 object: ${document.s3Bucket}/${document.s3Key}`);
-        await deleteFile(document.s3Key);
-        log.debug(`[Delete Single Doc] S3 deletion complete for doc ID: ${docId}`);
-      } catch (s3Error: unknown) {
-        log.error('[Delete Single Doc] S3 deletion failed (continuing):', s3Error);
+        log.debug(`[Delete Single Doc] Deleting file from storage: ${document.s3Key}`);
+        await storage.deleteFile(document.s3Key);
+        log.debug(`[Delete Single Doc] File deletion complete for doc ID: ${docId}`);
+      } catch (storageError: unknown) {
+        log.error('[Delete Single Doc] File deletion failed (continuing):', storageError);
       }
     } else {
-      log.warn(`[Delete Single Doc] Skipping S3 deletion - info missing for doc ID: ${docId}`);
+      log.warn(`[Delete Single Doc] Skipping file deletion - s3Key missing for doc ID: ${docId}`);
     }
 
     // Delete DB record

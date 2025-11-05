@@ -1,0 +1,56 @@
+# Test files
+**/*.test.ts
+**/*.spec.ts
+**/__tests__
+
+# Development files
+.env*
+!.env.example
+*.log
+coverage/
+.nyc_output/
+
+# Build artifacts that will be regenerated
+dist/
+build/
+*.tsbuildinfo
+
+# Local uploads and temp files
+.local_uploads/
+local_uploads/
+uploads/
+temp/
+tmp/
+
+# Documentation
+docs/
+*.md
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Dependencies (will be installed fresh)
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Other apps in monorepo (not needed for API build)
+apps/web/ 

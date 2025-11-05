@@ -236,15 +236,13 @@ export const deletePersona = async (
 export const deleteAllPersonasByUserId = async (
   userId: string
 ): Promise<{ deletedCount: number }> => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
   try {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error('Invalid user ID format');
     }
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    const deleteResult = await PersonaModel.deleteMany({ userId: userObjectId }, { session });
+    const deleteResult = await PersonaModel.deleteMany({ userId: userObjectId });
     const deletedCount = deleteResult.deletedCount || 0;
 
     if (deletedCount > 0) {
@@ -252,7 +250,7 @@ export const deleteAllPersonasByUserId = async (
       await User.findByIdAndUpdate(
         userObjectId,
         { $set: { activePersonaId: null, isPersonaEnabled: false } },
-        { session, new: true } // `new: true` is optional here as we don't use the result directly
+        { new: true } // `new: true` is optional here as we don't use the result directly
       );
       log.debug(
         `[PersonaService] Deleted ${deletedCount} personas for user ${userId} and reset user's persona settings.`
@@ -261,14 +259,10 @@ export const deleteAllPersonasByUserId = async (
       log.debug(`[PersonaService] No personas found to delete for user ${userId}.`);
     }
 
-    await session.commitTransaction();
     return { deletedCount };
   } catch (error) {
-    await session.abortTransaction();
     log.error(`[PersonaService] Error deleting all personas for user ${userId}:`, error);
     throw error;
-  } finally {
-    session.endSession();
   }
 };
 
@@ -303,35 +297,22 @@ export const activatePersona = async (
       throw new Error('Persona not found or does not belong to user');
     }
 
-    // Start a session for transaction
-    const session = await mongoose.startSession();
+    // 1. Set all personas for this user to inactive
+    await PersonaModel.updateMany({ userId: userObjectId }, { isActive: false });
 
-    try {
-      await session.withTransaction(async () => {
-        // 1. Set all personas for this user to inactive
-        await PersonaModel.updateMany({ userId: userObjectId }, { isActive: false }, { session });
+    // 2. Set the specified persona to active
+    await PersonaModel.findByIdAndUpdate(personaObjectId, { isActive: true });
 
-        // 2. Set the specified persona to active
-        await PersonaModel.findByIdAndUpdate(personaObjectId, { isActive: true }, { session });
+    // 3. Update the User's activePersonaId
+    await User.findByIdAndUpdate(userObjectId, { activePersonaId: personaObjectId });
 
-        // 3. Update the User's activePersonaId
-        await User.findByIdAndUpdate(
-          userObjectId,
-          { activePersonaId: personaObjectId },
-          { session }
-        );
-      });
+    log.debug(
+      `[PersonaService] Activated persona "${personaToActivate.name}" for user ${userId}`
+    );
 
-      log.debug(
-        `[PersonaService] Activated persona "${personaToActivate.name}" for user ${userId}`
-      );
-
-      // Return the updated persona
-      const activatedPersona = await PersonaModel.findById(personaObjectId).lean();
-      return activatedPersona;
-    } finally {
-      await session.endSession();
-    }
+    // Return the updated persona
+    const activatedPersona = await PersonaModel.findById(personaObjectId).lean();
+    return activatedPersona;
   } catch (error) {
     log.error(
       `[PersonaService] Error activating persona ${personaIdToActivate} for user ${userId}:`,
@@ -354,23 +335,14 @@ export const deactivateCurrentPersona = async (userId: string): Promise<boolean>
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    // Start a session for transaction
-    const session = await mongoose.startSession();
+    // 1. Set all personas for this user to inactive
+    await PersonaModel.updateMany({ userId: userObjectId }, { isActive: false });
 
-    try {
-      await session.withTransaction(async () => {
-        // 1. Set all personas for this user to inactive
-        await PersonaModel.updateMany({ userId: userObjectId }, { isActive: false }, { session });
+    // 2. Clear the User's activePersonaId
+    await User.findByIdAndUpdate(userObjectId, { activePersonaId: null });
 
-        // 2. Clear the User's activePersonaId
-        await User.findByIdAndUpdate(userObjectId, { activePersonaId: null }, { session });
-      });
-
-      log.debug(`[PersonaService] Deactivated current persona for user ${userId}`);
-      return true;
-    } finally {
-      await session.endSession();
-    }
+    log.debug(`[PersonaService] Deactivated current persona for user ${userId}`);
+    return true;
   } catch (error) {
     log.error(`[PersonaService] Error deactivating current persona for user ${userId}:`, error);
     throw error;

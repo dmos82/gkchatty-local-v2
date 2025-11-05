@@ -732,7 +732,7 @@ router.post(
     try {
       log.info(`[ProcessUploaded - ${correlationId}] === POST-UPLOAD PROCESSING ENTRY ===`);
 
-      const { s3Key, originalFileName, fileSize, fileType, extractedText, tenantKbId } = req.body;
+      const { s3Key, originalFileName, fileSize, fileType, extractedText, tenantKbId, folderId } = req.body;
       const userId = req.user?._id?.toString();
 
       // Validate inputs
@@ -864,6 +864,7 @@ router.post(
         status: 'pending',
         contentHash: hash,
         uploadTimestamp: new Date(),
+        folderId: folderId || null, // Add folderId support for folder uploads
       };
 
       // Add appropriate reference based on source type

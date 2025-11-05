@@ -329,7 +329,8 @@ router.post(
         httpOnly: true,
         secure: isProductionLike, // Must be true for HTTPS environments (staging + production)
         // Use 'none' for cross-origin requests in HTTPS environments
-        sameSite: (isProductionLike ? 'none' : 'lax') as 'none' | 'lax',
+        // In development, don't set sameSite to allow cookies across different ports (mobile testing)
+        ...(isProductionLike ? { sameSite: 'none' as 'none' } : {}),
         maxAge: 1800000, // MEDIUM-002: 30 minutes in milliseconds (matches JWT expiration)
         path: '/',
         // Removed explicit domain to let the browser use the current domain
@@ -449,10 +450,11 @@ router.post('/logout', protect, async (req: RequestWithUser, res: Response) => {
     // Clear the HttpOnly cookie with matching secure attributes
     const isProductionLike =
       process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
-    const cookieOptions = {
+    const cookieOptions: any = {
       httpOnly: true,
       secure: isProductionLike, // Match the login cookie settings
-      sameSite: (isProductionLike ? 'none' : 'lax') as 'none' | 'lax',
+      // In development, don't set sameSite to allow cookies across different ports (mobile testing)
+      ...(isProductionLike ? { sameSite: 'none' as 'none' } : {}),
       expires: new Date(0),
       path: '/',
       // No domain specified, letting browser use current domain

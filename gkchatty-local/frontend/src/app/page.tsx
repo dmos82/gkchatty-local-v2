@@ -14,7 +14,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePersona } from '@/contexts/PersonaContext';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { DocumentViewer } from '@/components/common/DocumentViewer';
-import { API_BASE_URL_CLIENT as API_BASE_URL } from '@/lib/config'; // Correct alias
+import { getApiBaseUrl } from '@/lib/config';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -176,12 +177,10 @@ export default function Home() {
 
       setIsLoadingHistory(true);
       console.log('[ChatPage Load] Attempting to load latest chat...');
-      const apiUrl = `${API_BASE_URL}/api/chats/latest`;
 
       try {
-        const response = await fetch(apiUrl, {
+        const response = await fetchWithAuth('/api/chats/latest', {
           method: 'GET',
-          credentials: 'include', // Use HttpOnly cookies instead of Authorization header
         });
 
         if (response.ok) {
@@ -248,12 +247,10 @@ export default function Home() {
 
     setIsLoadingChats(true);
     console.log('[fetchChatList] Fetching chat list...');
-    const apiUrl = `${API_BASE_URL}/api/chats`;
 
     try {
-      const response = await fetch(apiUrl, {
+      const response = await fetchWithAuth('/api/chats', {
         method: 'GET',
-        credentials: 'include',
       });
 
       if (response.ok) {
@@ -332,12 +329,10 @@ export default function Home() {
       setMessages([]); // Clear previous messages immediately
 
       console.log(`[handleSelectChat] Fetching URL: /api/chats/${id}`);
-      const apiUrl = `${API_BASE_URL}/api/chats/${id}`;
 
       try {
-        const response = await fetch(apiUrl, {
+        const response = await fetchWithAuth(`/api/chats/${id}`, {
           method: 'GET',
-          credentials: 'include', // Use HttpOnly cookies instead of Authorization header
         });
 
         console.log(`[handleSelectChat] API Response Status for chat ${id}: ${response.status}`);
@@ -424,14 +419,12 @@ export default function Home() {
       }
 
       console.log(`[handleConfirmDelete] Attempting to delete chat: ${id}`);
-      const apiUrl = `${API_BASE_URL}/api/chats/${id}`;
       let apiSucceeded = false; // Flag to track API success
 
       try {
-        console.log(`[handleConfirmDelete] Sending DELETE request to: ${apiUrl}`); // Log URL
-        const response = await fetch(apiUrl, {
+        console.log(`[handleConfirmDelete] Sending DELETE request to: /api/chats/${id}`);
+        const response = await fetchWithAuth(`/api/chats/${id}`, {
           method: 'DELETE',
-          credentials: 'include',
         });
 
         console.log(`[handleConfirmDelete] API Response Status: ${response.status}`); // Log Status
@@ -514,12 +507,9 @@ export default function Home() {
     console.log('[handleDeleteAllChats] Attempting to delete all chats...');
     setIsLoadingChats(true); // Indicate loading state (optional but good UX)
 
-    const apiUrl = `${API_BASE_URL}/api/chats`;
-
     try {
-      const response = await fetch(apiUrl, {
+      const response = await fetchWithAuth('/api/chats', {
         method: 'DELETE',
-        credentials: 'include', // Use HttpOnly cookies instead of Authorization header
       });
 
       if (response.ok) {
@@ -586,10 +576,8 @@ export default function Home() {
       setIsSavingNotes(true);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/chats`, {
+        const response = await fetchWithAuth('/api/chats', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({
             isNotesInitiated: true,
             initialChatName: 'New Chat with Notes',
@@ -660,13 +648,10 @@ export default function Home() {
 
       console.log(`[handleSaveNotes] Saving notes for chat ${chatId}...`);
       setIsSavingNotes(true);
-      const apiUrl = `${API_BASE_URL}/api/chats/${chatId}/notes`;
 
       try {
-        const response = await fetch(apiUrl, {
+        const response = await fetchWithAuth(`/api/chats/${chatId}/notes`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({ notes }),
         });
 
@@ -745,7 +730,6 @@ export default function Home() {
         'ChatID:',
         currentChatId
       );
-      const apiUrl = `${API_BASE_URL}/api/chats`;
 
       // --- SIMPLIFIED: Use unified search mode directly (no mapping needed) ---
       console.log(`[Chat] Current search mode state: ${searchMode}`);
@@ -769,18 +753,14 @@ export default function Home() {
 
       // --- START: Log request payload before fetch ---
       console.log(
-        `[ChatPage Send] Sending request to ${apiUrl}. Body:`,
+        '[ChatPage Send] Sending request to /api/chats. Body:',
         JSON.stringify(requestBody, null, 2)
-      ); // Use literal prefix
+      );
       // --- END: Log request payload before fetch ---
 
       try {
-        const response = await fetch(apiUrl, {
+        const response = await fetchWithAuth('/api/chats', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include', // Use HttpOnly cookies instead of Authorization header
           body: JSON.stringify(requestBody),
         });
 
@@ -924,7 +904,6 @@ export default function Home() {
     }
 
     console.log(`[handleUpdateChatName] Updating chat ${chatId} name to "${newName}"...`);
-    const apiUrl = `${API_BASE_URL}/api/chats/${chatId}/name`;
 
     // Optimistic UI Update (Should work now with correct type)
     const originalChats = [...chats];
@@ -933,12 +912,8 @@ export default function Home() {
     );
 
     try {
-      const response = await fetch(apiUrl, {
+      const response = await fetchWithAuth(`/api/chats/${chatId}/name`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
         body: JSON.stringify({ chatName: newName }),
       });
 

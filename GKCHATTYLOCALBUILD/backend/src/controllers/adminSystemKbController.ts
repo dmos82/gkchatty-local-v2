@@ -27,10 +27,7 @@ interface ISystemKbDocumentRecord extends Document {
 }
 
 // Verify the model is correctly defined
-logger.info('[AdminSystemKbController] SystemKbDocument model loaded:', {
-  modelName: SystemKbDocument.modelName,
-  collection: SystemKbDocument.collection.name,
-});
+logger.info('[AdminSystemKbController] SystemKbDocument model loaded');
 
 const CONTROLLER_VERSION = 'adminSystemKbController_v1.0_UUID_FIX_20250527_PM';
 

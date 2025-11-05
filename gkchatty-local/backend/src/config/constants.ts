@@ -207,6 +207,30 @@ export const DEFAULT_SMTP_PORT = 587;
 export const SECURE_SMTP_PORT = 465;
 
 // ============================================================================
+// SECURITY CONFIGURATION
+// ============================================================================
+
+/**
+ * Bcrypt salt rounds for password hashing
+ * 12 rounds = 4096 iterations (2^12)
+ * Higher values = more secure but slower
+ * @see https://github.com/kelektiv/node.bcrypt.js#a-note-on-rounds
+ */
+export const BCRYPT_SALT_ROUNDS = 12;
+
+/**
+ * JWT token expiration time (seconds)
+ * 1800 seconds = 30 minutes
+ */
+export const JWT_EXPIRATION_SECONDS = 1800;
+
+/**
+ * Auth cookie maximum age (milliseconds)
+ * 1800000 milliseconds = 30 minutes
+ */
+export const AUTH_COOKIE_MAX_AGE_MS = 1800000;
+
+// ============================================================================
 // EXTERNAL SERVICES
 // ============================================================================
 
