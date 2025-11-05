@@ -27,7 +27,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true); // Start loading until session checked
 
   // Function to check session validity with backend
-  const checkSession = useCallback(async (): Promise<User | null> => {
+  const checkSession = useCallback(async (): Promise<void> => {
     console.log('[AuthContext] checkSession: Attempting API verification...');
     setIsLoading(true);
     try {
@@ -80,9 +80,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (userData) {
           setUser(userData);
-          return userData;
         }
-        return null;
       } else {
         console.log(
           `[AuthContext] checkSession: Verification FAILED (Status: ${response.status}). Setting user to null.`
@@ -96,15 +94,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(false);
       console.log('[AuthContext] checkSession: setIsLoading(false) immediately.');
     }
-    return null;
   }, []);
 
   // Function to handle login - NOW ASYNC and returns boolean for success
   const login = useCallback(
-    async (credentials: { username: string; password: string }): Promise<boolean> => {
-      // console.log(`[AuthContext] login: Attempting login for ${credentials.username}...`); // Original log
+    async (username: string, password: string): Promise<void> => {
+      // console.log(`[AuthContext] login: Attempting login for ${username}...`); // Original log
       console.log(
-        `[AuthContext][login][Diag] Attempting login for ${credentials.username}. Current state: user=${JSON.stringify(user)}, isLoading=${isLoading}`
+        `[AuthContext][login][Diag] Attempting login for ${username}. Current state: user=${JSON.stringify(user)}, isLoading=${isLoading}`
       );
 
       // Log before setIsLoading (though it's already set by checkSession's finally if this is a re-login)
@@ -112,20 +109,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log(`[AuthContext][login][Diag] Setting isLoading to true.`);
       setIsLoading(true); // Indicate loading during login attempt
 
-      let loginAttemptSuccessful = false; // Variable to track outcome for final log
-
       try {
         const apiUrl = getApiBaseUrl();
         console.log(
-          `[AuthContext][login][Diag] Before fetch to /api/auth/login. Using API URL: ${apiUrl}. Credentials:`,
-          credentials
+          `[AuthContext][login][Diag] Before fetch to /api/auth/login. Using API URL: ${apiUrl}. Username: ${username}`
         );
         const response = await fetch(`${apiUrl}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'omit', // iOS WebKit requires omit for HTTP cross-origin
           mode: 'cors', // Explicit CORS mode
-          body: JSON.stringify(credentials),
+          body: JSON.stringify({ username, password }),
         });
 
         // console.log(`[AuthContext] login: API response status: ${response.status}`); // Original log
@@ -173,7 +167,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             console.log(
               `[AuthContext][login][Diag] After setUser(data.user). (Note: console.log might show stale 'user' state here due to async setState)`
             );
-            loginAttemptSuccessful = true;
             // CRITICAL: Set isLoading to false IMMEDIATELY after setUser for successful login
             // This ensures ProtectedRoute sees the updated state synchronously
             setIsLoading(false);
@@ -194,7 +187,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             console.log(
               `[AuthContext][login][Diag] After setUser(null) due to unsuccessful login data.`
             );
-            loginAttemptSuccessful = false;
+            throw new Error('Invalid credentials');
           }
         } else {
           // Handle 401 or other login errors
@@ -224,7 +217,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(null);
           setIsLoading(false);
           // console.log(`[AuthContext][login][Diag] After setUser(null) due to API login failure. Current user:`, JSON.stringify(user)); // This log is not reliable for seeing updated state
-          loginAttemptSuccessful = false;
+          throw new Error(errorData.message || 'Login failed');
         }
       } catch (error) {
         console.error('[AuthContext][login][Diag] Catch block: Fetch Error during login:', error);
@@ -235,15 +228,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(null);
         setIsLoading(false);
         // console.log(`[AuthContext][login][Diag] After setUser(null) due to catch block error. Current user:`, JSON.stringify(user)); // Not reliable
-        loginAttemptSuccessful = false;
+        throw error;
       } finally {
         // isLoading is now managed inline for each success/failure path
         // This ensures state updates are batched correctly with setUser
         console.log(
-          `[AuthContext][login][Diag] Login function finally block. loginAttemptSuccessful=${loginAttemptSuccessful}`
+          `[AuthContext][login][Diag] Login function finally block.`
         );
       }
-      return loginAttemptSuccessful;
     },
     // setUser and setIsLoading are stable functions from useState.
     // Removed user and isLoading from dependencies as they're only used for logging
@@ -314,6 +306,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value = {
     user,
     // REMOVED: token,
+    loading: isLoading,  // Alias for backwards compatibility
     isLoading,
     login,
     logout,

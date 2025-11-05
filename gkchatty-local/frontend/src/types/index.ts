@@ -90,4 +90,89 @@ export interface ChatApiResponse {
   message?: string; // Optional general message from backend
 }
 
+// Admin and User types
+export interface AdminUser {
+  _id: string;
+  username: string;
+  email: string;
+  role: 'user' | 'admin';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface User {
+  _id: string;
+  username: string;
+  email?: string;
+  role: 'user' | 'admin';
+  canCustomizePersona?: boolean;
+  forcePasswordChange?: boolean;
+}
+
+export interface AuthContextType {
+  user: User | null;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  loading: boolean;
+  isLoading: boolean;  // Alias for loading
+  handleApiError?: (error: any) => void;  // Optional error handler
+  checkSession?: () => Promise<void>;  // Optional session check
+}
+
+// Persona types
+export interface Persona {
+  _id: string;
+  name: string;
+  description?: string;
+  systemPrompt: string;
+  prompt?: string;  // Alias for systemPrompt (some code uses prompt)
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersonaListResponse {
+  success: boolean;
+  personas: Persona[];
+}
+
+export interface PersonaResponse {
+  success: boolean;
+  persona: Persona;
+  message?: string;
+}
+
+export interface CreatePersonaRequest {
+  name: string;
+  description?: string;
+  prompt?: string;  // Flexible - accepts either prompt or systemPrompt
+  systemPrompt?: string;
+  isActive?: boolean;
+}
+
+export interface UpdatePersonaRequest {
+  name?: string;
+  description?: string;
+  prompt?: string;  // Flexible - accepts either prompt or systemPrompt
+  systemPrompt?: string;
+  isActive?: boolean;
+}
+
+// API response types
+export interface ApiErrorResponse {
+  success: false;
+  message: string;
+  error?: string;
+  status?: number;
+  errorCode?: string | null;
+  data?: any;
+}
+
+export interface StandardApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+}
+
 // Export other types from this directory if needed

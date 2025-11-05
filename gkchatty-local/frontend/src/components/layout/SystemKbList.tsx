@@ -44,7 +44,9 @@ export function SystemKbList({ onDocumentSelect }: SystemKbListProps) {
         } catch (e) {
           /* Ignore if response not JSON */
         }
-        handleApiError(res);
+        if (handleApiError) {
+          handleApiError(res);
+        }
         throw new Error(errorMsg);
       }
 
@@ -70,7 +72,7 @@ export function SystemKbList({ onDocumentSelect }: SystemKbListProps) {
       }
     } catch (err) {
       console.error('Error fetching system KB documents:', err);
-      const handled = handleApiError(err);
+      const handled = handleApiError ? handleApiError(err) : false;
       if (!handled) {
         setError(err instanceof Error ? err.message : 'An unknown error occurred');
       }

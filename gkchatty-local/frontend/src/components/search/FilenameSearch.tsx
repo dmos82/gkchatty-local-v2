@@ -56,7 +56,9 @@ const FilenameSearch: React.FC = () => {
         } catch (e) {
           // Ignore if response body isn't JSON or is empty
         }
-        handleApiError(response);
+        if (handleApiError) {
+          handleApiError(response);
+        }
         throw new Error(errorMessage);
       }
 
@@ -72,7 +74,7 @@ const FilenameSearch: React.FC = () => {
       }
     } catch (err) {
       console.error('Filename search error:', err);
-      const handled = handleApiError(err);
+      const handled = handleApiError ? handleApiError(err) : false;
       if (!handled) {
         setError(
           err instanceof Error ? err.message : 'An unexpected error occurred during search.'

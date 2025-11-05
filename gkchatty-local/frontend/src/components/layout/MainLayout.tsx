@@ -84,7 +84,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
             method: 'GET',
           });
           if (!response.ok) {
-            handleApiError(response);
+            if (handleApiError) {
+              handleApiError(response);
+            }
             if (response.status === 401) throw new Error('Unauthorized');
             throw new Error(`Failed to fetch KB (${response.status})`);
           }
@@ -96,7 +98,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
           }
         } catch (err: any) {
           console.error('Error fetching KB docs:', err);
-          const handled = handleApiError(err);
+          const handled = handleApiError ? handleApiError(err) : false;
           if (!handled) {
             setKbError(err.message || 'Failed to load System KB');
           }
