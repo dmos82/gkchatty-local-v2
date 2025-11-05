@@ -460,7 +460,7 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
       // If dropping on a folder, use that folder's ID, otherwise use null for root
       const targetFolderId = targetNode?.type === 'folder' ? targetNode._id : null;
 
-      if (targetFolderId) {
+      if (targetFolderId && targetNode) {
         console.log(`[FileTreeManager] Uploading to folder: ${targetNode.name}`);
       } else {
         console.log('[FileTreeManager] Uploading to root');
