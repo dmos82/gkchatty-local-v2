@@ -60,7 +60,7 @@ export interface CreateUserOptions {
 export async function createTestUser(options: CreateUserOptions): Promise<any> {
   const { username, password, email, role = 'user' } = options;
 
-  logger.info({ username, role, hasCustomEmail: !!email }, 'Creating test user');
+  logger.info(`Creating test user: ${username} (role=${role}, hasCustomEmail=${!!email})`);
 
   const adminToken = await getAdminToken();
 
@@ -97,7 +97,7 @@ export async function createTestUser(options: CreateUserOptions): Promise<any> {
     throw new Error(`User creation returned success=false: ${data.message || 'Unknown error'}`);
   }
 
-  logger.info({ userId: data.user?._id, username }, 'Test user created successfully');
+  logger.info(`Test user created successfully: ${username} (userId=${data.user?._id})`);
 
   return data.user;
 }
@@ -106,7 +106,7 @@ export async function createTestUser(options: CreateUserOptions): Promise<any> {
  * Delete a test user via admin API (cleanup)
  */
 export async function deleteTestUser(userId: string): Promise<void> {
-  logger.info({ userId }, 'Deleting test user');
+  logger.info(`Deleting test user: ${userId}`);
 
   const adminToken = await getAdminToken();
 
@@ -124,7 +124,7 @@ export async function deleteTestUser(userId: string): Promise<void> {
     return;
   }
 
-  logger.debug({ userId }, 'Test user deleted successfully');
+  logger.debug(`Test user deleted successfully: ${userId}`);
 }
 
 /**
@@ -152,7 +152,7 @@ export async function getAllUsers(): Promise<any[]> {
  * Delete a test user by username (convenience method)
  */
 export async function deleteTestUserByUsername(username: string): Promise<void> {
-  logger.debug({ username }, 'Looking up user by username');
+  logger.debug(`Looking up user by username: ${username}`);
 
   const users = await getAllUsers();
   const user = users.find(u => u.username === username);
@@ -160,6 +160,6 @@ export async function deleteTestUserByUsername(username: string): Promise<void> 
   if (user) {
     await deleteTestUser(user._id);
   } else {
-    logger.warn({ username }, 'User not found for deletion');
+    logger.warn(`User not found for deletion: ${username}`);
   }
 }
