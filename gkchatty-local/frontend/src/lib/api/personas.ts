@@ -5,7 +5,7 @@ import {
   PersonaResponse,
   CreatePersonaRequest,
   UpdatePersonaRequest,
-} from 'types';
+} from '@/types';
 
 /**
  * Fetch all personas for the authenticated user

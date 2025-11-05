@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Persona } from 'types';
+import { Persona } from '@/types';
 import { getPersonas, activatePersona, deactivatePersona, deletePersona } from '@/lib/api/personas';
 import { usePersona } from '@/contexts/PersonaContext';
 import { useToast } from '@/components/ui/use-toast';

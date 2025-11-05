@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-// import { User } from 'types'; // REMOVED - Type will be inferred or come from useAuth context if needed
+// import { User } from '@/types'; // REMOVED - Type will be inferred or come from useAuth context if needed
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 
