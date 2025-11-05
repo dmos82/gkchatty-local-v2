@@ -1,7 +1,7 @@
 [build]
-  base = "frontend"
-  command = "cd .. && pnpm install --filter @gkchatty/web && cd frontend && pnpm build"
-  publish = ".next"
+  base = "."
+  command = "pnpm install && cd frontend && pnpm build"
+  publish = "frontend/.next"
 
 [build.environment]
   NODE_VERSION = "20"
