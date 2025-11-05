@@ -1,7 +1,7 @@
 [build]
-  base = "gkchatty-local/frontend"
-  command = "pnpm install && pnpm build"
-  publish = ".next"
+  base = "gkchatty-local"
+  command = "pnpm install --frozen-lockfile && cd frontend && pnpm install && pnpm build"
+  publish = "frontend/.next"
 
 [build.environment]
   NODE_VERSION = "20"
