@@ -26,7 +26,8 @@ export function LoginForm() {
       setIsSubmitting(true);
       console.log('[LoginForm] handleLogin triggered for:', { username });
 
-      const loginSuccess = await login({ username, password });
+      await login(username, password);
+      const loginSuccess = true;  // If login doesn't throw, it succeeded
 
       if (loginSuccess) {
         console.log('[LoginForm] AuthContext login successful. Redirecting to /');
