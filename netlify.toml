@@ -1,0 +1,10 @@
+[build]
+  base = "gkchatty-local/frontend"
+  command = "pnpm install && pnpm build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
