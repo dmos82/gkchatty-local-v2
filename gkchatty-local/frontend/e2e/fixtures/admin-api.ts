@@ -18,7 +18,7 @@ async function getAdminToken(): Promise<string> {
   const adminUsername = process.env.E2E_ADMIN_USERNAME || 'testadmin';
   const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'testpassword';
 
-  logger.debug({ adminUsername }, 'Logging in as admin');
+  logger.debug('Logging in as admin', { adminUsername });
 
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
