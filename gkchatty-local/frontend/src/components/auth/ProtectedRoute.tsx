@@ -46,7 +46,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     console.log('[ProtectedRoute] Password changed successfully, refreshing session');
     setShowPasswordModal(false);
     // Refresh the user session to get updated forcePasswordChange status
-    await checkSession();
+    if (checkSession) {
+      await checkSession();
+    }
   };
 
   // If not loading and user exists, render the protected content
