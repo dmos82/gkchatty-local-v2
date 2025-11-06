@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import debounce from 'lodash/debounce';
+import debounce from 'lodash.debounce';
 import { useAuth } from '@/hooks/useAuth';
 import { List, Trash2, FileText } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
