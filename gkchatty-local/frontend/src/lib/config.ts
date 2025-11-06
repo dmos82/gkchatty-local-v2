@@ -98,10 +98,23 @@ export function getApiBaseUrl(): string {
   // Client-side: detect if accessed via network IP
   const hostname = window.location.hostname;
 
-  // If accessed via IP address (not localhost), use same IP for backend
+  // Check if this is a deployed production/staging environment
+  const isDeployedEnv = hostname.includes('netlify.app') ||
+                        hostname.includes('vercel.app') ||
+                        hostname.includes('.com') ||
+                        hostname.includes('.io') ||
+                        hostname.includes('.dev');
+
+  // If deployed environment, always use the configured API_BASE_URL_CLIENT
+  if (isDeployedEnv) {
+    console.log(`[Config] Deployed environment detected (${hostname}). Using configured API URL: ${API_BASE_URL_CLIENT}`);
+    return API_BASE_URL_CLIENT;
+  }
+
+  // If accessed via local network IP address (not localhost), use same IP for backend
   if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
     const networkApiUrl = `http://${hostname}:4001`;
-    console.log(`[Config] Network access detected via ${hostname}. Using ${networkApiUrl} for API.`);
+    console.log(`[Config] Local network access detected via ${hostname}. Using ${networkApiUrl} for API.`);
     return networkApiUrl;
   }
 
