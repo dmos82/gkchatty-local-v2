@@ -11,7 +11,7 @@ COPY package*.json ./
 COPY tsconfig.json ./
 
 # Install dependencies (including dev dependencies for build)
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY src ./src
@@ -36,7 +36,7 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm install --only=production
+RUN npm install --only=production --legacy-peer-deps
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
