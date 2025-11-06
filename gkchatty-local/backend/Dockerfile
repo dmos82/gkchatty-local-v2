@@ -41,9 +41,6 @@ RUN npm install --only=production --legacy-peer-deps
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy necessary files
-COPY .env.example ./.env
-
 # Create data directories
 RUN mkdir -p ./data/documents ./data/embeddings ./logs && \
     chown -R nodejs:nodejs /app
