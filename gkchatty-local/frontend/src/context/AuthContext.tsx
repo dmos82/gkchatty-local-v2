@@ -11,7 +11,7 @@ import React, {
 import { getApiBaseUrl } from '@/lib/config'; // Use dynamic URL for mobile support
 // No longer need Cookies.get for token, rely on httpOnly and verify endpoint
 // import Cookies from 'js-cookie';
-import { User, AuthContextType } from 'types'; // Assuming this type import works after build fix
+import { User, AuthContextType } from '@/types'; // Assuming this type import works after build fix
 
 // Create the context with a default value of undefined.
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);

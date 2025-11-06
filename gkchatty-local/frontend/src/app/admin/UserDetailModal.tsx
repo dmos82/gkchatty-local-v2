@@ -15,8 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-// import { AdminUser } from 'types/auth'; // Using path alias (Failed)
-import { AdminUser } from 'types'; // CORRECTED - using actual package name
+import { AdminUser } from '@/types'; // Using @ path alias to src/types/index.ts
 // import { AdminSubmission } from './UserDetailModal'; // REMOVED erroneous self-import
 import { Download, Eye, Trash2 } from 'lucide-react'; // Import icons
 import PdfViewerModal from '@/components/admin/PdfViewerModal'; // Import the new component

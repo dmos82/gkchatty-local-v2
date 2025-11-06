@@ -1,6 +1,6 @@
 // Utility functions for API calls
 import { Document, ChatSummary, ChatDetail } from '@/types'; // Import necessary types
-import { ApiErrorResponse, StandardApiResponse } from 'types'; // Import necessary types
+import { ApiErrorResponse, StandardApiResponse } from '@/types'; // Import necessary types
 import { fetchWithAuth } from './fetchWithAuth';
 
 /**

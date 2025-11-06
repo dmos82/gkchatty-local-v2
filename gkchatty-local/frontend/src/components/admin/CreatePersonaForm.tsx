@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Loader2 } from 'lucide-react';
-import { Persona } from 'types';
+import { Persona } from '@/types';
 
 interface CreatePersonaFormProps {
   isOpen: boolean;

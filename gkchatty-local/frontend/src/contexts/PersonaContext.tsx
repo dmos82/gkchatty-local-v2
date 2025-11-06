@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Persona } from 'types';
+import { Persona } from '@/types';
 import { getPersonas } from '@/lib/api/personas';
 import { useAuth } from '@/hooks/useAuth';
 
