@@ -2,7 +2,7 @@
 # Multi-stage build for optimized production image
 
 # Stage 1: Build TypeScript
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -20,10 +20,10 @@ COPY src ./src
 RUN npm run build || (test -d dist && echo "Build completed with errors but output exists" && exit 0)
 
 # Stage 2: Production image
-FROM node:20-alpine
+FROM node:20-slim
 
 # Install curl for healthcheck
-RUN apk add --no-cache curl
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
 WORKDIR /app
