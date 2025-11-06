@@ -1,6 +1,6 @@
 import { useContext } from 'react';
 import { AuthContext } from '@/context/AuthContext';
-// import { AuthContextType } from 'types'; // REMOVED Invalid import
+// import { AuthContextType } from '@/types'; // REMOVED Invalid import
 
 // Infer the type from the context itself
 // import type { AuthContextType } from '@/context/AuthContext'; // REMOVED Unnecessary import

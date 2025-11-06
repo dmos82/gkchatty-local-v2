@@ -40,7 +40,7 @@ export default function EditPersonaForm({
   useEffect(() => {
     if (persona) {
       setName(persona.name);
-      setPrompt(persona.prompt);
+      setPrompt(persona.prompt ?? '');
     } else {
       setName('');
       setPrompt('');
