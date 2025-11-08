@@ -844,7 +844,7 @@ const UserDocTreeManager: React.FC = () => {
                 onDragLeave={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setDragOverFolder(undefined);
+                  setDragOverFolder(null);
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
