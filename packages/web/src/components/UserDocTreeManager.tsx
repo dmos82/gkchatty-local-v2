@@ -1,14 +1,15 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { 
-  ChevronRight, 
-  ChevronDown, 
-  Folder, 
-  FolderOpen, 
-  File, 
-  Upload, 
-  Plus, 
+import dynamic from 'next/dynamic';
+import {
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  File,
+  Upload,
+  Plus,
   Trash2,
   Grid3x3,
   List,
@@ -22,7 +23,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -40,15 +41,15 @@ import {
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
-import useFileTreeStore, { FileNode } from '@/stores/fileTreeStore';
+import useUserDocTreeStore, { UserDocNode } from '@/stores/userDocTreeStore';
 import { API_BASE_URL_CLIENT as API_BASE_URL } from '@/lib/config';
 import BrandedPdfViewer from '@/components/BrandedPdfViewer';
 
-const FileTreeManager: React.FC = () => {
+const UserDocTreeManager: React.FC = () => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
-  const [allItems, setAllItems] = useState<FileNode[]>([]);
+  const [allItems, setAllItems] = useState<UserDocNode[]>([]);
 
   const {
     fileTree,
@@ -58,22 +59,18 @@ const FileTreeManager: React.FC = () => {
     isLoading,
     error,
     searchQuery,
-    selectedKnowledgeBase,
-    knowledgeBases,
     toggleFolder,
     selectItem,
     clearSelection,
     setViewMode,
     setSearchQuery,
-    setSelectedKnowledgeBase,
     fetchFileTree,
     createFolder,
     deleteItems,
     moveItems,
     renameItem,
-    uploadFiles,
-    fetchKnowledgeBases
-  } = useFileTreeStore();
+    uploadFiles
+  } = useUserDocTreeStore();
 
   // Dialog states
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
@@ -83,8 +80,8 @@ const FileTreeManager: React.FC = () => {
   const [renameValue, setRenameValue] = useState('');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<string | null>(null);
-  const [contextItem, setContextItem] = useState<FileNode | null>(null);
-  
+  const [contextItem, setContextItem] = useState<UserDocNode | null>(null);
+
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
   const [draggedItems, setDraggedItems] = useState<string[]>([]);
@@ -97,9 +94,9 @@ const FileTreeManager: React.FC = () => {
 
   // Build flat list of all items for shift-click selection
   useEffect(() => {
-    const flattenTree = (nodes: FileNode[]): FileNode[] => {
-      const result: FileNode[] = [];
-      const traverse = (node: FileNode) => {
+    const flattenTree = (nodes: UserDocNode[]): UserDocNode[] => {
+      const result: UserDocNode[] = [];
+      const traverse = (node: UserDocNode) => {
         result.push(node);
         if (node.children && expandedFolders.has(node._id)) {
           node.children.forEach(traverse);
@@ -114,49 +111,16 @@ const FileTreeManager: React.FC = () => {
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
-      console.log('[FileTreeManager] Loading initial data...');
+      console.log('[UserDocTreeManager] Loading initial data...');
       try {
-        await fetchKnowledgeBases();
-        console.log('[FileTreeManager] Knowledge bases fetched, now fetching tree...');
         await fetchFileTree();
-        console.log('[FileTreeManager] Tree fetch completed');
+        console.log('[UserDocTreeManager] Tree fetch completed');
       } catch (error) {
-        console.error('[FileTreeManager] Error loading data:', error);
+        console.error('[UserDocTreeManager] Error loading data:', error);
       }
     };
     loadData();
-  }, []); // Remove dependencies to only run once on mount
-
-  // Debug fileTree state
-  useEffect(() => {
-    console.log('[FileTreeManager] fileTree state updated:', fileTree);
-    console.log('[FileTreeManager] fileTree length:', fileTree.length);
-    if (fileTree.length > 0) {
-      console.log('[FileTreeManager] First item:', fileTree[0]);
-    }
-  }, [fileTree]);
-
-  // Debug effect to see when fileTree actually changes
-  useEffect(() => {
-    console.log('[FileTreeManager] fileTree changed:', fileTree);
-    if (fileTree.length > 0) {
-      console.log('[FileTreeManager] First tree item details:', {
-        name: fileTree[0].name,
-        type: fileTree[0].type,
-        childrenCount: fileTree[0].children?.length || 0,
-        children: fileTree[0].children?.slice(0, 3).map(c => c.name)
-      });
-    }
-  }, [fileTree]);
-
-  // Handle KB change - DISABLED for system KB view
-  // This was causing a second fetch that overwrote the initial data
-  // Comment out to prevent double-fetching
-  // useEffect(() => {
-  //   if (selectedKnowledgeBase) {
-  //     fetchFileTree(selectedKnowledgeBase);
-  //   }
-  // }, [selectedKnowledgeBase, fetchFileTree]);
+  }, []);
 
   // Handle errors
   useEffect(() => {
@@ -205,15 +169,14 @@ const FileTreeManager: React.FC = () => {
   // File upload handler
   const handleFileUpload = useCallback(async (files: FileList, folderId?: string | null) => {
     if (files.length === 0) return;
-    
+
     try {
       await uploadFiles(files, folderId);
       toast({
         title: 'Success',
         description: `${files.length} file(s) uploaded successfully`
       });
-      // Refresh the tree to show newly uploaded files
-      await fetchFileTree(selectedKnowledgeBase || undefined);
+      await fetchFileTree();
     } catch (error) {
       toast({
         title: 'Upload Failed',
@@ -221,7 +184,7 @@ const FileTreeManager: React.FC = () => {
         variant: 'destructive'
       });
     }
-  }, [uploadFiles, toast, fetchFileTree, selectedKnowledgeBase]);
+  }, [uploadFiles, toast, fetchFileTree]);
 
   // Create folder handler
   const handleCreateFolder = useCallback(async () => {
@@ -235,22 +198,17 @@ const FileTreeManager: React.FC = () => {
     }
 
     try {
-      // If a folder is selected, create inside it; otherwise use selectedFolder from dialog
       const parentId = selectedFolder || (selectedItems.size === 1 ?
         Array.from(selectedItems).find(id => {
           const item = allItems.find(i => i._id === id);
           return item?.type === 'folder';
         }) : null);
 
-      const newFolder = await createFolder(newFolderName, parentId);
-
-      // The expanded folders state is now handled in the store
+      await createFolder(newFolderName, parentId);
 
       setIsCreateFolderOpen(false);
       setNewFolderName('');
       setSelectedFolder(null);
-
-      // Clear any drag state to ensure clean state for new folders
       setDragOverFolder(null);
       setIsDragging(false);
       setDraggedItems([]);
@@ -259,11 +217,6 @@ const FileTreeManager: React.FC = () => {
         title: 'Success',
         description: 'Folder created successfully'
       });
-
-      // Force a small delay to ensure DOM is updated before drag operations
-      setTimeout(() => {
-        // This ensures the DOM has time to render the new folder
-      }, 100);
     } catch (error) {
       toast({
         title: 'Error',
@@ -300,15 +253,51 @@ const FileTreeManager: React.FC = () => {
     }
   }, [selectedItems, contextItem, deleteItems, toast]);
 
+  // View document handler
+  const handleViewDocument = useCallback(async (node: UserDocNode) => {
+    if (node.type === 'folder') return;
+
+    try {
+      // Fetch presigned URL for the document using full API URL
+      const response = await fetch(`${API_BASE_URL}/api/documents/view/${node._id}`, {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get document URL');
+      }
+
+      const data = await response.json();
+
+      // Check if it's a PDF
+      const isPDF = node.mimeType?.includes('pdf') || node.name.toLowerCase().endsWith('.pdf');
+
+      if (isPDF) {
+        // Open in PDF viewer modal
+        setPdfUrl(data.url);
+        setViewingDocName(node.name);
+        setIsPdfViewerOpen(true);
+      } else {
+        // For other file types, open in new tab
+        window.open(data.url, '_blank');
+      }
+    } catch (error) {
+      console.error('Failed to view document:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load document',
+        variant: 'destructive'
+      });
+    }
+  }, [toast]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle shortcuts if we're in an input field
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
 
-      // Ctrl/Cmd + A: Select all visible items
       if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !e.shiftKey) {
         e.preventDefault();
         const allItemIds = allItems.map(item => item._id);
@@ -316,7 +305,6 @@ const FileTreeManager: React.FC = () => {
         allItemIds.forEach(id => selectItem(id, true));
       }
 
-      // F2: Rename selected item
       if (e.key === 'F2' && selectedItems.size === 1) {
         e.preventDefault();
         const selectedId = Array.from(selectedItems)[0];
@@ -328,13 +316,11 @@ const FileTreeManager: React.FC = () => {
         }
       }
 
-      // Delete key: Delete selected items
       if (e.key === 'Delete' && selectedItems.size > 0) {
         e.preventDefault();
         handleDelete();
       }
 
-      // Escape: Clear selection
       if (e.key === 'Escape') {
         clearSelection();
       }
@@ -347,7 +333,7 @@ const FileTreeManager: React.FC = () => {
   // Rename handler
   const handleRename = useCallback(async () => {
     if (!renameValue.trim() || !contextItem) return;
-    
+
     try {
       await renameItem(contextItem._id, renameValue);
       setIsRenameOpen(false);
@@ -368,12 +354,12 @@ const FileTreeManager: React.FC = () => {
 
   // Move handler
   const handleMove = useCallback(async () => {
-    const itemsToMove = selectedItems.size > 0 
-      ? Array.from(selectedItems) 
+    const itemsToMove = selectedItems.size > 0
+      ? Array.from(selectedItems)
       : contextItem ? [contextItem._id] : [];
-    
+
     if (itemsToMove.length === 0) return;
-    
+
     try {
       await moveItems(itemsToMove, moveTarget);
       setIsMoveOpen(false);
@@ -391,44 +377,10 @@ const FileTreeManager: React.FC = () => {
     }
   }, [selectedItems, contextItem, moveTarget, moveItems, toast]);
 
-  // Handle document viewing
-  const handleViewDocument = useCallback(async (node: FileNode) => {
-    if (node.type === 'folder') return;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/system-kb/download/${node._id}`, {
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to get document');
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const isPDF = node.mimeType?.includes('pdf') || node.name.toLowerCase().endsWith('.pdf');
-
-      if (isPDF) {
-        setPdfUrl(url);
-        setViewingDocName(node.name);
-        setIsPdfViewerOpen(true);
-      } else {
-        window.open(url, '_blank');
-      }
-    } catch (error) {
-      console.error('Failed to view document:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load document',
-        variant: 'destructive'
-      });
-    }
-  }, [toast]);
-
   // Drag and drop handlers
-  const handleDragStart = (e: React.DragEvent, node: FileNode) => {
+  const handleDragStart = (e: React.DragEvent, node: UserDocNode) => {
     setIsDragging(true);
-    const itemsToMove = selectedItems.has(node._id) 
+    const itemsToMove = selectedItems.has(node._id)
       ? Array.from(selectedItems)
       : [node._id];
     setDraggedItems(itemsToMove);
@@ -445,38 +397,55 @@ const FileTreeManager: React.FC = () => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
 
-    // Set visual feedback for folder being hovered
     if (nodeId && nodeId !== dragOverFolder) {
       setDragOverFolder(nodeId);
     }
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    // Only clear if we're leaving the actual element, not entering a child
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
       setDragOverFolder(null);
     }
   };
 
-  const handleDrop = async (e: React.DragEvent, targetNode?: FileNode) => {
+  const handleDrop = async (e: React.DragEvent, targetNode?: UserDocNode) => {
     e.preventDefault();
     e.stopPropagation();
 
+    // If dropping to root (no targetNode), move to null (root)
+    if (!targetNode) {
+      if (draggedItems.length > 0) {
+        try {
+          await moveItems(draggedItems, null);
+          toast({
+            title: 'Success',
+            description: `${draggedItems.length} item(s) moved to root`
+          });
+        } catch (error) {
+          toast({
+            title: 'Error',
+            description: 'Failed to move items',
+            variant: 'destructive'
+          });
+        }
+      }
+      handleDragEnd();
+      return;
+    }
+
     // Only process drop for folders
-    if (!targetNode || targetNode.type !== 'folder') {
+    if (targetNode.type !== 'folder') {
       handleDragEnd();
       return;
     }
 
     const targetId = targetNode._id;
 
-    // Don't allow dropping items into themselves or their children
+    // Don't allow dropping items into themselves
     if (draggedItems.length > 0 && targetId && !draggedItems.includes(targetId)) {
-      // Check if any dragged item is a parent of the target
       const isValidDrop = !draggedItems.some(draggedId => {
         const draggedNode = allItems.find(item => item._id === draggedId);
         if (draggedNode?.type === 'folder') {
-          // Simple check - prevent dropping a folder into itself
           return targetNode._id === draggedId;
         }
         return false;
@@ -503,11 +472,11 @@ const FileTreeManager: React.FC = () => {
   };
 
   // Render tree node
-  const renderTreeNode = (node: FileNode, level: number = 0): React.ReactNode => {
+  const renderTreeNode = (node: UserDocNode, level: number = 0): React.ReactNode => {
     const isExpanded = expandedFolders.has(node._id);
     const isSelected = selectedItems.has(node._id);
     const isFolder = node.type === 'folder';
-    
+
     return (
       <div key={node._id} className="select-none">
         <div
@@ -524,7 +493,6 @@ const FileTreeManager: React.FC = () => {
           onContextMenu={(e) => {
             e.preventDefault();
             setContextItem(node);
-            // If right-clicking on unselected item, select it
             if (!selectedItems.has(node._id)) {
               clearSelection();
               selectItem(node._id, false);
@@ -585,9 +553,7 @@ const FileTreeManager: React.FC = () => {
                     New Folder
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => {
-                    console.log('[FileTreeManager] Setting selectedFolder to:', node._id, node.name);
                     setSelectedFolder(node._id);
-                    // Use setTimeout to ensure state is updated before triggering file input
                     setTimeout(() => {
                       fileInputRef.current?.click();
                     }, 100);
@@ -620,7 +586,7 @@ const FileTreeManager: React.FC = () => {
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => {
                   setContextItem(node);
                   handleDelete();
@@ -633,11 +599,10 @@ const FileTreeManager: React.FC = () => {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        
+
         {isFolder && node.children && (
           <div>
             {node.children.map(child => {
-              // Always show folders, only show files when parent is expanded
               if (child.type === 'folder') {
                 return renderTreeNode(child, level + 1);
               } else if (isExpanded) {
@@ -653,8 +618,8 @@ const FileTreeManager: React.FC = () => {
 
   // Render grid view
   const renderGridView = () => {
-    const flattenTree = (nodes: FileNode[]): FileNode[] => {
-      const result: FileNode[] = [];
+    const flattenTree = (nodes: UserDocNode[]): UserDocNode[] => {
+      const result: UserDocNode[] = [];
       nodes.forEach(node => {
         if (searchQuery && !node.name.toLowerCase().includes(searchQuery.toLowerCase())) {
           return;
@@ -666,9 +631,9 @@ const FileTreeManager: React.FC = () => {
       });
       return result;
     };
-    
+
     const items = flattenTree(fileTree);
-    
+
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 p-4">
         {items.map(item => (
@@ -695,8 +660,8 @@ const FileTreeManager: React.FC = () => {
 
   // Render list view
   const renderListView = () => {
-    const flattenTree = (nodes: FileNode[]): FileNode[] => {
-      const result: FileNode[] = [];
+    const flattenTree = (nodes: UserDocNode[]): UserDocNode[] => {
+      const result: UserDocNode[] = [];
       nodes.forEach(node => {
         if (searchQuery && !node.name.toLowerCase().includes(searchQuery.toLowerCase())) {
           return;
@@ -708,9 +673,9 @@ const FileTreeManager: React.FC = () => {
       });
       return result;
     };
-    
+
     const items = flattenTree(fileTree);
-    
+
     return (
       <div className="space-y-1 p-2">
         {items.map(item => (
@@ -753,7 +718,6 @@ const FileTreeManager: React.FC = () => {
             variant="outline"
             size="icon"
             onClick={() => {
-              // If a single folder is selected, it will be the parent for the new folder
               const selectedFolder = selectedItems.size === 1 ?
                 Array.from(selectedItems).find(id => {
                   const item = allItems.find(i => i._id === id);
@@ -798,7 +762,7 @@ const FileTreeManager: React.FC = () => {
             </>
           )}
         </div>
-        
+
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -810,7 +774,7 @@ const FileTreeManager: React.FC = () => {
               className="pl-8 w-64"
             />
           </div>
-          
+
           <div className="flex border rounded-lg">
             <Button
               variant={viewMode === 'tree' ? 'secondary' : 'ghost'}
@@ -836,13 +800,9 @@ const FileTreeManager: React.FC = () => {
           </div>
         </div>
       </div>
-      
+
       {/* Content */}
-      <div 
-        className="flex-1 overflow-auto"
-        onDragOver={handleDragOver}
-        onDrop={(e) => handleDrop(e)}
-      >
+      <div className="flex-1 overflow-auto relative">
         {isLoading ? (
           <div className="p-4 space-y-2">
             <Skeleton className="h-8 w-full" />
@@ -850,22 +810,77 @@ const FileTreeManager: React.FC = () => {
             <Skeleton className="h-8 w-full" />
           </div>
         ) : fileTree.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+          <div
+            className="flex flex-col items-center justify-center h-full text-muted-foreground"
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e)}
+          >
             <Folder className="h-12 w-12 mb-2" />
             <p>No files or folders</p>
             <p className="text-sm">Create a folder or upload files to get started</p>
           </div>
         ) : viewMode === 'tree' ? (
-          <div className="p-2">
+          <div
+            className="p-2 min-h-full"
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e)}
+          >
             {fileTree.map(node => renderTreeNode(node))}
+
+            {/* Drop zone to root - visible when dragging */}
+            {isDragging && (
+              <div
+                className={cn(
+                  "mt-4 p-8 border-2 border-dashed rounded-lg transition-all",
+                  dragOverFolder === null
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                    : "border-gray-300 dark:border-neutral-600 bg-gray-50 dark:bg-neutral-800/30"
+                )}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOverFolder(null);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOverFolder(undefined);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDrop(e);
+                }}
+              >
+                <div className="text-center text-sm text-muted-foreground">
+                  {dragOverFolder === null ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <FolderOpen className="h-6 w-6 text-blue-500" />
+                      <span className="font-medium text-blue-600 dark:text-blue-400">
+                        Drop here to move to root level
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <Folder className="h-6 w-6" />
+                      <span>Drop here to move to root level</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         ) : viewMode === 'grid' ? (
-          renderGridView()
+          <div onDragOver={handleDragOver} onDrop={(e) => handleDrop(e)}>
+            {renderGridView()}
+          </div>
         ) : (
-          renderListView()
+          <div onDragOver={handleDragOver} onDrop={(e) => handleDrop(e)}>
+            {renderListView()}
+          </div>
         )}
       </div>
-      
+
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -874,14 +889,13 @@ const FileTreeManager: React.FC = () => {
         className="hidden"
         onChange={(e) => {
           if (e.target.files) {
-            console.log('[FileTreeManager] File input onChange, selectedFolder:', selectedFolder);
             handleFileUpload(e.target.files, selectedFolder);
             e.target.value = '';
             setSelectedFolder(null);
           }
         }}
       />
-      
+
       {/* Create Folder Dialog */}
       <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
         <DialogContent>
@@ -914,23 +928,23 @@ const FileTreeManager: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
       {/* Rename Dialog */}
       <Dialog open={isRenameOpen} onOpenChange={setIsRenameOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Rename Item</DialogTitle>
             <DialogDescription>
-              Enter a new name for {contextItem?.name}
+              Enter a new name
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rename" className="text-right">
+              <Label htmlFor="rename-value" className="text-right">
                 Name
               </Label>
               <Input
-                id="rename"
+                id="rename-value"
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 className="col-span-3"
@@ -946,41 +960,35 @@ const FileTreeManager: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
       {/* Move Dialog */}
       <Dialog open={isMoveOpen} onOpenChange={setIsMoveOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Move Items</DialogTitle>
             <DialogDescription>
-              Select the destination folder
+              Select a destination folder or leave empty for root
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-96 overflow-auto py-4">
-            <div
-              className={cn(
-                "p-2 rounded cursor-pointer hover:bg-accent",
-                moveTarget === null && "bg-accent"
-              )}
-              onClick={() => setMoveTarget(null)}
-            >
-              <Folder className="inline h-4 w-4 mr-2" />
-              Root
-            </div>
-            {/* Simplified folder tree for move target selection */}
-            {fileTree.filter(n => n.type === 'folder').map(folder => (
-              <div
-                key={folder._id}
-                className={cn(
-                  "p-2 rounded cursor-pointer hover:bg-accent ml-4",
-                  moveTarget === folder._id && "bg-accent"
-                )}
-                onClick={() => setMoveTarget(folder._id)}
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="move-target" className="text-right">
+                Destination
+              </Label>
+              <select
+                id="move-target"
+                value={moveTarget || ''}
+                onChange={(e) => setMoveTarget(e.target.value || null)}
+                className="col-span-3 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                <Folder className="inline h-4 w-4 mr-2" />
-                {folder.name}
-              </div>
-            ))}
+                <option value="">Root</option>
+                {allItems.filter(item => item.type === 'folder').map(folder => (
+                  <option key={folder._id} value={folder._id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsMoveOpen(false)}>
@@ -1009,4 +1017,4 @@ const FileTreeManager: React.FC = () => {
   );
 };
 
-export default FileTreeManager;
+export default UserDocTreeManager;

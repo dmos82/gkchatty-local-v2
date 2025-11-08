@@ -1,11 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Document, Page } from 'react-pdf';
+import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { Download, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+
+// Configure PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
 interface PdfViewerModalProps {
   isOpen: boolean;
@@ -389,9 +392,9 @@ const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
                   </div>
                 }
                 options={{
-                  cMapUrl: 'https://unpkg.com/pdfjs-dist@3.4.120/cmaps/',
+                  cMapUrl: '/cmaps/',
                   cMapPacked: true,
-                  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.4.120/standard_fonts/',
+                  standardFontDataUrl: '/standard_fonts/',
                   disableAutoFetch: true,
                 }}
               >
