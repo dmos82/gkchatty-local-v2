@@ -1,0 +1,262 @@
+{
+  "timestamp": "2025-11-07T01:32:08.878Z",
+  "git_commit": "a243fcecd42643e1aae0e73787662552f16043db",
+  "mongodb": {
+    "total_documents": 0,
+    "user_documents": 0,
+    "system_documents": 0,
+    "collections": [
+      "settings",
+      "documents",
+      "chats",
+      "personas",
+      "usersettings",
+      "tenantkbdocuments",
+      "feedbacks",
+      "userkbaccesses",
+      "tenantknowledgebases",
+      "folders",
+      "userdocuments",
+      "users",
+      "systemkbdocuments",
+      "emailconfigs"
+    ],
+    "total_users": 59
+  },
+  "pinecone": {
+    "total_vectors": 57470,
+    "dimension": 1536,
+    "namespaces": {
+      "user-68f7a8a3c4eaff1c2d070ebe": {
+        "recordCount": 1
+      },
+      "user-68f8251cc4eaff1c2d0791e1": {
+        "recordCount": 1
+      },
+      "user-68f7bd05c4eaff1c2d0751ed": {
+        "recordCount": 1
+      },
+      "user-68f82429c4eaff1c2d078c10": {
+        "recordCount": 1
+      },
+      "user-68f7bd7bc4eaff1c2d0754a6": {
+        "recordCount": 1
+      },
+      "user-68f7b7c8c4eaff1c2d0732a5": {
+        "recordCount": 1
+      },
+      "user-68ffb0340b60e55474e61756": {
+        "recordCount": 8
+      },
+      "tenant_68671b8e6b0a2ad1a8c23065": {
+        "recordCount": 87
+      },
+      "user-68f710bd0ccf6a6125c5113c": {
+        "recordCount": 1
+      },
+      "user-68f823a1c4eaff1c2d078864": {
+        "recordCount": 1
+      },
+      "user-68f7117f0ccf6a6125c51437": {
+        "recordCount": 1
+      },
+      "user-68f71c9b1444fb30ffa8705b": {
+        "recordCount": 1
+      },
+      "user-68d35f7bfc1a10b9d5955fe7": {
+        "recordCount": 163
+      },
+      "user-68e7501a65e80cf315631814": {
+        "recordCount": 36581
+      },
+      "user-6902768a8cf8d338acc34021": {
+        "recordCount": 10
+      },
+      "user-68f7ae67c4eaff1c2d0729ab": {
+        "recordCount": 1
+      },
+      "user-68f82576c4eaff1c2d0794de": {
+        "recordCount": 1
+      },
+      "user-68f7bdabc4eaff1c2d0758f9": {
+        "recordCount": 1
+      },
+      "user-68f823f7c4eaff1c2d078ae7": {
+        "recordCount": 1
+      },
+      "user-68f8245bc4eaff1c2d078d64": {
+        "recordCount": 1
+      },
+      "user-68f7b7ffc4eaff1c2d073360": {
+        "recordCount": 2
+      },
+      "system-kb": {
+        "recordCount": 713
+      },
+      "user-68f82490c4eaff1c2d078ecb": {
+        "recordCount": 1
+      },
+      "user-68f7237b1444fb30ffa8760d": {
+        "recordCount": 1
+      },
+      "user-68f7aec2c4eaff1c2d072c7b": {
+        "recordCount": 1
+      },
+      "user-68f7b859c4eaff1c2d0734c8": {
+        "recordCount": 1
+      },
+      "user-68f7ae40c4eaff1c2d0728ed": {
+        "recordCount": 1
+      },
+      "user-686c2cd2cae7b58a219b3c4a": {
+        "recordCount": 77
+      },
+      "user-68f8254cc4eaff1c2d07930b": {
+        "recordCount": 1
+      },
+      "user-681d84a29fa9ba28b25d2f6e": {
+        "recordCount": 18271
+      },
+      "user-68fd981893ac98fbd1b3827b": {
+        "recordCount": 96
+      },
+      "user-68f824c7c4eaff1c2d07905e": {
+        "recordCount": 1
+      },
+      "user-6904fc2e8cf8d338acc344b7": {
+        "recordCount": 33
+      },
+      "user-68d34a0dbbbdde37800207b2": {
+        "recordCount": 6
+      },
+      "user-68f7bd2cc4eaff1c2d0752b4": {
+        "recordCount": 1
+      },
+      "user-68fb12fc0f148c7af4c4592c": {
+        "recordCount": 9
+      },
+      "user-68f710f70ccf6a6125c512a5": {
+        "recordCount": 1
+      },
+      "user-68f710aa0ccf6a6125c510a5": {
+        "recordCount": 1
+      },
+      "user-68f71d461444fb30ffa872e5": {
+        "recordCount": 1
+      },
+      "user-68ff9fb78cf8d338acb38f89": {
+        "recordCount": 8
+      },
+      "user-68f1623cbb92ec58beb04f2f": {
+        "recordCount": 429
+      },
+      "user-68fc2b5866455240fb7be914": {
+        "recordCount": 144
+      },
+      "tenant_68bbcb8988d2045242375b02": {
+        "recordCount": 13
+      },
+      "user-68f823c6c4eaff1c2d078980": {
+        "recordCount": 1
+      },
+      "user-68f7aee7c4eaff1c2d072fef": {
+        "recordCount": 1
+      },
+      "": {
+        "recordCount": 87
+      },
+      "user-68fa7d77132416997c98995d": {
+        "recordCount": 22
+      },
+      "user-68fa83c89a024e69a3af2c98": {
+        "recordCount": 16
+      },
+      "user-68f82459c4eaff1c2d078d37": {
+        "recordCount": 1
+      },
+      "user-6862f7f257608e3a44ec95ee": {
+        "recordCount": 37
+      },
+      "user-68fbe9ce9b81a26ce4699508": {
+        "recordCount": 89
+      },
+      "user-68f71cb61444fb30ffa870e7": {
+        "recordCount": 2
+      },
+      "user-68f71c5b1444fb30ffa86fa6": {
+        "recordCount": 1
+      },
+      "user-68f7bd86c4eaff1c2d075582": {
+        "recordCount": 1
+      },
+      "user-68f7b88fc4eaff1c2d073579": {
+        "recordCount": 1
+      },
+      "user-68f722841444fb30ffa874d3": {
+        "recordCount": 1
+      },
+      "user-68f723af1444fb30ffa876a9": {
+        "recordCount": 1
+      },
+      "user-68f7aeb7c4eaff1c2d072ba0": {
+        "recordCount": 1
+      },
+      "user-68f7a7d6c4eaff1c2d070c04": {
+        "recordCount": 1
+      },
+      "user-68f7a86dc4eaff1c2d070e12": {
+        "recordCount": 1
+      },
+      "user-68fba3d70f148c7af4c45995": {
+        "recordCount": 3
+      },
+      "user-68f824f2c4eaff1c2d079121": {
+        "recordCount": 1
+      },
+      "user-68f7a813c4eaff1c2d070cb3": {
+        "recordCount": 2
+      },
+      "user-687dc517b4f456d078ed287c": {
+        "recordCount": 112
+      },
+      "user-68f82492c4eaff1c2d078ef8": {
+        "recordCount": 1
+      },
+      "user-6902c4d48cf8d338acc3412d": {
+        "recordCount": 141
+      },
+      "user-68f7113e0ccf6a6125c5138b": {
+        "recordCount": 1
+      },
+      "user-68fa92329a024e69a3af2e8b": {
+        "recordCount": 76
+      },
+      "user-68f71d051444fb30ffa87233": {
+        "recordCount": 1
+      },
+      "user-68f723581444fb30ffa87570": {
+        "recordCount": 1
+      },
+      "tenant_686c710a4325310d9182a34e": {
+        "recordCount": 17
+      },
+      "user-68f8254ec4eaff1c2d079338": {
+        "recordCount": 1
+      },
+      "user-690239768cf8d338acc2e413": {
+        "recordCount": 172
+      },
+      "user-68f71bf11444fb30ffa86f07": {
+        "recordCount": 1
+      }
+    }
+  },
+  "file_storage": {
+    "upload_dir": "/Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/gkchatty-local/uploads",
+    "exists": false
+  },
+  "issues": [
+    "CRITICAL: Pinecone has vectors but MongoDB has no documents (ghost embeddings)"
+  ],
+  "git_branch": "HEAD"
+}
