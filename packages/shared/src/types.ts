@@ -7,6 +7,7 @@ export interface User {
   username: string;
   email: string;
   role: 'user' | 'admin';
+  canCustomizePersona?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
