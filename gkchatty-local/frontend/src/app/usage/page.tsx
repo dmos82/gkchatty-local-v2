@@ -1,0 +1,153 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { useAuth } from '@/hooks/useAuth';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft } from 'lucide-react';
+// import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Temporarily removed
+// import { Terminal } from 'lucide-react'; // Temporarily removed
+
+// Define the expected data structure from the API
+interface UsageData {
+  success: boolean;
+  usageMonthMarker: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+}
+
+export default function UsagePage() {
+  const { user, isLoading: isAuthLoading, logout, handleApiError } = useAuth();
+  const [usageData, setUsageData] = useState<UsageData | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // No need to check for token since we're using HttpOnly cookies
+    // Check user instead for triggering fetch
+    if (!user) {
+      setIsLoading(false); // Don't show loading if no user
+      setError(null);
+      setUsageData(null); // Clear any previous data
+      return; // Exit if no user
+    }
+
+    const fetchUsageData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetchWithAuth('/users/me/usage', {
+          method: 'GET',
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            logout(); // Automatically log out on auth failure
+            throw new Error('Session expired. Please log in again.');
+          }
+          throw new Error(data.message || `Failed to fetch usage data (${response.status})`);
+        }
+
+        if (!data.success) {
+          throw new Error(data.message || 'API indicated failure, but returned 2xx status.');
+        }
+
+        setUsageData(data);
+      } catch (err: any) {
+        console.error('Error fetching usage data:', err);
+        setError(err.message || 'An unknown error occurred while fetching usage data.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchUsageData();
+  }, [user, logout, handleApiError]);
+
+  return (
+    <ProtectedRoute>
+      <div className="p-4 md:p-6 lg:p-8 space-y-6">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
+            Monthly Usage
+          </h1>
+          <Link href="/" passHref>
+            <Button variant="outline">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Chat
+            </Button>
+          </Link>
+        </div>
+        <p className="text-muted-foreground">
+          Track your estimated token usage and cost for the current billing cycle.
+        </p>
+
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>Current Month Statistics</CardTitle>
+            <CardDescription>
+              Usage resets at the beginning of each calendar month.
+              {usageData?.usageMonthMarker &&
+                ` Currently showing data for: ${usageData.usageMonthMarker}`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-4">
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            ) : error ? (
+              // <Alert variant="destructive">
+              //   <Terminal className="h-4 w-4" />
+              //   <AlertTitle>Error Fetching Usage Data</AlertTitle>
+              //   <AlertDescription>{error}</AlertDescription>
+              // </Alert>
+              <p className="text-sm font-medium text-destructive">
+                Error Fetching Usage Data: {error}
+              </p>
+            ) : usageData ? (
+              <div className="grid gap-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Month:</span>
+                  <span className="font-medium">{usageData.usageMonthMarker || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Prompt Tokens:</span>
+                  <span className="font-medium">{usageData.promptTokens.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Completion Tokens:</span>
+                  <span className="font-medium">{usageData.completionTokens.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span className="text-muted-foreground">Total Tokens:</span>
+                  <span className="font-medium">{usageData.totalTokens.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between border-t pt-3 mt-2">
+                  <span className="text-muted-foreground">Estimated Cost:</span>
+                  <span className="font-medium text-primary">
+                    ${usageData.estimatedCost.toFixed(6)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No usage data available.</p> // Should not happen if no error and not loading
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </ProtectedRoute>
+  );
+}

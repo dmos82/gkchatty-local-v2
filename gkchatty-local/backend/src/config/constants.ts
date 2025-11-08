@@ -51,10 +51,10 @@ export const RATE_LIMIT_AUTH_MAX_PROD = 20;
 export const RATE_LIMIT_AI_WINDOW_MS = 1 * 60 * 1000;
 
 /** AI rate limit max requests in development mode */
-export const RATE_LIMIT_AI_MAX_DEV = 300;
+export const RATE_LIMIT_AI_MAX_DEV = 1000;
 
-/** AI rate limit max requests in production mode */
-export const RATE_LIMIT_AI_MAX_PROD = 30;
+/** AI rate limit max requests in production mode - Tier 3 OpenAI (10,000 RPM capacity) */
+export const RATE_LIMIT_AI_MAX_PROD = 500; // 5% of OpenAI capacity, supports 50+ concurrent users
 
 /** Upload rate limit window duration (milliseconds) - 5 minutes */
 export const RATE_LIMIT_UPLOAD_WINDOW_MS = 5 * 60 * 1000;
@@ -134,17 +134,23 @@ export const RETRY_MIN_TIMEOUT_MS = 1000;
 // DOCUMENT PROCESSING
 // ============================================================================
 
+/**
+ * @deprecated Use RAG_CONFIG from './ragConfig' instead
+ * RAG configuration has been centralized for consistency
+ */
+import { RAG_CONFIG } from './ragConfig';
+
 /** Maximum chunk size for text splitting */
-export const MAX_CHUNK_SIZE = 1500;
+export const MAX_CHUNK_SIZE = RAG_CONFIG.CHUNK_SIZE;
 
 /** Chunk overlap for text splitting */
-export const CHUNK_OVERLAP = 300;
+export const CHUNK_OVERLAP = RAG_CONFIG.CHUNK_OVERLAP;
 
 /** Default chunk size for text processing */
-export const DEFAULT_CHUNK_SIZE = 1000;
+export const DEFAULT_CHUNK_SIZE = RAG_CONFIG.CHUNK_SIZE;
 
 /** Maximum context length for document processing */
-export const MAX_CONTEXT_LENGTH = 3000;
+export const MAX_CONTEXT_LENGTH = RAG_CONFIG.MAX_CONTEXT_LENGTH;
 
 /** Batch size for Pinecone vector operations */
 export const PINECONE_BATCH_SIZE = 100;
@@ -199,6 +205,30 @@ export const DEFAULT_SMTP_PORT = 587;
 
 /** Secure SMTP port (SSL/TLS) */
 export const SECURE_SMTP_PORT = 465;
+
+// ============================================================================
+// SECURITY CONFIGURATION
+// ============================================================================
+
+/**
+ * Bcrypt salt rounds for password hashing
+ * 12 rounds = 4096 iterations (2^12)
+ * Higher values = more secure but slower
+ * @see https://github.com/kelektiv/node.bcrypt.js#a-note-on-rounds
+ */
+export const BCRYPT_SALT_ROUNDS = 12;
+
+/**
+ * JWT token expiration time (seconds)
+ * 1800 seconds = 30 minutes
+ */
+export const JWT_EXPIRATION_SECONDS = 1800;
+
+/**
+ * Auth cookie maximum age (milliseconds)
+ * 1800000 milliseconds = 30 minutes
+ */
+export const AUTH_COOKIE_MAX_AGE_MS = 1800000;
 
 // ============================================================================
 // EXTERNAL SERVICES

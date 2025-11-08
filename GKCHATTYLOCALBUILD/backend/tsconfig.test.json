@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "__tests__/**/*.ts",
+    "src/middleware/__tests__/**/*.ts",
+    "src/routes/__tests__/**/*.ts",
+    "src/services/__tests__/**/*.ts",
+    "src/utils/**/*.test.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

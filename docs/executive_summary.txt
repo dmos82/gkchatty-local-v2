@@ -1,0 +1,187 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                   MONGOOSE DIRECT IMPORT AUDIT REPORT                      ║
+║                    GKChatty Backend SQLite Migration                       ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+EXECUTIVE SUMMARY
+═════════════════════════════════════════════════════════════════════════════
+
+28 files identified with direct Mongoose imports that bypass modelFactory switching
+logic. This prevents SQLite adapter from being used even when USE_SQLITE=true is set.
+
+6 FILES REQUIRE IMMEDIATE FIXES (Production Code):
+─────────────────────────────────────────────────
+
+  🔴 CRITICAL (4 files - SQLite won't work without fixes):
+  
+     1. src/routes/admin.ts (Line 2)
+        Problem: User model imported directly
+        Impact: Admin routes fail with Mongoose/MongoDB errors
+        
+     2. src/routes/chatRoutes.ts (Lines 10, 13)
+        Problem: Setting and UserSettings imported directly
+        Impact: Chat functionality completely broken
+        
+     3. src/routes/adminSettingsRoutes.ts (Line 11)
+        Problem: Setting model imported directly
+        Impact: Admin settings endpoints fail
+        
+     4. src/routes/documentRoutes.ts (Lines 25-26)
+        Problem: Persona model imported directly
+        Impact: Document routing broken, embeddings fail
+
+  🟠 HIGH PRIORITY (2 files - Service layer):
+  
+     5. src/services/settingsService.ts (Line 1)
+        Problem: Setting model imported directly
+        Impact: Settings service unusable in SQLite mode
+        
+     6. src/controllers/settingsController.ts (Line 2)
+        Problem: Setting model imported directly
+        Impact: Settings endpoints fail
+
+AFFECTED MODELS
+═════════════════════════════════════════════════════════════════════════════
+
+  Model              Files Affected    Severity
+  ─────────────────────────────────────────────
+  User               8 files           HIGH
+  Setting            6 files           CRITICAL
+  Chat               3 files           HIGH
+  Persona            2 files           HIGH
+  UserSettings       1 file            CRITICAL
+
+BREAKDOWN BY SEVERITY
+═════════════════════════════════════════════════════════════════════════════
+
+  Category                    Count    Action Required
+  ────────────────────────────────────────────────────
+  CRITICAL Production Fixes   4        Must fix today
+  HIGH Production Fixes       2        Must fix today
+  MEDIUM Example Code         1        Fix this week
+  LOW Test Files              8        Fix this sprint
+  LOW Migration Scripts       13        Fix when convenient
+  ────────────────────────────────────────────────────
+  TOTAL                      28 files
+
+ROOT CAUSE
+═════════════════════════════════════════════════════════════════════════════
+
+modelFactory.ts exists to switch between MongoDB and SQLite based on the 
+USE_SQLITE environment variable:
+
+  ✅ CORRECT: import { UserModel } from '../utils/modelFactory';
+             → Respects USE_SQLITE flag, works with both databases
+
+  ❌ WRONG:   import User from '../models/UserModel';
+             → Hardcoded to Mongoose, ignores USE_SQLITE flag
+             → Always tries to connect to MongoDB
+             → Causes "Buffering timed out" and connection errors
+
+DIRECT IMPACT ON SQLITE MIGRATION
+═════════════════════════════════════════════════════════════════════════════
+
+When USE_SQLITE=true is set but files import directly from models/:
+
+  ❌ SQLite adapter never gets instantiated
+  ❌ Database connection attempts to reach MongoDB (fails)
+  ❌ "Buffering timed out" errors appear
+  ❌ "Cannot read property 'findOne' of undefined" errors
+  ❌ No data can be saved or retrieved
+  ❌ Application is completely unusable
+
+SOLUTION
+═════════════════════════════════════════════════════════════════════════════
+
+Replace all direct model imports with modelFactory imports:
+
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║ BEFORE (Wrong):                                                  ║
+  ║ import User from '../models/UserModel';                          ║
+  ║ import Setting from '../models/SettingModel';                    ║
+  ║ import { default as Persona } from '../models/PersonaModel';    ║
+  ╠══════════════════════════════════════════════════════════════════╣
+  ║ AFTER (Correct):                                                 ║
+  ║ import { UserModel as User } from '../utils/modelFactory';      ║
+  ║ import { SettingModel as Setting } from '../utils/modelFactory';║
+  ║ import { PersonaModel as Persona } from '../utils/modelFactory';║
+  ╚══════════════════════════════════════════════════════════════════╝
+
+IMPLEMENTATION ROADMAP
+═════════════════════════════════════════════════════════════════════════════
+
+Phase 1 - IMMEDIATE (4-6 hours)
+┌─ Fix 4 CRITICAL production files
+├─ Fix 2 HIGH priority service/controller files
+├─ Test with USE_SQLITE=true npm start
+└─ Verify no "Buffering timed out" errors
+
+Phase 2 - TODAY (1-2 hours)
+├─ Fix 1 MEDIUM priority example controller
+└─ Verify all critical API endpoints work
+
+Phase 3 - THIS WEEK (2-3 hours)
+├─ Fix 8 test files
+├─ Fix 13 migration scripts
+└─ Run full test suite
+
+Phase 4 - THIS SPRINT (Maintenance)
+├─ Add ESLint rule to prevent future direct imports
+├─ Document pattern in code comments
+└─ Train team on modelFactory pattern
+
+VERIFICATION CHECKLIST
+═════════════════════════════════════════════════════════════════════════════
+
+After applying fixes, verify:
+
+  ✓ Application starts without MongoDB
+  ✓ Admin API endpoints return data
+  ✓ Chat routes create/retrieve sessions
+  ✓ Settings can be saved and loaded
+  ✓ Document uploads work
+  ✓ No "Buffering timed out" errors
+  ✓ No MongoDB connection errors
+  ✓ SQLite database file is created
+  ✓ Data persists across restarts
+  ✓ All tests pass with SQLite database
+
+DOCUMENTATION GENERATED
+═════════════════════════════════════════════════════════════════════════════
+
+1. MONGOOSE-IMPORT-AUDIT.md (12KB)
+   └─ Comprehensive 7-part analysis with code examples
+
+2. MONGOOSE-IMPORT-AUDIT-SUMMARY.csv (2.7KB)
+   └─ Quick lookup table of all 28 files
+
+3. MONGOOSE-IMPORT-QUICK-REFERENCE.txt (5.6KB)
+   └─ Quick fix guide with line numbers and corrections
+
+Location: /Users/davidjmorin/GOLDKEY CHATTY/gkchatty-ecosystem/docs/
+
+═════════════════════════════════════════════════════════════════════════════
+
+ESTIMATED EFFORT TO COMPLETE
+═════════════════════════════════════════════════════════════════════════════
+
+Critical Production Fixes:   2 hours (4 files, ~8 import statements)
+High Priority Fixes:        0.5 hours (2 files, ~2 import statements)
+Medium Priority Fixes:      0.25 hours (1 file, ~1 import statement)
+Testing & Verification:     1.5 hours (smoke tests, SQLite mode tests)
+Documentation Update:       0.5 hours
+
+TOTAL ESTIMATED TIME:       4.75 hours (5 hours including buffer)
+
+═════════════════════════════════════════════════════════════════════════════
+
+KEY INSIGHT: This audit reveals why "USE_SQLITE=true" environment variable
+hasn't been working. The bypass routes prevent the modelFactory switching
+logic from ever being reached, so even with the flag set, the code tries to
+use MongoDB. Fixing these imports will immediately enable full SQLite support.
+
+═════════════════════════════════════════════════════════════════════════════
+
+Audit Date: November 4, 2025
+Auditor: Code Search Agent
+Codebase: GKChatty Backend (Phase 4 SQLite Migration)

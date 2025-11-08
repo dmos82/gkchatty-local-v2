@@ -2,6 +2,7 @@ import express, { Request, Response, Router, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { protect, checkSession } from '../middleware/authMiddleware';
 import User, { IUser } from '../models/UserModel'; // Import User model
+import { BCRYPT_SALT_ROUNDS } from '../config/constants';
 import {
   getOwnSettings,
   updateOwnSettings,
@@ -205,7 +206,7 @@ router.put(
       }
 
       // Hash new password
-      const hashedPassword = await bcrypt.hash(newPassword, 12);
+      const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
 
       // Update password and clear forcePasswordChange flag
       userWithPassword.password = hashedPassword;

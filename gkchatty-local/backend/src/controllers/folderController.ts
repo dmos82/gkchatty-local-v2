@@ -74,16 +74,17 @@ const buildTree = (folders: IFolder[], documents: Record<string, unknown>[]): Fo
     }
 
     const node: FolderNode = {
-      _id: (doc._id as { toString: () => string }).toString(),
+      _id: doc._id?.toString ? doc._id.toString() : String(doc._id),
       name: fileName as string,
       type: 'file',
-      parentId: (doc.folderId as { toString: () => string } | undefined)?.toString() || null,
-      size: doc.fileSize as number,
-      mimeType: doc.mimeType as string,
+      parentId: doc.folderId ? (typeof doc.folderId === 'string' ? doc.folderId : doc.folderId.toString()) : null,
+      size: doc.fileSize as number || 0,
+      mimeType: doc.mimeType as string || 'application/octet-stream',
       uploadTimestamp:
-        (doc.uploadTimestamp as { toString: () => string } | undefined)?.toString() ||
-        (doc.createdAt as { toString: () => string } | undefined)?.toString(),
-      s3Key: doc.s3Key as string,
+        doc.uploadTimestamp?.toString ? doc.uploadTimestamp.toString() :
+        doc.createdAt?.toString ? doc.createdAt.toString() :
+        new Date().toISOString(),
+      s3Key: doc.s3Key as string || '',
     };
 
     if (node.parentId && folderMap.has(node.parentId)) {
@@ -92,9 +93,15 @@ const buildTree = (folders: IFolder[], documents: Record<string, unknown>[]): Fo
         parent.children.push(node);
         docsWithFolder++;
       }
-    } else if (!node.parentId) {
+    } else {
+      // Add to root if no parentId OR if parentId references non-existent folder (orphaned document)
       rootFolders.push(node);
       docsWithoutFolder++;
+      if (node.parentId) {
+        log.debug(
+          `[buildTree] Document ${node.name} has folderId ${node.parentId} but folder not found - adding to root`
+        );
+      }
     }
   });
 
@@ -138,7 +145,7 @@ const buildTree = (folders: IFolder[], documents: Record<string, unknown>[]): Fo
 export const getFolderTree = async (req: Request, res: Response) => {
   try {
     const userId = req.user?._id;
-    const { knowledgeBase } = req.query;
+    const { knowledgeBase, sourceType } = req.query;
 
     if (!userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -146,18 +153,17 @@ export const getFolderTree = async (req: Request, res: Response) => {
 
     // Build query
     const folderQuery: Record<string, unknown> = {};
-    const docQuery: Record<string, unknown> = {};
+    let docQuery: Record<string, unknown> = {};
 
     // For admin users, show system documents when no specific knowledge base is selected
     const isAdmin = req.user?.role === 'admin';
 
-    log.info('getFolderTree - User details:', {
-      userId: userId?.toString(),
-      isAdmin,
-      knowledgeBase,
-    });
-
-    if (knowledgeBase) {
+    // If sourceType=user is explicitly requested, force user documents view
+    if (sourceType === 'user') {
+      folderQuery.ownerId = userId;
+      docQuery.userId = userId;
+      docQuery.sourceType = 'user';
+    } else if (knowledgeBase) {
       folderQuery.knowledgeBaseId = knowledgeBase;
       docQuery.tenantKbId = knowledgeBase;
       docQuery.sourceType = 'tenant';
@@ -167,8 +173,11 @@ export const getFolderTree = async (req: Request, res: Response) => {
       // This allows admins to organize system documents
       // folderQuery remains empty to get ALL folders
 
-      // Admin can see both system and user documents
-      docQuery.$or = [{ userId: userId, sourceType: 'user' }, { sourceType: 'system' }];
+      // IMPORTANT: docQuery is NOT USED for admin System KB mode
+      // We fetch directly from SystemKbDocument collection (see lines 206-213)
+      // Leave docQuery empty as a safety measure
+      // This prevents any accidental inclusion of user documents
+      docQuery = {}; // Will be ignored - we use SystemKbDocument.find({}) below
     } else {
       // Regular users only see their own folders and documents
       folderQuery.ownerId = userId;
@@ -176,15 +185,15 @@ export const getFolderTree = async (req: Request, res: Response) => {
       docQuery.sourceType = 'user';
     }
 
-    log.info('getFolderTree - Query details:', {
-      folderQuery: JSON.stringify(folderQuery),
-      docQuery: JSON.stringify(docQuery),
-    });
-
     // Fetch folders and documents
     let documents: Record<string, unknown>[] = [];
 
-    if (isAdmin && !knowledgeBase) {
+    // If sourceType=user is explicitly requested, ALWAYS use UserDocument collection
+    if (sourceType === 'user') {
+      documents = (await UserDocument.find(docQuery).sort({
+        originalFileName: 1,
+      })) as unknown as Record<string, unknown>[];
+    } else if (isAdmin && !knowledgeBase) {
       // For admin viewing system KB, ONLY fetch from SystemKbDocument collection
       // User documents should NOT appear in the admin System KB dashboard
       documents = (await SystemKbDocument.find({}).sort({ filename: 1 })) as unknown as Record<
@@ -199,46 +208,30 @@ export const getFolderTree = async (req: Request, res: Response) => {
     }
 
     const folders = await Folder.find(folderQuery).sort({ name: 1 });
-
-    log.info('getFolderTree - Results:', {
-      foldersCount: folders.length,
-      documentsCount: documents.length,
-      documentTypes: documents
-        .map(d => ({
-          name: d.originalFileName,
-          sourceType: (d as Record<string, unknown>).sourceType,
-          userId: (d as Record<string, unknown>).userId,
-          folderId: (d as Record<string, unknown>).folderId,
-        }))
-        .slice(0, 5), // Show first 5 documents for debugging
-    });
-
-    log.debug(
-      '[getFolderTree] Before buildTree - folders:',
-      folders.length,
-      'documents:',
-      documents.length
-    );
     const tree = buildTree(folders, documents);
-    log.debug('[getFolderTree] After buildTree - tree items:', tree.length);
-
-    log.info('getFolderTree - Final tree structure:', {
-      treeItemCount: tree.length,
-      treeStructure: JSON.stringify(
-        tree.map(item => ({
-          name: item.name,
-          type: item.type,
-          childrenCount: item.children?.length || 0,
-        }))
-      ),
-    });
 
     return res.json({
       success: true,
       tree,
     });
   } catch (error: unknown) {
-    log.error('Error fetching folder tree:', error);
+    // Enhanced error logging to show actual error details
+    if (error instanceof Error) {
+      log.error(`Error fetching folder tree: ${error.message}`, {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        errorObject: error,
+      });
+      console.error('FULL ERROR DETAILS:', error);
+    } else {
+      log.error('Error fetching folder tree (non-Error type):', {
+        errorType: typeof error,
+        errorValue: error,
+        errorString: String(error),
+      });
+      console.error('FULL ERROR DETAILS:', error);
+    }
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch folder tree',

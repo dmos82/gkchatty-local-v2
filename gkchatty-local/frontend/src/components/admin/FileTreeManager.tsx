@@ -41,12 +41,18 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import useFileTreeStore, { FileNode } from '@/stores/fileTreeStore';
+import { PdfViewer } from '@/components/common/PdfViewer';
 
-const FileTreeManager: React.FC = () => {
+interface FileTreeManagerProps {
+  mode?: 'user' | 'system';
+}
+
+const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [allItems, setAllItems] = useState<FileNode[]>([]);
+  const [viewingPdf, setViewingPdf] = useState<{id: string, name: string} | null>(null);
 
   const {
     fileTree,
@@ -64,6 +70,7 @@ const FileTreeManager: React.FC = () => {
     setViewMode,
     setSearchQuery,
     setSelectedKnowledgeBase,
+    setMode,
     fetchFileTree,
     createFolder,
     deleteItems,
@@ -104,13 +111,21 @@ const FileTreeManager: React.FC = () => {
     setAllItems(flattenTree(fileTree));
   }, [fileTree, expandedFolders]);
 
+  // Set mode on mount
+  useEffect(() => {
+    console.log('[FileTreeManager] Setting mode to:', mode);
+    setMode(mode);
+  }, [mode, setMode]);
+
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       console.log('[FileTreeManager] Loading initial data...');
       try {
-        await fetchKnowledgeBases();
-        console.log('[FileTreeManager] Knowledge bases fetched, now fetching tree...');
+        if (mode === 'system') {
+          await fetchKnowledgeBases();
+          console.log('[FileTreeManager] Knowledge bases fetched, now fetching tree...');
+        }
         await fetchFileTree();
         console.log('[FileTreeManager] Tree fetch completed');
       } catch (error) {
@@ -118,7 +133,7 @@ const FileTreeManager: React.FC = () => {
       }
     };
     loadData();
-  }, []); // Remove dependencies to only run once on mount
+  }, [mode]); // Re-run when mode changes
 
   // Debug fileTree state
   useEffect(() => {
@@ -445,7 +460,7 @@ const FileTreeManager: React.FC = () => {
       // If dropping on a folder, use that folder's ID, otherwise use null for root
       const targetFolderId = targetNode?.type === 'folder' ? targetNode._id : null;
 
-      if (targetFolderId) {
+      if (targetFolderId && targetNode) {
         console.log(`[FileTreeManager] Uploading to folder: ${targetNode.name}`);
       } else {
         console.log('[FileTreeManager] Uploading to root');
@@ -515,7 +530,15 @@ const FileTreeManager: React.FC = () => {
             isFolder && dragOverFolder === node._id && "bg-blue-500/20 ring-2 ring-blue-500"
           )}
           style={{ paddingLeft: `${level * 20 + 8}px` }}
-          onClick={(e) => handleItemSelect(node._id, e)}
+          onClick={(e) => {
+            // If clicking on a PDF file, open the viewer
+            if (!isFolder && (node.mimeType?.includes('pdf') || node.name.toLowerCase().endsWith('.pdf'))) {
+              setViewingPdf({id: node._id, name: node.name});
+            } else {
+              // Otherwise, handle normal selection
+              handleItemSelect(node._id, e);
+            }
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             setContextItem(node);
@@ -659,7 +682,13 @@ const FileTreeManager: React.FC = () => {
               "flex flex-col items-center p-4 rounded-lg hover:bg-accent cursor-pointer",
               selectedItems.has(item._id) && "bg-accent"
             )}
-            onClick={(e) => handleItemSelect(item._id, e)}
+            onClick={(e) => {
+              if (item.type === 'file' && (item.mimeType?.includes('pdf') || item.name.toLowerCase().endsWith('.pdf'))) {
+                setViewingPdf({id: item._id, name: item.name});
+              } else {
+                handleItemSelect(item._id, e);
+              }
+            }}
             onDoubleClick={() => item.type === 'folder' && toggleFolder(item._id)}
           >
             {item.type === 'folder' ? (
@@ -701,7 +730,13 @@ const FileTreeManager: React.FC = () => {
               "flex items-center gap-2 p-2 rounded hover:bg-accent cursor-pointer",
               selectedItems.has(item._id) && "bg-accent"
             )}
-            onClick={(e) => handleItemSelect(item._id, e)}
+            onClick={(e) => {
+              if (item.type === 'file' && (item.mimeType?.includes('pdf') || item.name.toLowerCase().endsWith('.pdf'))) {
+                setViewingPdf({id: item._id, name: item.name});
+              } else {
+                handleItemSelect(item._id, e);
+              }
+            }}
           >
             {item.type === 'folder' ? (
               <Folder className="h-4 w-4" />
@@ -1002,6 +1037,16 @@ const FileTreeManager: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* PDF Viewer */}
+      {viewingPdf && (
+        <PdfViewer
+          documentId={viewingPdf.id}
+          filename={viewingPdf.name}
+          type={mode}
+          onClose={() => setViewingPdf(null)}
+        />
+      )}
     </div>
   );
 };

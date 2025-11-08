@@ -1,0 +1,29 @@
+File Path,Severity,Lines,Models Imported Wrong,Impact,Fix Required
+src/routes/admin.ts,CRITICAL,2,User,HIGH - Admin route broken in SQLite,Use modelFactory
+src/routes/chatRoutes.ts,CRITICAL,"10, 13","Setting, UserSettings",HIGH - Chat broken in SQLite,Use modelFactory
+src/routes/adminSettingsRoutes.ts,CRITICAL,11,Setting,HIGH - Admin settings broken,Use modelFactory
+src/routes/documentRoutes.ts,HIGH,"25, 26","Persona (+ interfaces)",MEDIUM-HIGH - Document routing broken,Use modelFactory
+src/services/settingsService.ts,MEDIUM-HIGH,1,Setting,MEDIUM - Settings service broken,Use modelFactory
+src/controllers/settingsController.ts,MEDIUM,2,Setting,MEDIUM - Settings endpoints broken,Use modelFactory
+src/controllers/example-async-handler.controller.ts,LOW,5,User,LOW - Example file,Use modelFactory
+src/routes/__tests__/adminSettingsRoutes.test.ts,LOW,"8, 9","User, Setting",LOW - Test only,Use modelFactory
+src/routes/__tests__/authRoutes.test.ts,LOW,5,User,LOW - Test only,Use modelFactory
+src/routes/__tests__/chatRoutes.test.ts,LOW,"8, 9","Setting, User",LOW - Test only,Use modelFactory
+src/controllers/__tests__/admin.controller.test.ts,LOW,"37, 40","User, Chat",LOW - Test only,Use modelFactory
+src/services/__tests__/personaService.test.ts,LOW,"29, 30","PersonaModel, User",LOW - Test only,Use modelFactory
+src/services/__tests__/settingsService.unit.test.ts,LOW,6,Setting,LOW - Test only,Use modelFactory
+src/middleware/__tests__/authMiddleware.edge.test.ts,LOW,5,User,LOW - Test only,Use modelFactory
+src/scripts/verifyPersonaIntegration.ts,LOW,6,User,LOW - Script only,Use modelFactory
+src/index.ts,LOW,"6, 7","Setting, User",LOW - Seeding script,Use modelFactory
+scripts/create-admin.ts,LOW,18,User,LOW - One-time script,Use modelFactory
+src/scripts/create-admin-user.ts,LOW,4,User,LOW - One-time script,Use modelFactory
+src/scripts/create-test-admin.ts,LOW,4,User,LOW - One-time script,Use modelFactory
+src/scripts/create-default-persona.ts,LOW,2,PersonaModel,LOW - One-time script,Use modelFactory
+src/scripts/debug-settings.ts,LOW,3,Setting,LOW - Debug script,Use modelFactory
+src/scripts/migrate-kb-access.ts,LOW,4,User,LOW - Migration script,Use modelFactory
+src/scripts/migrateUserCustomPrompts.ts,LOW,"5, 7","User, PersonaModel",LOW - Migration script,Use modelFactory
+src/scripts/migrateUserPersonaActive.ts,LOW,2,User,LOW - Migration script,Use modelFactory
+src/scripts/ensure-sales-kb.ts,LOW,5,User,LOW - One-time script,Use modelFactory
+src/scripts/setup-test-user-kb-access.ts,LOW,4,User,LOW - One-time script,Use modelFactory
+src/scripts/verify-search-modes.ts,LOW,7,User,LOW - One-time script,Use modelFactory
+src/scripts/seedSystemSettings.ts,LOW,2,Setting,LOW - One-time script,Use modelFactory

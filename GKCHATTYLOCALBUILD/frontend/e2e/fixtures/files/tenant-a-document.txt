@@ -1,0 +1,8 @@
+This document belongs exclusively to Tenant A. It contains TENANT_A_SECRET_DATA that should never be visible to Tenant B.
+
+Tenant A Confidential Information:
+- Company Name: TenantA Corp
+- Secret Code: ALPHA-2025-001
+- Access Level: Restricted to Tenant A users only
+
+This data must remain isolated within Tenant A's namespace and should never leak to other tenants.

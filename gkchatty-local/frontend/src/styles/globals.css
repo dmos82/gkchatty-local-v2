@@ -1,0 +1,135 @@
+/* Dark mode */
+:root[class~="dark"] {
+  --background: hsl(0, 0%, 7%); /* #111111 - True neutral dark gray - matching app/globals.css */
+  --foreground: hsl(0, 0%, 98%); /* #fafafa - Pure white with slight gray */
+  
+  --card: hsl(0, 0%, 12%); /* #1e1e1e - True neutral dark gray */
+  --card-foreground: hsl(0, 0%, 98%);
+  
+  --popover: hsl(0, 0%, 12%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  
+  --primary: hsl(0, 0%, 98%); /* Pure white with slight gray */
+  --primary-foreground: hsl(0, 0%, 7%);
+  
+  --secondary: hsl(0, 0%, 25%); /* #404040 - Neutral gray */
+  --secondary-foreground: hsl(0, 0%, 98%);
+  
+  --muted: hsl(0, 0%, 25%); /* #404040 - Neutral gray */
+  --muted-foreground: hsl(0, 0%, 64%); /* #a3a3a3 - Neutral gray */
+  
+  --accent: hsl(0, 0%, 25%); /* #404040 - Neutral gray */
+  --accent-foreground: hsl(0, 0%, 98%);
+  
+  --destructive: hsl(0, 70%, 30%); /* Same as in app/globals.css */
+  --destructive-foreground: hsl(0, 0%, 98%);
+  
+  --border: hsl(0, 0%, 25%); /* #404040 - Neutral gray */
+  --input: hsl(0, 0%, 25%); /* #404040 */
+  --ring: hsl(0, 0%, 45%); /* #737373 - Neutral gray */
+  
+  --radius: 0.5rem;
+  
+  /* Custom theme variables */
+  --text-primary: hsl(0, 0%, 98%);
+  --text-secondary: hsl(0, 0%, 64%);
+  --sidebar-bg: hsl(0, 0%, 12%);
+  --chat-bg: hsl(0, 0%, 7%);
+  --user-bubble-bg: hsl(0, 0%, 20%);
+  --user-bubble-text: hsl(0, 0%, 100%);
+  --ai-bubble-bg: hsl(0, 0%, 12%);
+  --ai-bubble-text: hsl(0, 0%, 98%);
+  --fees-bubble-text: hsl(0, 0%, 20%);
+}
+
+/* Light mode */
+:root {
+  --background: #f8f8f8;
+  --foreground: #0f0f0f;
+  
+  --card: #ffffff;
+  --card-foreground: #0f0f0f;
+  
+  --popover: #ffffff;
+  --popover-foreground: #0f0f0f;
+  
+  --primary: #4e46e5;
+  --primary-foreground: #fafafa;
+  
+  --secondary: #f4f4f5;
+  --secondary-foreground: #0f0f0f;
+  
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  
+  --accent: #f4f4f5;
+  --accent-foreground: #0f0f0f;
+  
+  --destructive: #ff2424;
+  --destructive-foreground: #fafafa;
+  
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #4e46e5;
+  
+  --radius: 0.5rem;
+  
+  /* Custom theme variables */
+  --text-primary: #0f0f0f;
+  --text-secondary: #71717a;
+  --sidebar-bg: #f4f4f5;
+  --chat-bg: #f8f8f8;
+  --user-bubble-bg: #e0e0e0;
+  --user-bubble-text: #111111;
+  --ai-bubble-bg: #ffffff;
+  --ai-bubble-text: #0f0f0f;
+  --fees-bubble-text: #333333;
+}
+
+/* Additional custom styling */
+/* ... existing code ... */
+
+/* User bubble styling */
+.user-bubble {
+  color: var(--user-bubble-text) !important;
+  font-weight: 600 !important;
+}
+
+/* Force text color in user bubbles */
+.user-bubble p,
+.user-bubble span,
+.user-bubble div,
+div[class*="user-bubble"] p,
+div[class*="user-bubble"] span,
+div[class*="user-bubble"] div {
+  color: var(--user-bubble-text) !important;
+}
+
+/* Fees bubble styling */
+[class*="fees"], 
+div[class*="fees"], 
+span[class*="fees"],
+button[class*="fees"] {
+  color: var(--fees-bubble-text) !important;
+  font-weight: 600 !important;
+}
+
+/* Override for specific fees buttons/tags */
+.fees, 
+div.fees, 
+span.fees,
+button.fees {
+  color: var(--fees-bubble-text) !important;
+  font-weight: 600 !important;
+}
+
+/* Direct styling for fees buttons */
+.fees {
+  color: #000000 !important;
+}
+
+/* Additional direct styling for any element containing "fees" in its class */
+[class*="fees"] {
+  color: #000000 !important;
+  font-weight: 700 !important;
+} 

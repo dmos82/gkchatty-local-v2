@@ -77,16 +77,26 @@ router.get(
     }
 
     try {
-      const systemDocuments = await UserDocument.find({
-        sourceType: 'system',
-      })
-        .select('_id originalFileName uploadTimestamp fileSize mimeType status') // Consistent fields
-        .sort({ originalFileName: 1 })
-        .lean<IUserDocument[]>(); // Use lean with type
+      // FIX: Query SystemKbDocument collection instead of UserDocument
+      const { SystemKbDocument } = await import('../models/SystemKbDocument');
+      const systemDocuments = await SystemKbDocument.find({})
+        .select('_id filename fileSize mimeType status createdAt') // SystemKbDocument fields
+        .sort({ filename: 1 })
+        .lean();
 
-      logger.info({ count: systemDocuments.length }, 'Admin system KB documents found');
+      // Map to consistent response format expected by frontend
+      const formattedDocs = systemDocuments.map(doc => ({
+        _id: doc._id,
+        originalFileName: doc.filename, // Map filename to originalFileName for frontend compatibility
+        uploadTimestamp: doc.createdAt,
+        fileSize: doc.fileSize,
+        mimeType: doc.mimeType,
+        status: doc.status,
+      }));
 
-      return res.status(200).json({ success: true, documents: systemDocuments });
+      logger.info({ count: formattedDocs.length }, 'Admin system KB documents found');
+
+      return res.status(200).json({ success: true, documents: formattedDocs });
     } catch (error) {
       logger.error({ error }, 'Admin error fetching system documents');
       return res.status(500).json({
@@ -366,10 +376,11 @@ router.delete(
     const failedS3Keys: string[] = [];
 
     try {
+      // FIX: Query SystemKbDocument collection instead of UserDocument
+      const { SystemKbDocument } = await import('../models/SystemKbDocument');
+
       // 1. Find all system document metadata to get S3 keys
-      const documentsToDelete = await UserDocument.find({ sourceType: 'system' }).select(
-        's3Bucket s3Key'
-      );
+      const documentsToDelete = await SystemKbDocument.find({}).select('s3Key');
       attemptedS3Deletions = documentsToDelete.length;
       logger.info({ count: attemptedS3Deletions }, 'Found system documents to delete');
 
@@ -391,7 +402,7 @@ router.delete(
       // 3. Delete S3 objects
       logger.info({ count: attemptedS3Deletions }, 'Deleting S3 objects');
       for (const doc of documentsToDelete) {
-        if (doc.s3Bucket && doc.s3Key) {
+        if (doc.s3Key) {
           try {
             await deleteFile(doc.s3Key);
             successfulS3Deletions++;
@@ -408,9 +419,9 @@ router.delete(
         'S3 deletion summary'
       );
 
-      // 4. Delete documents from MongoDB
+      // 4. Delete documents from MongoDB (SystemKbDocument collection)
       logger.info('Deleting system document metadata from MongoDB');
-      const mongoDeleteResult = await UserDocument.deleteMany({ sourceType: 'system' });
+      const mongoDeleteResult = await SystemKbDocument.deleteMany({});
       deletedDbCount = mongoDeleteResult.deletedCount;
       logger.info({ deletedCount: deletedDbCount }, 'MongoDB deletion result');
 

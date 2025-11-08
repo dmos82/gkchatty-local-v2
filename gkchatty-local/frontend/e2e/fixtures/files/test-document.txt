@@ -1,0 +1,8 @@
+This is a plain text test document for quick testing. Contains the secret keyword GOLDKEY for easy verification.
+
+This document is used in E2E tests to verify:
+- Document upload functionality
+- RAG context retrieval
+- Search and query capabilities
+
+The document should be processed, embedded, and searchable within the chat interface.

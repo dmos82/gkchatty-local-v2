@@ -1,0 +1,498 @@
+import { test, expect } from '@playwright/test';
+import { AuthPage, ChatPage, DocumentsPage } from '../page-objects';
+import { TEST_USERS, getUniqueTestUser, TestUser } from '../fixtures/test-users';
+import { TEST_DOCUMENTS, createTestFiles, testFilesExist } from '../fixtures/test-documents';
+
+/**
+ * Journey 1: User Registration → Document Upload → Chat Query
+ *
+ * This test suite validates the complete user journey from registration
+ * through document upload to RAG-powered chat interactions.
+ *
+ * Flow:
+ * 1. User registers new account
+ * 2. Logs in with new credentials
+ * 3. Uploads a document
+ * 4. Waits for document processing
+ * 5. Asks questions about the uploaded document
+ * 6. Verifies RAG responses contain document context
+ * 7. Logs out
+ */
+test.describe('Journey 1: User Registration → Upload → Chat', () => {
+  let authPage: AuthPage;
+  let chatPage: ChatPage;
+  let documentsPage: DocumentsPage;
+
+  test.beforeAll(async () => {
+    // Ensure test files exist before running tests
+    const filesExist = await testFilesExist();
+    if (!filesExist) {
+      await createTestFiles();
+    }
+  });
+
+  test.beforeEach(async ({ page }) => {
+    // Initialize page objects
+    authPage = new AuthPage(page);
+    chatPage = new ChatPage(page);
+    documentsPage = new DocumentsPage(page);
+  });
+
+  /**
+   * HAPPY PATH: Complete journey from registration to RAG query
+   */
+  test('should complete full user journey successfully', async ({ page }) => {
+    // Generate unique user to avoid conflicts
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // Step 1: Register new account
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+
+    // Verify successful registration (should redirect away from /auth)
+    await authPage.waitForSuccessfulLogin();
+    expect(page.url()).not.toContain('/auth');
+
+    // Step 2: Navigate to documents page
+    await documentsPage.goto();
+    expect(page.url()).toContain('/documents');
+
+    // Step 3: Upload document
+    const testDoc = TEST_DOCUMENTS.text;
+    await documentsPage.uploadFileAndWait(testDoc.path, 60000);
+
+    // Verify document appears in list
+    const hasDoc = await documentsPage.hasDocument(testDoc.name);
+    expect(hasDoc).toBeTruthy();
+
+    // Step 4: Navigate to chat
+    await chatPage.goto();
+    const url = new URL(page.url());
+    expect(url.pathname).toMatch(/^\/$|^\/chat/);
+
+    // Step 4.5: Switch to 'user-docs' mode (fixes timeout issue)
+    await chatPage.switchKnowledgeBaseMode('user-docs');
+
+    // Step 5: Ask question about uploaded document
+    const query = 'What is the secret keyword mentioned in my document?';
+    await chatPage.sendMessageAndWaitForResponse(query, 45000);
+
+    // Step 6: Verify RAG response contains document context
+    const response = await chatPage.getLastAssistantMessage();
+    expect(response).toBeTruthy();
+
+    // Response should contain the secret keyword from the document
+    const containsKeyword = testDoc.expectedSearchKeywords.some(
+      keyword => response.toUpperCase().includes(keyword.toUpperCase())
+    );
+    expect(containsKeyword).toBeTruthy();
+
+    // Step 7: Logout
+    await chatPage.logout();
+    expect(page.url()).toContain('/auth');
+  });
+
+  /**
+   * REGISTRATION VALIDATION TESTS
+   */
+  test('should reject registration with invalid email format', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    await authPage.goto();
+    await authPage.switchToRegister();
+
+    // Attempt registration with invalid email
+    await authPage.usernameInput.fill(testUser.username);
+    await authPage.emailInput.fill('invalid-email-format');
+    await authPage.passwordInput.fill(testUser.password);
+
+    if (await authPage.confirmPasswordInput.isVisible()) {
+      await authPage.confirmPasswordInput.fill(testUser.password);
+    }
+
+    await authPage.registerButton.click();
+
+    // Should show error or HTML5 validation prevents submission
+    await page.waitForTimeout(2000);
+
+    // Either error message appears or we're still on auth page
+    const hasError = await authPage.hasError();
+    const stillOnAuthPage = page.url().includes('/auth');
+
+    expect(hasError || stillOnAuthPage).toBeTruthy();
+  });
+
+  test('should reject registration with weak password', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    await authPage.goto();
+    await authPage.switchToRegister();
+
+    // Attempt registration with weak password
+    await authPage.usernameInput.fill(testUser.username);
+    await authPage.emailInput.fill(testUser.email);
+    await authPage.passwordInput.fill('123'); // Too weak
+
+    if (await authPage.confirmPasswordInput.isVisible()) {
+      await authPage.confirmPasswordInput.fill('123');
+    }
+
+    await authPage.registerButton.click();
+
+    // Should show error
+    await page.waitForTimeout(2000);
+
+    const hasError = await authPage.hasError();
+    const stillOnAuthPage = page.url().includes('/auth');
+
+    expect(hasError || stillOnAuthPage).toBeTruthy();
+  });
+
+  test('should reject registration with mismatched passwords', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    await authPage.goto();
+    await authPage.switchToRegister();
+
+    await authPage.usernameInput.fill(testUser.username);
+    await authPage.emailInput.fill(testUser.email);
+    await authPage.passwordInput.fill(testUser.password);
+
+    // Fill different password in confirm field
+    if (await authPage.confirmPasswordInput.isVisible()) {
+      await authPage.confirmPasswordInput.fill('DifferentPassword123!');
+      await authPage.registerButton.click();
+
+      // Should show error
+      await page.waitForTimeout(2000);
+
+      const hasError = await authPage.hasError();
+      expect(hasError).toBeTruthy();
+    } else {
+      // If no confirm field, skip this test
+      test.skip();
+    }
+  });
+
+  test('should reject registration with duplicate username', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // First registration
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    // Logout
+    await chatPage.logout();
+
+    // Attempt to register again with same username but different email
+    await authPage.goto();
+    await authPage.switchToRegister();
+
+    await authPage.usernameInput.fill(testUser.username); // Same username
+    await authPage.emailInput.fill(`different-${testUser.email}`); // Different email
+    await authPage.passwordInput.fill(testUser.password);
+
+    if (await authPage.confirmPasswordInput.isVisible()) {
+      await authPage.confirmPasswordInput.fill(testUser.password);
+    }
+
+    await authPage.registerButton.click();
+
+    // Should show error about duplicate username
+    await page.waitForTimeout(2000);
+    const hasError = await authPage.hasError();
+    expect(hasError).toBeTruthy();
+  });
+
+  /**
+   * LOGIN VALIDATION TESTS
+   */
+  test('should reject login with incorrect password', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // First register the user
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    // Logout
+    await chatPage.logout();
+
+    // Attempt login with wrong password
+    await authPage.goto();
+    await authPage.switchToLogin();
+
+    await authPage.usernameInput.fill(testUser.username);
+    await authPage.passwordInput.fill('WrongPassword123!');
+    await authPage.loginButton.click();
+
+    // Should show error
+    await page.waitForTimeout(2000);
+    const hasError = await authPage.hasError();
+    expect(hasError).toBeTruthy();
+  });
+
+  test('should reject login with non-existent user', async ({ page }) => {
+    await authPage.goto();
+    await authPage.switchToLogin();
+
+    await authPage.usernameInput.fill('non-existent-user-12345');
+    await authPage.passwordInput.fill('SomePassword123!');
+    await authPage.loginButton.click();
+
+    // Should show error
+    await page.waitForTimeout(2000);
+    const hasError = await authPage.hasError();
+    expect(hasError).toBeTruthy();
+  });
+
+  test('should allow login with correct credentials after registration', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // Register
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    // Logout
+    await chatPage.logout();
+
+    // Login again
+    await authPage.goto();
+    await authPage.login(testUser.username, testUser.password);
+
+    // Should be redirected away from auth
+    expect(page.url()).not.toContain('/auth');
+  });
+
+  /**
+   * DOCUMENT UPLOAD VALIDATION TESTS
+   */
+  test('should successfully upload and process text document', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // Register and login
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    // Navigate to documents
+    await documentsPage.goto();
+
+    // Upload document
+    const initialCount = await documentsPage.getDocumentCount();
+    await documentsPage.uploadFileAndWait(TEST_DOCUMENTS.text.path, 60000);
+
+    // Verify document count increased
+    const finalCount = await documentsPage.getDocumentCount();
+    expect(finalCount).toBeGreaterThan(initialCount);
+
+    // Verify document appears in list
+    const hasDoc = await documentsPage.hasDocument(TEST_DOCUMENTS.text.name);
+    expect(hasDoc).toBeTruthy();
+  });
+
+  test('should handle document processing timeout gracefully', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // Register and login
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    // Navigate to documents
+    await documentsPage.goto();
+
+    // Upload document with very short timeout
+    await documentsPage.uploadFile(TEST_DOCUMENTS.text.path);
+
+    // Wait a bit for upload to start
+    await page.waitForTimeout(2000);
+
+    // Document should still be uploaded even if processing isn't complete
+    // This tests that upload doesn't hang indefinitely
+    const docCount = await documentsPage.getDocumentCount();
+    expect(docCount).toBeGreaterThanOrEqual(0);
+  });
+
+  /**
+   * RAG CONTEXT VERIFICATION TESTS
+   */
+  test('should return relevant response based on uploaded document content', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+    const testDoc = TEST_DOCUMENTS.text;
+
+    // Complete registration and document upload
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    await documentsPage.goto();
+    await documentsPage.uploadFileAndWait(testDoc.path, 60000);
+
+    // Go to chat
+    await chatPage.goto();
+    await chatPage.switchKnowledgeBaseMode('user-docs');
+
+    // Ask specific question about document content
+    const query = 'What does my document say about GOLDKEY?';
+    await chatPage.sendMessageAndWaitForResponse(query, 45000);
+
+    // Verify response mentions the keyword
+    const response = await chatPage.getLastAssistantMessage();
+    expect(response.toUpperCase()).toContain('GOLDKEY');
+  });
+
+  test('should indicate when asked about non-existent content', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // Register and upload document
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    await documentsPage.goto();
+    await documentsPage.uploadFileAndWait(TEST_DOCUMENTS.text.path, 60000);
+
+    // Go to chat
+    await chatPage.goto();
+    await chatPage.switchKnowledgeBaseMode('user-docs');
+
+    // Ask about content that doesn't exist in the document
+    const query = 'What does my document say about quantum computing and artificial intelligence?';
+    await chatPage.sendMessageAndWaitForResponse(query, 45000);
+
+    // Response should indicate lack of information or be uncertain
+    const response = await chatPage.getLastAssistantMessage();
+    expect(response).toBeTruthy();
+
+    // Response should not hallucinate specific details about quantum computing
+    // Instead, it should indicate uncertainty or that the info isn't in the document
+    const lowerResponse = response.toLowerCase();
+    const hasUncertainty =
+      lowerResponse.includes('don\'t') ||
+      lowerResponse.includes('cannot') ||
+      lowerResponse.includes('no information') ||
+      lowerResponse.includes('not found') ||
+      lowerResponse.includes('doesn\'t mention');
+
+    // If no uncertainty markers, at least it should not contain false technical details
+    expect(hasUncertainty || !lowerResponse.includes('quantum entanglement')).toBeTruthy();
+  });
+
+  test('should maintain context across multiple questions', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // Complete registration and upload
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    await documentsPage.goto();
+    await documentsPage.uploadFileAndWait(TEST_DOCUMENTS.text.path, 60000);
+
+    // Go to chat
+    await chatPage.goto();
+    await chatPage.switchKnowledgeBaseMode('user-docs');
+
+    // Ask first question
+    await chatPage.sendMessageAndWaitForResponse('What is in my document?', 45000);
+    const firstResponse = await chatPage.getLastAssistantMessage();
+    expect(firstResponse).toBeTruthy();
+
+    // Ask follow-up question
+    await chatPage.sendMessageAndWaitForResponse('Can you tell me more about that?', 45000);
+    const secondResponse = await chatPage.getLastAssistantMessage();
+    expect(secondResponse).toBeTruthy();
+
+    // Both responses should exist (context maintained)
+    const messageCount = await chatPage.getMessageCount();
+    expect(messageCount).toBeGreaterThanOrEqual(2);
+  });
+
+  /**
+   * EDGE CASES AND ERROR SCENARIOS
+   */
+  test('should handle chat query before uploading any documents', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // Register without uploading documents
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    // Go directly to chat
+    await chatPage.goto();
+    await chatPage.switchKnowledgeBaseMode('user-docs');
+
+    // Try to ask about documents
+    await chatPage.sendMessageAndWaitForResponse('What is in my documents?', 45000);
+
+    // Should get response indicating no documents or general response
+    const response = await chatPage.getLastAssistantMessage();
+    expect(response).toBeTruthy();
+  });
+
+  test('should allow user to logout and login again to access documents', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+
+    // Register and upload document
+    await authPage.goto();
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    await documentsPage.goto();
+    await documentsPage.uploadFileAndWait(TEST_DOCUMENTS.text.path, 60000);
+
+    // Logout
+    await chatPage.goto();
+    await chatPage.logout();
+
+    // Login again
+    await authPage.login(testUser.username, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+
+    // Check documents still exist
+    await documentsPage.goto();
+    const hasDoc = await documentsPage.hasDocument(TEST_DOCUMENTS.text.name);
+    expect(hasDoc).toBeTruthy();
+
+    // Chat should still have access to the document
+    await chatPage.goto();
+    await chatPage.switchKnowledgeBaseMode('user-docs');
+    await chatPage.sendMessageAndWaitForResponse('What is the secret keyword?', 45000);
+
+    const response = await chatPage.getLastAssistantMessage();
+    expect(response.toUpperCase()).toContain('GOLDKEY');
+  });
+
+  test('should complete journey with valid user inputs and proper flow', async ({ page }) => {
+    const testUser = getUniqueTestUser(TEST_USERS.newUser);
+    const testDoc = TEST_DOCUMENTS.text;
+
+    // Step-by-step verification
+    await authPage.goto();
+    expect(page.url()).toContain('/auth');
+
+    await authPage.register(testUser.username, testUser.email, testUser.password);
+    await authPage.waitForSuccessfulLogin();
+    expect(page.url()).not.toContain('/auth');
+
+    await documentsPage.goto();
+    expect(page.url()).toContain('/documents');
+
+    await documentsPage.uploadFileAndWait(testDoc.path, 60000);
+    expect(await documentsPage.hasDocument(testDoc.name)).toBeTruthy();
+
+    await chatPage.goto();
+    await chatPage.switchKnowledgeBaseMode('user-docs');
+    await chatPage.sendMessageAndWaitForResponse('Summarize my document', 45000);
+
+    const response = await chatPage.getLastAssistantMessage();
+    expect(response.length).toBeGreaterThan(0);
+
+    await chatPage.logout();
+    expect(page.url()).toContain('/auth');
+  });
+});

@@ -5,7 +5,7 @@
   "description": "GKChatty Backend API - RAG platform with MongoDB, Pinecone, OpenAI",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "PORT=6001 ts-node-dev --respawn --transpile-only --exit-child --notify=false src/index.ts",
+    "dev": "ts-node-dev --respawn --transpile-only --exit-child --notify=false src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "load-kb": "ts-node src/scripts/loadSystemKnowledge.ts",
@@ -22,7 +22,11 @@
     "test:openai": "ts-node src/test-openai.ts",
     "test": "dotenv -e .env.test -- jest --coverage --runInBand",
     "test:watch": "dotenv -e .env.test -- jest --watch",
-    "test:video": "dotenv -e .env.test -- jest src/services/__tests__/videoProcessor.test.ts --coverage"
+    "test:video": "dotenv -e .env.test -- jest src/services/__tests__/videoProcessor.test.ts --coverage",
+    "test:rate-limits": "ts-node scripts/test-rate-limits.ts",
+    "create-test-users": "ts-node scripts/create-test-users.ts",
+    "test:insurance-load": "NODE_ENV=production ts-node scripts/test-insurance-load.ts",
+    "test:s3": "ts-node scripts/test-s3-connection.ts"
   },
   "keywords": [],
   "author": "",
@@ -57,6 +61,7 @@
     "axios": "1.9.0",
     "bcrypt": "5.1.0",
     "bcryptjs": "3.0.2",
+    "better-sqlite3": "^11.7.0",
     "chromadb": "2.2.0",
     "cookie-parser": "1.4.7",
     "cors": "2.8.5",
@@ -97,6 +102,7 @@
   "devDependencies": {
     "@jest-mock/express": "2.0.2",
     "@types/bcryptjs": "2.4.6",
+    "@types/colors": "^1.2.4",
     "@types/dompurify": "3.2.0",
     "@types/jest": "29.5.14",
     "@types/mongodb-memory-server": "2.3.0",
@@ -106,6 +112,7 @@
     "@types/uuid": "10.0.0",
     "@typescript-eslint/eslint-plugin": "6.18.1",
     "@typescript-eslint/parser": "6.18.1",
+    "colors": "^1.4.0",
     "dotenv-cli": "8.0.0",
     "eslint": "8.56.0",
     "jest": "29.7.0",

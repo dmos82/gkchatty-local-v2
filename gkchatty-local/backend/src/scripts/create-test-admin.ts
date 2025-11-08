@@ -2,6 +2,7 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import User from '../models/UserModel';
+import { BCRYPT_SALT_ROUNDS } from '../config/constants';
 
 async function createTestAdmin() {
   try {
@@ -22,7 +23,7 @@ async function createTestAdmin() {
     }
 
     // Create test admin user
-    const hashedPassword = await bcrypt.hash('testpassword', 12);
+    const hashedPassword = await bcrypt.hash('testpassword', BCRYPT_SALT_ROUNDS);
     const adminUser = await User.create({
       username: 'testadmin',
       email: 'testadmin@example.com',

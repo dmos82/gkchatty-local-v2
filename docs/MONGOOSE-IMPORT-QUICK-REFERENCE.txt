@@ -1,0 +1,152 @@
+================================================================================
+MONGOOSE DIRECT IMPORT AUDIT - QUICK REFERENCE
+================================================================================
+
+CRITICAL ISSUES TO FIX IMMEDIATELY (for SQLite to work):
+================================================================================
+
+1. src/routes/admin.ts
+   Line 2: import User from '../models/UserModel';
+   Fix:    import { UserModel as User } from '../utils/modelFactory';
+
+2. src/routes/chatRoutes.ts
+   Line 10: import Setting from '../models/SettingModel';
+   Fix:     import { SettingModel as Setting } from '../utils/modelFactory';
+
+   Line 13: import UserSettings, { IUserSettings } from '../models/UserSettings';
+   Fix:     import { UserSettingsModel as UserSettings, IUserSettings } from '../utils/modelFactory';
+
+3. src/routes/adminSettingsRoutes.ts
+   Line 11: import Setting from '../models/SettingModel';
+   Fix:     import { SettingModel as Setting } from '../utils/modelFactory';
+
+4. src/routes/documentRoutes.ts
+   Line 26: import { default as Persona, IPersona } from '../models/PersonaModel';
+   Fix:     import { PersonaModel as Persona } from '../utils/modelFactory';
+
+================================================================================
+HIGH PRIORITY (Service Layer - affects multiple routes):
+================================================================================
+
+5. src/services/settingsService.ts
+   Line 1: import Setting from '../models/SettingModel';
+   Fix:    import { SettingModel as Setting } from '../utils/modelFactory';
+
+6. src/controllers/settingsController.ts
+   Line 2: import Setting from '../models/SettingModel';
+   Fix:    import { SettingModel as Setting } from '../utils/modelFactory';
+
+================================================================================
+MODELS AFFECTED BY DIRECT IMPORTS:
+================================================================================
+
+User Model (8 files):
+  - src/routes/admin.ts
+  - src/controllers/example-async-handler.controller.ts
+  - src/index.ts (seeding)
+  - scripts/create-admin.ts
+  - src/scripts/* (6 migration scripts)
+  - Test files (4 files)
+
+Setting Model (6 files):
+  - src/routes/chatRoutes.ts
+  - src/routes/adminSettingsRoutes.ts
+  - src/services/settingsService.ts
+  - src/controllers/settingsController.ts
+  - Test files (2 files)
+
+Chat Model (3 files):
+  - src/routes/documentRoutes.ts (via interfaces)
+  - Test files (2 files)
+
+Persona Model (2 files):
+  - src/routes/documentRoutes.ts
+  - src/scripts/create-default-persona.ts
+
+UserSettings (1 file):
+  - src/routes/chatRoutes.ts
+
+================================================================================
+CORRECT PATTERN EXAMPLES:
+================================================================================
+
+WRONG (Direct Import - always uses MongoDB):
+  import User from '../models/UserModel';
+  import Setting from '../models/SettingModel';
+  import { default as Persona } from '../models/PersonaModel';
+
+CORRECT (Uses modelFactory - switches between MongoDB & SQLite):
+  import { UserModel as User } from '../utils/modelFactory';
+  import { SettingModel as Setting } from '../utils/modelFactory';
+  import { PersonaModel as Persona } from '../utils/modelFactory';
+
+INTERFACES ARE OK (Just TypeScript types, not actual models):
+  import { IUser, IChat, ISetting } from '../models/UserModel';
+  import { IUserDocument } from '../models/UserDocument';
+
+================================================================================
+WHY THIS MATTERS:
+================================================================================
+
+modelFactory.ts contains critical logic:
+
+  const USE_SQLITE = process.env.USE_SQLITE === 'true';
+  
+  export const UserModel = USE_SQLITE
+    ? require('./sqliteAdapter').UserModel      // SQLite version
+    : require('../models/UserModel').default;   // MongoDB version
+
+When you import directly from models/, you BYPASS this switching logic.
+Result:
+  - SQLite adapter never gets used (even with USE_SQLITE=true)
+  - MongoDB connection errors occur
+  - "Buffering timed out" errors
+  - Data persistence fails
+
+================================================================================
+STATISTICS:
+================================================================================
+
+Total Files with Direct Imports:     28
+  - CRITICAL production files:        4 (MUST fix)
+  - HIGH priority files:              2 (Should fix)
+  - MEDIUM priority files:            1 (Nice to fix)
+  - Low priority (tests/scripts):    21 (Can defer)
+
+Models Affected:
+  - User:       8 files
+  - Setting:    6 files
+  - Chat:       3 files (mostly interfaces)
+  - Persona:    2 files
+  - UserSettings: 1 file
+
+Fix Complexity:
+  - Simple find/replace:            23 files (most)
+  - Requires additional exports:     5 files (need modelFactory update)
+
+================================================================================
+NEXT STEPS:
+================================================================================
+
+1. IMMEDIATE (Today):
+   [ ] Fix 4 critical production files
+   [ ] Fix 2 service/controller files
+   [ ] Test with USE_SQLITE=true
+
+2. TODAY (Complete):
+   [ ] Fix 1 example controller
+   [ ] Verify all critical paths work
+
+3. THIS WEEK:
+   [ ] Fix test files
+   [ ] Fix migration scripts
+
+4. THIS SPRINT:
+   [ ] Add ESLint rule to prevent direct imports
+   [ ] Document pattern in code comments
+
+================================================================================
+
+Full audit report: /Users/davidjmorin/GOLDKEY\ CHATTY/gkchatty-ecosystem/docs/MONGOOSE-IMPORT-AUDIT.md
+Summary CSV: /Users/davidjmorin/GOLDKEY\ CHATTY/gkchatty-ecosystem/docs/MONGOOSE-IMPORT-AUDIT-SUMMARY.csv
+

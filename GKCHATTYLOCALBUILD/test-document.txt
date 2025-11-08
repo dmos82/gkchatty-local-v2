@@ -1,0 +1,19 @@
+GKCHATTY LOCAL VERSION - Test Document
+
+This is a test document for the local version of GKChatty.
+
+Key Features:
+- Local file storage (no S3)
+- Local vector database (LanceDB)
+- Local embeddings (Transformers.js)
+- MongoDB local instance
+
+This document contains plain text that can be easily extracted and embedded.
+
+The local version runs on:
+- Backend: http://localhost:6001
+- Frontend: http://localhost:6004
+
+This is different from the production version which uses ports 4001/4003.
+
+Test content: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.

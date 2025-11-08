@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global UI scaling: 80% of default size for desktop, revert to 100% on small screens */
+@layer base {
+  html {
+    font-size: 80%;
+  }
+  @media (max-width: 640px) {
+    html {
+      font-size: 100%;
+    }
+  }
+}
+
+/* Define CSS variables OUTSIDE of layers */
+:root {
+  /* Light Theme - Ensure these are appropriate light mode values */
+  --background: 0 0% 100%;
+  --foreground: 215 28% 17%; /* slate-800 */
+  --card: 0 0% 100%;         /* white */
+  --card-foreground: 215 28% 17%; /* slate-800 */
+  --popover: 0 0% 100%;        /* white */
+  --popover-foreground: 215 28% 17%; /* slate-800 */
+  --primary: 215 28% 17%;       /* slate-800 as primary for light */
+  --primary-foreground: 210 40% 98%; /* slate-50 as text on primary */
+  --secondary: 215 20% 91%;      /* slate-200 - Note: This was the target for muted */
+  --secondary-foreground: 215 28% 17%; /* slate-800 */
+  --muted: 214.3 31.8% 91.4%; /* slate-200 - UPDATED */
+  --muted-foreground: 215 16% 47%; /* slate-500 - UPDATED */
+  --accent: 215 20% 97%;         /* slate-100 */ 
+  --accent-foreground: 215 28% 17%;  /* slate-800 */
+  --destructive: 0 84.2% 60.2%;   /* Default Red */
+  --destructive-foreground: 210 40% 98%; /* Default Red Foreground */
+  --border: 215 20% 91%;         /* slate-200 */
+  --input: 215 20% 91%;          /* slate-200 */
+  --ring: 215 28% 17%;           /* slate-800 */ 
+  --radius: 0.5rem;
+}
+
+/* Add new active dark theme block */
+.dark {
+  /* True neutral gray values - no blue tint */
+  --background: 0 0% 13%; /* #212121 - Slightly lighter dark gray for better visibility */
+  --foreground: 0 0% 98%; /* #fafafa - Pure white with slight gray */
+
+  --muted: 0 0% 45%; /* #737373 - Neutral gray - no blue tint */
+  --muted-foreground: 0 0% 64%; /* #a3a3a3 - Neutral gray */
+
+  --popover: 0 0% 7%; /* #111111 - Match background */
+  --popover-foreground: 0 0% 98%; /* Match foreground */
+
+  --card: 0 0% 12%; /* #1e1e1e - True neutral dark gray */
+  --card-foreground: 0 0% 98%; /* Match foreground */
+
+  --border: 0 0% 25%; /* #404040 - Neutral gray */
+  --input: 0 0% 25%; /* #404040 - Match border */
+
+  --primary: 0 0% 98%; /* #fafafa - Pure white with slight gray */
+  --primary-foreground: 0 0% 7%; /* #111111 - Match background */
+
+  --secondary: 0 0% 25%; /* #404040 - Neutral gray */
+  --secondary-foreground: 0 0% 98%; /* Match foreground */
+
+  --accent: 0 0% 25%; /* #404040 - Neutral gray */
+  --accent-foreground: 0 0% 98%; /* Match foreground */
+
+  /* Using true neutral dark red */
+  --destructive: 0 70% 30%; /* rgb(127, 29, 29) - Neutral dark red */
+  --destructive-foreground: 0 0% 98%; /* Match foreground */
+
+  --ring: 0 0% 25%; /* #404040 - Neutral gray */
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  #__next {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .animate-fadeInUp {
+    animation: fadeInUp 0.3s ease-out;
+  }
+
+  /* Keep Shadcn CSS variable definitions */
+  /* MOVED ABOVE */
+
+  /* Remove redundant @theme block if not needed */
+  /* @theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --font-sans: var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
+  } */
+
+  /* Keep the base application of border, bg, text */
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Ensure font-family and font-size are set */
+    font-family: theme('fontFamily.sans', 'sans-serif');
+    font-size: theme('fontSize.base', '13px');
+  }
+}
+
+/* !! TEMPORARY HARDCODED TEST - REMOVING !! */
+/*
+html.dark body {
+    background-color: hsl(215 28% 17%) !important;
+}
+*/
