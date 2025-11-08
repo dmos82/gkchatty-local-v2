@@ -100,3 +100,18 @@ export interface AuthContextType {
   checkSession: () => Promise<User | null>;
   handleApiError: (error: unknown) => boolean;
 }
+
+export interface ApiErrorResponse {
+  success: false;
+  status: number;
+  errorCode?: string | null;
+  message: string;
+  data?: any;
+}
+
+export interface StandardApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  errorCode?: string;
+}
