@@ -89,3 +89,12 @@ export interface Persona {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface AuthContextType {
+  user: User | null;
+  isLoading: boolean;
+  login: (credentials: { username: string; password: string }) => Promise<boolean>;
+  logout: () => Promise<void>;
+  checkSession: () => Promise<User | null>;
+  handleApiError: (error: unknown) => boolean;
+}
