@@ -77,3 +77,15 @@ export interface MCPToolResult<T = any> {
   error?: string;
   metadata?: Record<string, any>;
 }
+
+export interface Persona {
+  _id: string;
+  name: string;
+  prompt: string;
+  systemPrompt?: string;
+  userId: string;
+  isActive: boolean;
+  isDefault?: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
