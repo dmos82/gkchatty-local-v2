@@ -364,9 +364,115 @@ async function getContext(
 
   allCombinedSources.sort((a, b) => b.boostedScore - a.boostedScore);
 
+  // CRITICAL FIX: Validate that documents still exist in MongoDB before returning
+  // This filters out "ghost documents" that exist in Pinecone but were deleted from MongoDB
+  log.debug(
+    { count: allCombinedSources.length },
+    '[RAG Service] Validating documents exist in MongoDB (ghost document filter)'
+  );
+
+  const documentIdsToValidate = allCombinedSources
+    .map(source => source.documentId)
+    .filter(Boolean);
+
+  // Query MongoDB to get list of valid document IDs AND correct filenames
+  // This ensures we show the actual filename, not the S3 key
+  const validSystemDocs = await SystemKbDocument.find({
+    _id: { $in: documentIdsToValidate },
+  })
+    .select('_id originalFileName')
+    .lean();
+
+  const validSystemDocMap = new Map(
+    validSystemDocs.map(doc => [doc._id.toString(), doc.originalFileName])
+  );
+
+  const validUserDocs = await UserDocument.find({
+    _id: { $in: documentIdsToValidate },
+    userId, // CRITICAL: Also filter by userId for user documents
+  })
+    .select('_id originalFileName')
+    .lean();
+
+  const validUserDocMap = new Map(
+    validUserDocs.map(doc => [doc._id.toString(), doc.originalFileName])
+  );
+
+  // Filter out ghost documents and fix filenames from MongoDB
+  const validatedSources = allCombinedSources
+    .filter(source => {
+      if (!source.documentId) {
+        log.warn(
+          { fileName: source.fileName },
+          '[RAG Service] GHOST DOCUMENT: Missing documentId - filtering out'
+        );
+        return false;
+      }
+
+      const isValidSystem = source.type === 'system' && validSystemDocMap.has(source.documentId);
+      const isValidUser = source.type === 'user' && validUserDocMap.has(source.documentId);
+
+      if (!isValidSystem && !isValidUser) {
+        log.warn(
+          {
+            documentId: source.documentId,
+            fileName: source.fileName,
+            sourceType: source.type,
+            userId,
+          },
+          '[RAG Service] GHOST DOCUMENT: Not found in MongoDB or wrong user - filtering out'
+        );
+        return false;
+      }
+
+      return true;
+    })
+    .map(source => {
+      // Fix filename from MongoDB if it's a numeric S3 key
+      const correctFileName =
+        source.type === 'system'
+          ? validSystemDocMap.get(source.documentId)
+          : validUserDocMap.get(source.documentId);
+
+      // Detect if Pinecone has the S3 key instead of the actual filename
+      const hasNumericFilename = /^\d{13}-\d+\.pdf$/.test(source.fileName);
+
+      if (correctFileName && (hasNumericFilename || source.fileName === 'Unknown')) {
+        log.debug(
+          {
+            documentId: source.documentId,
+            pineconeFileName: source.fileName,
+            mongoFileName: correctFileName,
+          },
+          '[RAG Service] FILENAME FIX: Corrected S3 key to actual filename from MongoDB'
+        );
+
+        return {
+          ...source,
+          fileName: correctFileName,
+        };
+      }
+
+      return source;
+    });
+
+  const ghostCount = allCombinedSources.length - validatedSources.length;
+  if (ghostCount > 0) {
+    log.warn(
+      {
+        totalSources: allCombinedSources.length,
+        validSources: validatedSources.length,
+        ghostDocuments: ghostCount,
+      },
+      '[RAG Service] GHOST DOCUMENTS DETECTED AND FILTERED'
+    );
+  } else {
+    log.debug('[RAG Service] All documents validated - no ghost documents found');
+  }
+
   // Deduplicate by fileName, keeping the highest-scoring entry for each document
   const uniqueSourcesMap = new Map<string, any>();
-  for (const source of allCombinedSources) {
+  for (const source of validatedSources) {
     if (!uniqueSourcesMap.has(source.fileName)) {
       uniqueSourcesMap.set(source.fileName, source);
     }
@@ -376,10 +482,12 @@ async function getContext(
   log.info(
     {
       initialCount: allCombinedSources.length,
+      validatedCount: validatedSources.length,
       deduplicatedCount: deduplicatedSources.length,
-      removedDuplicates: allCombinedSources.length - deduplicatedSources.length,
+      ghostFiltered: ghostCount,
+      removedDuplicates: validatedSources.length - deduplicatedSources.length,
     },
-    'Deduplicated search results'
+    'Validated and deduplicated search results'
   );
 
   return deduplicatedSources;
