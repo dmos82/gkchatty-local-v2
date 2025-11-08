@@ -15,9 +15,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-// import { AdminUser } from 'types/auth'; // Using path alias (Failed)
-import { AdminUser } from 'types'; // CORRECTED - using actual package name
-// import { AdminSubmission } from './UserDetailModal'; // REMOVED erroneous self-import
 import { Download, Eye, Trash2 } from 'lucide-react'; // Import icons
 import PdfViewerModal from '@/components/admin/PdfViewerModal'; // Import the new component
 // Import AlertDialog components
@@ -36,14 +33,13 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // --- START: Define Local Frontend Types ---
-// REMOVED Local AdminUser definition
-// interface AdminUser {
-//   _id: string;
-//   username: string;
-//   email: string; // <-- This required string, causing conflict
-//   role: string;
-//   createdAt: string; // Or Date
-// }
+interface AdminUser {
+  _id: string;
+  username: string;
+  email?: string | null; // Optional since some users may not have email
+  role: string;
+  createdAt: string; // Or Date
+}
 
 // Keep local AdminSubmission as it's not in packages/types/auth
 export interface AdminSubmission {
