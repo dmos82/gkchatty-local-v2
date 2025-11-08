@@ -1,7 +1,7 @@
 [build]
-  base = "gkchatty-local"
-  command = "cd frontend && pnpm install && pnpm build"
-  publish = "frontend/.next"
+  base = "packages/web"
+  command = "pnpm install && pnpm build"
+  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "20"
