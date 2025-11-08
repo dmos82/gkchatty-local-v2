@@ -8,6 +8,7 @@ export interface User {
   email: string;
   role: 'user' | 'admin';
   canCustomizePersona?: boolean;
+  forcePasswordChange?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
