@@ -64,6 +64,7 @@ import localFileRoutes from './routes/localFileRoutes'; // <-- Import local file
 import versionRoutes from './routes/versionRoutes'; // <-- Import version routes
 import adminSettingsRoutes from './routes/adminSettingsRoutes'; // <-- Import admin settings routes
 import folderRoutes from './routes/folderRoutes'; // <-- Import folder routes
+import systemFolderRoutes from './routes/systemFolderRoutes'; // <-- Import system folder routes (admin-only)
 import healthRoutes from './routes/healthRoutes'; // <-- Import health routes (BMAD v2.0)
 import * as http from 'http'; // Import http
 import { correlationIdMiddleware } from './middleware/correlationId';
@@ -597,6 +598,15 @@ async function startServer() {
       console.log('>>> [App Setup] Folder routes registered successfully.');
     } catch (err) {
       console.error('>>> !!! [App Setup] Error registering folder routes:', err);
+    }
+
+    // --- System Folder Routes (Admin Only) ---
+    try {
+      console.log('>>> [App Setup] Registering system folder routes...');
+      app.use('/api/admin/system-folders', systemFolderRoutes);
+      console.log('>>> [App Setup] System folder routes registered successfully.');
+    } catch (err) {
+      console.error('>>> !!! [App Setup] Error registering system folder routes:', err);
     }
 
     // Document routes (includes /chat endpoint)

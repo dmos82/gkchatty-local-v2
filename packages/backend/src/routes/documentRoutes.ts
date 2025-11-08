@@ -92,7 +92,7 @@ router.get(
         userId: userId,
         sourceType: 'user', // Ensure we only get user uploads, not system KB
       })
-        .select('originalFileName status createdAt uploadTimestamp contentHash') // Select fields for the list
+        .select('originalFileName status createdAt uploadTimestamp contentHash folderId') // Select fields for the list (including folderId for folder filtering)
         .sort({ createdAt: -1 }); // Sort by newest first
 
       log.info({ userId, count: documents.length }, 'Found documents for user');

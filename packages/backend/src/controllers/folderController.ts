@@ -161,16 +161,9 @@ export const getFolderTree = async (req: Request, res: Response) => {
       folderQuery.knowledgeBaseId = knowledgeBase;
       docQuery.tenantKbId = knowledgeBase;
       docQuery.sourceType = 'tenant';
-    } else if (isAdmin) {
-      // Admin viewing System KB sees all folders
-      // Get all folders regardless of owner
-      // This allows admins to organize system documents
-      // folderQuery remains empty to get ALL folders
-
-      // Admin can see both system and user documents
-      docQuery.$or = [{ userId: userId, sourceType: 'user' }, { sourceType: 'system' }];
     } else {
-      // Regular users only see their own folders and documents
+      // ALWAYS show only user's own folders and documents in user document manager
+      // System documents are managed via /api/admin/system-folders/tree
       folderQuery.ownerId = userId;
       docQuery.userId = userId;
       docQuery.sourceType = 'user';
@@ -182,21 +175,11 @@ export const getFolderTree = async (req: Request, res: Response) => {
     });
 
     // Fetch folders and documents
-    let documents: Record<string, unknown>[] = [];
-
-    if (isAdmin && !knowledgeBase) {
-      // For admin viewing system KB, ONLY fetch from SystemKbDocument collection
-      // User documents should NOT appear in the admin System KB dashboard
-      documents = (await SystemKbDocument.find({}).sort({ filename: 1 })) as unknown as Record<
-        string,
-        unknown
-      >[];
-    } else {
-      // For other cases, use regular UserDocument query
-      documents = (await UserDocument.find(docQuery).sort({
-        originalFileName: 1,
-      })) as unknown as Record<string, unknown>[];
-    }
+    // ALWAYS use UserDocument for user document manager
+    // System documents are handled by systemFolderController
+    const documents = (await UserDocument.find(docQuery).sort({
+      originalFileName: 1,
+    })) as unknown as Record<string, unknown>[];
 
     const folders = await Folder.find(folderQuery).sort({ name: 1 });
 
