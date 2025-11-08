@@ -322,8 +322,12 @@ router.post(
 
       // Set the token as an HttpOnly cookie
       // Fix: Both staging and production are served over HTTPS and need cross-origin cookies
+      // Render sets NODE_ENV=production for all deployed environments
+      // Check if we're in any deployed environment (not local development)
       const isProductionLike =
-        process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+        process.env.NODE_ENV === 'production' ||
+        process.env.RENDER === 'true' ||
+        process.env.IS_RENDER === 'true';
       const cookieOptions: any = {
         // Use 'any' temporarily or define a specific type
         httpOnly: true,
@@ -447,8 +451,11 @@ router.post('/logout', protect, async (req: RequestWithUser, res: Response) => {
     );
 
     // Clear the HttpOnly cookie with matching secure attributes
+    // Render sets NODE_ENV=production for all deployed environments
     const isProductionLike =
-      process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+      process.env.NODE_ENV === 'production' ||
+      process.env.RENDER === 'true' ||
+      process.env.IS_RENDER === 'true';
     const cookieOptions = {
       httpOnly: true,
       secure: isProductionLike, // Match the login cookie settings
