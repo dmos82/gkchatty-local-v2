@@ -327,6 +327,9 @@ importers:
       '@types/lodash.debounce':
         specifier: 4.0.9
         version: 4.0.9
+      '@types/uuid':
+        specifier: 9.0.8
+        version: 9.0.8
       autoprefixer:
         specifier: 10.4.21
         version: 10.4.21(postcss@8.4.33)
@@ -387,6 +390,9 @@ importers:
       tesseract.js:
         specifier: 6.0.1
         version: 6.0.1
+      uuid:
+        specifier: 9.0.1
+        version: 9.0.1
       zustand:
         specifier: 5.0.8
         version: 5.0.8(@types/react@18.2.0)(react@18.2.0)
