@@ -115,3 +115,28 @@ export interface StandardApiResponse<T = any> {
   message?: string;
   errorCode?: string;
 }
+
+export interface PersonaListResponse {
+  success: boolean;
+  personas: Persona[];
+  message?: string;
+}
+
+export interface PersonaResponse {
+  success: boolean;
+  persona: Persona;
+  message?: string;
+}
+
+export interface CreatePersonaRequest {
+  name: string;
+  prompt: string;
+  systemPrompt?: string;
+}
+
+export interface UpdatePersonaRequest {
+  name?: string;
+  prompt?: string;
+  systemPrompt?: string;
+  isActive?: boolean;
+}
