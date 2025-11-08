@@ -151,9 +151,9 @@ app.use((req, res, next) => {
   res.cookie = function(name: string, value: any, options: any = {}) {
     const secureOptions = {
       ...options,
-      httpOnly: true, // Prevent JavaScript access (XSS protection)
-      secure: isProduction, // HTTPS only in production (allows HTTP in dev)
-      sameSite: 'strict' as const, // CSRF protection
+      httpOnly: options.httpOnly !== undefined ? options.httpOnly : true, // Prevent JavaScript access (XSS protection)
+      secure: options.secure !== undefined ? options.secure : isProduction, // HTTPS only in production (allows HTTP in dev)
+      sameSite: options.sameSite || ('strict' as const), // CSRF protection - respect provided sameSite or default to strict
       path: options.path || '/',
     };
     return originalCookie(name, value, secureOptions);
