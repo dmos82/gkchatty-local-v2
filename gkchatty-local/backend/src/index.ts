@@ -55,6 +55,7 @@ import chatRoutes from './routes/chatRoutes';
 import authRoutes from './routes/authRoutes'; // <-- Import auth routes
 import searchRoutes from './routes/searchRoutes'; // Import search routes
 import systemKbRoutes from './routes/systemKbRoutes'; // Added: Import system KB routes
+import systemFolderRoutes from './routes/systemFolderRoutes'; // Added: Import system folder routes
 
 import userRoutes from './routes/userRoutes'; // <-- IMPORT userRoutes
 import personaRoutes from './routes/personaRoutes'; // <-- Import persona routes
@@ -544,6 +545,15 @@ async function startServer() {
       console.log('>>> [App Setup] /api/system-kb routes registered.');
     } catch (err) {
       console.error('>>> !!! [App Setup] Error registering /api/system-kb routes:', err);
+    }
+
+    // System Folder Routes
+    try {
+      console.log('>>> [App Setup] Mounting /api/admin/system-folders routes...');
+      app.use('/api/admin/system-folders', systemFolderRoutes);
+      console.log('>>> [App Setup] /api/admin/system-folders routes registered.');
+    } catch (err) {
+      console.error('>>> !!! [App Setup] Error registering /api/admin/system-folders routes:', err);
     }
 
     // Admin Routes (must be mounted before general protect middleware)
