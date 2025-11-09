@@ -15,6 +15,7 @@ import { usePersona } from '@/contexts/PersonaContext';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { DocumentViewer } from '@/components/common/DocumentViewer';
 import { API_BASE_URL_CLIENT as API_BASE_URL } from '@/lib/config'; // Correct alias
+import { authFetch } from '@/lib/api';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -188,9 +189,8 @@ export default function Home() {
       const apiUrl = `${API_BASE_URL}/api/chats/latest`;
 
       try {
-        const response = await fetch(apiUrl, {
+        const response = await authFetch(apiUrl, {
           method: 'GET',
-          credentials: 'include', // Use HttpOnly cookies instead of Authorization header
         });
 
         if (response.ok) {
@@ -260,9 +260,8 @@ export default function Home() {
     const apiUrl = `${API_BASE_URL}/api/chats`;
 
     try {
-      const response = await fetch(apiUrl, {
+      const response = await authFetch(apiUrl, {
         method: 'GET',
-        credentials: 'include',
       });
 
       if (response.ok) {
@@ -323,7 +322,7 @@ export default function Home() {
     const apiUrl = `${API_BASE_URL}/api/documents`;
 
     try {
-      const response = await fetch(apiUrl, { credentials: 'include' });
+      const response = await authFetch(apiUrl);
 
       if (!response.ok) {
         let errorMsg = `API Error: ${response.status}`;
@@ -400,9 +399,8 @@ export default function Home() {
       const apiUrl = `${API_BASE_URL}/api/chats/${id}`;
 
       try {
-        const response = await fetch(apiUrl, {
+        const response = await authFetch(apiUrl, {
           method: 'GET',
-          credentials: 'include', // Use HttpOnly cookies instead of Authorization header
         });
 
         console.log(`[handleSelectChat] API Response Status for chat ${id}: ${response.status}`);
@@ -494,9 +492,8 @@ export default function Home() {
 
       try {
         console.log(`[handleConfirmDelete] Sending DELETE request to: ${apiUrl}`); // Log URL
-        const response = await fetch(apiUrl, {
+        const response = await authFetch(apiUrl, {
           method: 'DELETE',
-          credentials: 'include',
         });
 
         console.log(`[handleConfirmDelete] API Response Status: ${response.status}`); // Log Status
@@ -582,9 +579,8 @@ export default function Home() {
     const apiUrl = `${API_BASE_URL}/api/chats`;
 
     try {
-      const response = await fetch(apiUrl, {
+      const response = await authFetch(apiUrl, {
         method: 'DELETE',
-        credentials: 'include', // Use HttpOnly cookies instead of Authorization header
       });
 
       if (response.ok) {
@@ -651,10 +647,9 @@ export default function Home() {
       setIsSavingNotes(true);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/chats`, {
+        const response = await authFetch(`${API_BASE_URL}/api/chats`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({
             isNotesInitiated: true,
             initialChatName: 'New Chat with Notes',
@@ -728,10 +723,9 @@ export default function Home() {
       const apiUrl = `${API_BASE_URL}/api/chats/${chatId}/notes`;
 
       try {
-        const response = await fetch(apiUrl, {
+        const response = await authFetch(apiUrl, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({ notes }),
         });
 
@@ -840,12 +834,11 @@ export default function Home() {
       // --- END: Log request payload before fetch ---
 
       try {
-        const response = await fetch(apiUrl, {
+        const response = await authFetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          credentials: 'include', // Use HttpOnly cookies instead of Authorization header
           body: JSON.stringify(requestBody),
         });
 
@@ -1009,12 +1002,11 @@ export default function Home() {
     );
 
     try {
-      const response = await fetch(apiUrl, {
+      const response = await authFetch(apiUrl, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({ chatName: newName }),
       });
 
