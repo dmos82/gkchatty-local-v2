@@ -9,6 +9,7 @@ import React, {
   useCallback,
 } from 'react';
 import { API_BASE_URL_CLIENT as API_BASE_URL } from '@/lib/config'; // Ensure config is correct
+import { authFetch } from '@/lib/api';
 // No longer need Cookies.get for token, rely on httpOnly and verify endpoint
 // import Cookies from 'js-cookie';
 import { User, AuthContextType } from 'types'; // Assuming this type import works after build fix
@@ -31,10 +32,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     console.log('[AuthContext] checkSession: Attempting API verification...');
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/verify`, {
+      const response = await authFetch(`${API_BASE_URL}/api/auth/verify`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // Browser sends HttpOnly cookie
       });
 
       console.log(`[AuthContext] checkSession: Verify API response status: ${response.status}`);
@@ -107,10 +107,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           `[AuthContext][login][Diag] Before fetch to /api/auth/login. Credentials:`,
           credentials
         );
-        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        const response = await authFetch(`${API_BASE_URL}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify(credentials),
         });
 
@@ -240,9 +239,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = useCallback(async () => {
     console.log('[AuthContext] logout: Attempting API logout...');
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/logout`, {
+      const response = await authFetch(`${API_BASE_URL}/api/auth/logout`, {
         method: 'POST',
-        credentials: 'include', // Include cookies
       });
       if (response.ok) {
         console.log('[AuthContext] logout: API logout successful.');
