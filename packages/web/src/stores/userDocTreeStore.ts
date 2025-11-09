@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { API_BASE_URL_CLIENT as API_BASE_URL } from '@/lib/config';
+import { authFetch } from '@/lib/api';
 
 export interface UserDocNode {
   _id: string;
@@ -88,9 +89,7 @@ const useUserDocTreeStore = create<UserDocTreeState>((set, get) => ({
       const endpoint = `${API_BASE_URL}/api/folders/tree`;
 
       console.log('[UserDocTreeStore] Fetching tree from:', endpoint);
-      const response = await fetch(endpoint, {
-        credentials: 'include'
-      });
+      const response = await authFetch(endpoint);
 
       if (!response.ok) {
         console.error('[UserDocTreeStore] Response not OK:', response.status, response.statusText);
@@ -121,10 +120,9 @@ const useUserDocTreeStore = create<UserDocTreeState>((set, get) => ({
   createFolder: async (name: string, parentId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_BASE_URL}/api/folders`, {
+      const response = await authFetch(`${API_BASE_URL}/api/folders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
           name,
           parentId
@@ -163,10 +161,9 @@ const useUserDocTreeStore = create<UserDocTreeState>((set, get) => ({
   deleteItems: async (itemIds: string[]) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_BASE_URL}/api/folders/delete`, {
+      const response = await authFetch(`${API_BASE_URL}/api/folders/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ itemIds })
       });
 
@@ -188,10 +185,9 @@ const useUserDocTreeStore = create<UserDocTreeState>((set, get) => ({
   moveItems: async (itemIds: string[], targetFolderId: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_BASE_URL}/api/folders/move`, {
+      const response = await authFetch(`${API_BASE_URL}/api/folders/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ itemIds, targetFolderId })
       });
 
@@ -224,10 +220,9 @@ const useUserDocTreeStore = create<UserDocTreeState>((set, get) => ({
   renameItem: async (itemId: string, newName: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_BASE_URL}/api/folders/${itemId}/rename`, {
+      const response = await authFetch(`${API_BASE_URL}/api/folders/${itemId}/rename`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ name: newName })
       });
 
@@ -262,9 +257,8 @@ const useUserDocTreeStore = create<UserDocTreeState>((set, get) => ({
       }
 
       console.log('[UserDocTreeStore] Uploading files to:', `${API_BASE_URL}/api/documents/upload`);
-      const response = await fetch(`${API_BASE_URL}/api/documents/upload`, {
+      const response = await authFetch(`${API_BASE_URL}/api/documents/upload`, {
         method: 'POST',
-        credentials: 'include',
         body: formData
       });
 
