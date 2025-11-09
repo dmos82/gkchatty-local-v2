@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { API_BASE_URL_CLIENT as API_BASE_URL } from '@/lib/config';
+import { authFetch } from '@/lib/api';
 
 export interface FileNode {
   _id: string;
@@ -108,9 +109,7 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
         : `${API_BASE_URL}/api/admin/system-folders/tree`;
 
       console.log('[FileTreeStore] Fetching tree from:', endpoint);
-      const response = await fetch(endpoint, {
-        credentials: 'include'
-      });
+      const response = await authFetch(endpoint);
       
       if (!response.ok) {
         console.error('[FileTreeStore] Response not OK:', response.status, response.statusText);
@@ -160,10 +159,9 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
   createFolder: async (name: string, parentId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/system-folders`, {
+      const response = await authFetch(`${API_BASE_URL}/api/admin/system-folders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
           name,
           parentId,
@@ -203,10 +201,9 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
   deleteItems: async (itemIds: string[]) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/system-folders/delete`, {
+      const response = await authFetch(`${API_BASE_URL}/api/admin/system-folders/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ itemIds })
       });
       
@@ -228,10 +225,9 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
   moveItems: async (itemIds: string[], targetFolderId: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/system-folders/move`, {
+      const response = await authFetch(`${API_BASE_URL}/api/admin/system-folders/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ itemIds, targetFolderId })
       });
 
@@ -264,10 +260,9 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
   renameItem: async (itemId: string, newName: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/system-folders/${itemId}/rename`, {
+      const response = await authFetch(`${API_BASE_URL}/api/admin/system-folders/${itemId}/rename`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ name: newName })
       });
       
@@ -307,9 +302,8 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
       }
       
       console.log('[FileTreeStore] Uploading files to:', `${API_BASE_URL}/api/admin/system-kb/upload`);
-      const response = await fetch(`${API_BASE_URL}/api/admin/system-kb/upload`, {
+      const response = await authFetch(`${API_BASE_URL}/api/admin/system-kb/upload`, {
         method: 'POST',
-        credentials: 'include',
         body: formData
       });
       
@@ -335,9 +329,7 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
 
   fetchKnowledgeBases: async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/tenant-kb`, {
-        credentials: 'include'
-      });
+      const response = await authFetch(`${API_BASE_URL}/api/admin/tenant-kb`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch knowledge bases: ${response.statusText}`);
