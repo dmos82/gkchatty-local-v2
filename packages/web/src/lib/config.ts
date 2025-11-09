@@ -11,13 +11,10 @@ const API_INTERNAL_URL_FROM_ENV = process.env.API_INTERNAL_URL;
 let resolvedClientUrl: string | undefined = API_BASE_URL_CLIENT_FROM_ENV;
 
 if (process.env.NODE_ENV === 'production') {
-  // In production, env var MUST be provided
-  if (!resolvedClientUrl) {
-    console.warn(
-      'WARNING: NEXT_PUBLIC_API_BASE_URL environment variable is not set in production. Defaulting to /api. This may require Netlify proxy or runtime environment variable.'
-    );
-    resolvedClientUrl = '/api'; // Return a default value gracefully
-  }
+  // FORCE PROXY IN PRODUCTION: Always use relative /api path for Netlify proxy
+  // This makes all API calls same-origin via Netlify redirect to Render backend
+  console.log('[CONFIG] Production mode: Using Netlify proxy via empty API_BASE_URL');
+  resolvedClientUrl = ''; // Empty string = same-origin proxy via netlify.toml redirect
 } else {
   // ---------- DEVELOPMENT / LOCAL ----------
   // Fallback when env var is missing
