@@ -1,4 +1,5 @@
 import { API_BASE_URL_CLIENT as API_BASE_URL } from '@/lib/config';
+import { authFetch } from '@/lib/api';
 import {
   Persona,
   PersonaListResponse,
@@ -11,9 +12,8 @@ import {
  * Fetch all personas for the authenticated user
  */
 export async function getPersonas(): Promise<Persona[]> {
-  const response = await fetch(`${API_BASE_URL}/api/personas`, {
+  const response = await authFetch(`${API_BASE_URL}/api/personas`, {
     method: 'GET',
-    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -32,9 +32,8 @@ export async function getPersonas(): Promise<Persona[]> {
  * Fetch a single persona by its ID
  */
 export async function getPersonaById(personaId: string): Promise<Persona> {
-  const response = await fetch(`${API_BASE_URL}/api/personas/${personaId}`, {
+  const response = await authFetch(`${API_BASE_URL}/api/personas/${personaId}`, {
     method: 'GET',
-    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -58,12 +57,11 @@ export async function getPersonaById(personaId: string): Promise<Persona> {
  * Create a new persona
  */
 export async function createPersona(personaData: CreatePersonaRequest): Promise<Persona> {
-  const response = await fetch(`${API_BASE_URL}/api/personas`, {
+  const response = await authFetch(`${API_BASE_URL}/api/personas`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    credentials: 'include',
     body: JSON.stringify(personaData),
   });
 
@@ -87,12 +85,11 @@ export async function updatePersona(
   personaId: string,
   updates: UpdatePersonaRequest
 ): Promise<Persona> {
-  const response = await fetch(`${API_BASE_URL}/api/personas/${personaId}`, {
+  const response = await authFetch(`${API_BASE_URL}/api/personas/${personaId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
     },
-    credentials: 'include',
     body: JSON.stringify(updates),
   });
 
@@ -113,9 +110,8 @@ export async function updatePersona(
  * Delete a persona
  */
 export async function deletePersona(personaId: string): Promise<{ wasActive: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/api/personas/${personaId}`, {
+  const response = await authFetch(`${API_BASE_URL}/api/personas/${personaId}`, {
     method: 'DELETE',
-    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -135,9 +131,8 @@ export async function deletePersona(personaId: string): Promise<{ wasActive: boo
  * Activate a persona
  */
 export async function activatePersona(personaId: string): Promise<Persona> {
-  const response = await fetch(`${API_BASE_URL}/api/personas/${personaId}/activate`, {
+  const response = await authFetch(`${API_BASE_URL}/api/personas/${personaId}/activate`, {
     method: 'PUT',
-    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -157,9 +152,8 @@ export async function activatePersona(personaId: string): Promise<Persona> {
  * Deactivate the current active persona
  */
 export async function deactivatePersona(): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/personas/deactivate`, {
+  const response = await authFetch(`${API_BASE_URL}/api/personas/deactivate`, {
     method: 'PUT',
-    credentials: 'include',
   });
 
   if (!response.ok) {

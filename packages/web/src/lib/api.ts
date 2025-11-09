@@ -4,6 +4,32 @@ import { ApiErrorResponse, StandardApiResponse } from 'types'; // Import necessa
 import { API_BASE_URL_CLIENT as API_BASE_URL } from './config'; // Import the centralized base URL CLIENT
 
 /**
+ * Get auth token from localStorage
+ */
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('accessToken');
+}
+
+/**
+ * Fetch wrapper that automatically includes Authorization header
+ */
+export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getAuthToken();
+  const headers = new Headers(options.headers);
+
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  return fetch(url, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+}
+
+/**
  * Process API error responses and extract user-friendly error messages
  * @param response - The fetch Response object
  * @returns A standardized ApiErrorResponse object
