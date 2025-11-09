@@ -742,3 +742,4 @@ async function startServer() {
 if (process.env.NODE_ENV !== 'test') {
   startServer();
 }
+// Force redeploy Sat Nov  8 23:10:40 MST 2025
