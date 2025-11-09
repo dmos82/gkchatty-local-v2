@@ -86,7 +86,7 @@ const useUserDocTreeStore = create<UserDocTreeState>((set, get) => ({
   fetchFileTree: async () => {
     set({ isLoading: true, error: null });
     try {
-      const endpoint = `${API_BASE_URL}/api/folders/tree`;
+      const endpoint = `${API_BASE_URL}/api/folders/tree?sourceType=user`;
 
       console.log('[UserDocTreeStore] Fetching tree from:', endpoint);
       const response = await authFetch(endpoint);
