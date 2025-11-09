@@ -1,3 +1,6 @@
+[build]
+  publish = ".next"
+
 [[redirects]]
   from = "/api/*"
   to = "https://staging-gk-chatty.onrender.com/api/:splat"
