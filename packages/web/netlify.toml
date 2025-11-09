@@ -1,4 +1,5 @@
 [build]
+  command = "pnpm install && pnpm build"
   publish = ".next"
 
 [[redirects]]
