@@ -27,6 +27,7 @@ interface ChatResponseObject {
   chatId?: string;
   persistenceError?: string;
   iconUrl?: string;
+  modelUsed?: string; // Show which AI model generated the response
 }
 
 const router: Router = express.Router();
@@ -622,6 +623,13 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
     // Get the answer from the validated completion object
     const answer = completion?.choices?.[0]?.message?.content?.trim() || '';
 
+    // DEBUG: Log the entire completion object to see what OpenAI is returning
+    log.debug('[Chat] Full completion object:', JSON.stringify(completion, null, 2));
+
+    // Extract model used from completion response
+    const modelUsed = completion?.model || undefined;
+    log.debug(`[Chat] Extracted modelUsed: ${modelUsed}`);
+
     // Validate the answer is not empty before proceeding with chat persistence
     if (!answer || answer.length === 0) {
       log.error('[Chat] OpenAI returned empty or null response content');
@@ -810,7 +818,9 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
       `[Chat Deduplicate] Reduced ${filteredSources.length} sources to ${uniqueFinalSources.length} unique sources.`
     );
 
-    const messageMetadata = tokenUsage ? { tokenUsage, cost: requestCost } : undefined;
+    const messageMetadata = tokenUsage
+      ? { tokenUsage, cost: requestCost, ...(modelUsed && { modelUsed }) }
+      : undefined;
 
     // Check if we should include a custom user icon
     let iconUrl = null;
@@ -845,6 +855,8 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
       metadata: messageMetadata,
       iconUrl,
       knowledgeBaseTarget, // Include the target in the response for the frontend
+      modelUsed, // Include model used
+      modelMode: 'openai', // Indicate which service was used
     };
 
     log.debug(

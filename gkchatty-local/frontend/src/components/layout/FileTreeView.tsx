@@ -10,25 +10,30 @@ import useFileTreeStore, { FileNode } from '@/stores/fileTreeStore';
 
 interface FileTreeViewProps {
   onDocumentSelect: (documentId: string, filename: string) => void;
+  isActive?: boolean;
 }
 
-export default function FileTreeView({ onDocumentSelect }: FileTreeViewProps) {
+export default function FileTreeView({ onDocumentSelect, isActive }: FileTreeViewProps) {
   const {
     fileTree,
     expandedFolders,
     isLoading,
     error,
     toggleFolder,
-    fetchFileTree
+    fetchFileTree,
+    setMode
   } = useFileTreeStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredTree, setFilteredTree] = useState<FileNode[]>([]);
 
-  // Load tree on mount
+  // Set mode to system and load tree when tab becomes active
   useEffect(() => {
-    fetchFileTree();
-  }, []);
+    if (isActive) {
+      setMode('system');
+      fetchFileTree();
+    }
+  }, [isActive, setMode, fetchFileTree]);
 
   // Filter tree based on search
   useEffect(() => {
