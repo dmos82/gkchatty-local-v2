@@ -52,16 +52,16 @@ export function LoginForm() {
         <div
           className="rounded-full overflow-hidden"
           style={{
-            width: '200px',
-            height: '200px',
+            width: '230px',
+            height: '230px',
             boxShadow: '0 0 40px 15px rgba(255, 221, 0, 0.6), 0 0 80px 30px rgba(255, 221, 0, 0.3)'
           }}
         >
           <Image
             src="/GKCIRCLELOGO.JPG"
             alt="GK Circle Logo"
-            width={200}
-            height={200}
+            width={230}
+            height={230}
             priority
             className="object-cover w-full h-full"
           />
@@ -115,7 +115,7 @@ export function LoginForm() {
           disabled={isSubmitting}
           className="w-full h-12 rounded-[5px] transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{
-            backgroundColor: '#FFDD00',
+            backgroundColor: '#EAA221',
             color: '#252525',
             fontFamily: 'M PLUS 2, sans-serif',
             fontSize: '24px',

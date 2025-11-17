@@ -472,18 +472,23 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
     }
 
     // Handle internal item move (existing logic)
-    // Only process drop for folders
-    if (!targetNode || targetNode.type !== 'folder') {
+    // If targetNode exists but is not a folder, reject the drop
+    if (targetNode && targetNode.type !== 'folder') {
       handleDragEnd();
       return;
     }
 
-    const targetId = targetNode._id;
+    // targetNode === undefined means dropping to root (null)
+    // targetNode with type === 'folder' means dropping into a folder
+    const targetId = targetNode?._id || null;
 
     // Don't allow dropping items into themselves or their children
-    if (draggedItems.length > 0 && targetId && !draggedItems.includes(targetId)) {
-      // Check if any dragged item is a parent of the target
+    if (draggedItems.length > 0) {
+      // Check if any dragged item is a parent of the target (only if targetNode exists)
       const isValidDrop = !draggedItems.some(draggedId => {
+        // If dropping to root, always valid
+        if (!targetNode) return false;
+
         const draggedNode = allItems.find(item => item._id === draggedId);
         if (draggedNode?.type === 'folder') {
           // Simple check - prevent dropping a folder into itself
@@ -497,7 +502,9 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           await moveItems(draggedItems, targetId);
           toast({
             title: 'Success',
-            description: `${draggedItems.length} item(s) moved successfully`
+            description: targetId
+              ? `${draggedItems.length} item(s) moved to folder`
+              : `${draggedItems.length} item(s) moved to root level`
           });
         } catch (error) {
           toast({
@@ -900,7 +907,10 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
       
       {/* Content */}
       <div
-        className="flex-1 overflow-auto"
+        className={cn(
+          "flex-1 overflow-auto relative",
+          isDragging && !dragOverFolder && "bg-accent/20 border-2 border-dashed border-primary"
+        )}
         onDragOver={handleDragOver}
         onDrop={(e) => {
           // If dropping on background but we were hovering over a folder, use that folder
@@ -915,6 +925,15 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           handleDrop(e);
         }}
       >
+        {/* Drop to root indicator */}
+        {isDragging && !dragOverFolder && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+            <div className="bg-background/90 border-2 border-primary rounded-lg p-4 flex flex-col items-center gap-2">
+              <Folder className="h-8 w-8 text-primary" />
+              <p className="text-sm font-medium">Drop here to move to root level</p>
+            </div>
+          </div>
+        )}
         {isLoading ? (
           <div className="p-4 space-y-2">
             <Skeleton className="h-8 w-full" />

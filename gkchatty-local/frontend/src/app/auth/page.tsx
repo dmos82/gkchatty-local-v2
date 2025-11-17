@@ -5,37 +5,37 @@ import LoginForm from '@/components/auth/LoginForm';
 
 export default function AuthPage() {
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-screen p-4 overflow-hidden" style={{ backgroundColor: '#252525' }}>
+    <div className="relative flex min-h-screen p-4 overflow-hidden" style={{ backgroundColor: '#252525' }}>
       {/* Decorative circles (left side middle) */}
       <div className="absolute top-0 left-0 pointer-events-none overflow-hidden w-full h-full">
-        {/* Large yellow circle - taking up most of left side */}
+        {/* Large gold circle - taking up most of left side */}
         <div
           className="absolute rounded-full"
           style={{
             width: '1000px',
             height: '1000px',
             top: '50%',
-            left: '-650px',
+            left: '-550px',
             transform: 'translateY(-50%)',
-            backgroundColor: '#FFDD00'
+            backgroundColor: '#EAA221'
           }}
         />
-        {/* Blue circle - overlapping yellow, centered on yellow */}
+        {/* Dark brown circle - overlapping gold, centered on gold */}
         <div
           className="absolute rounded-full"
           style={{
             width: '500px',
             height: '500px',
             top: '50%',
-            left: '-400px',
+            left: '-300px',
             transform: 'translateY(-50%)',
-            backgroundColor: '#0020F2'
+            backgroundColor: '#2a1a0f'
           }}
         />
       </div>
 
-      {/* Login content */}
-      <div className="relative z-10 w-full max-w-[550px] flex flex-col items-center">
+      {/* Login content - positioned slightly off-center to the right */}
+      <div className="relative z-10 w-full max-w-[550px] flex flex-col items-center justify-center" style={{ marginLeft: '42%' }}>
         <LoginForm />
       </div>
     </div>
