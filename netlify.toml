@@ -1,6 +1,6 @@
 [build]
   base = "gkchatty-local/frontend"
-  command = "npm install && npm run build"
+  command = "npm install --ignore-scripts && npm run build"
   publish = ".next"
 
 [build.environment]
