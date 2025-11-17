@@ -1,0 +1,21 @@
+# Netlify Configuration for GKChatty Local Frontend
+
+[build]
+  # CRITICAL: Build from the correct frontend directory
+  base = "frontend"
+
+  # Build command
+  command = "npm install && npm run build"
+
+  # Publish the Next.js output directory
+  publish = "frontend/.next"
+
+[build.environment]
+  # Node version
+  NODE_VERSION = "18"
+
+# Redirects for SPA routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
