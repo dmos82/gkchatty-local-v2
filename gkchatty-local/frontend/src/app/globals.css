@@ -16,6 +16,10 @@
 
 /* Define CSS variables OUTSIDE of layers */
 :root {
+  /* Font Families */
+  --font-livvic: 'Livvic', sans-serif;
+  --font-mplus2: 'M PLUS 2', sans-serif;
+
   /* Light Theme - Ensure these are appropriate light mode values */
   --background: 0 0% 100%;
   --foreground: 215 28% 17%; /* slate-800 */
@@ -257,4 +261,30 @@ input[type="reset"] {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
+}
+
+/* Glowing text animation for thinking/loading states */
+@keyframes glow-wave {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.thinking-glow {
+  background: linear-gradient(
+    90deg,
+    currentColor 0%,
+    currentColor 40%,
+    #FFDD00 50%,
+    currentColor 60%,
+    currentColor 100%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: glow-wave 2s linear infinite;
 }

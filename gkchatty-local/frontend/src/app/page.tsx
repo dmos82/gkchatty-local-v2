@@ -58,7 +58,9 @@ interface Message {
       total: number;
     };
     cost: number;
+    modelUsed?: string;
   };
+  modelUsed?: string; // Which AI model generated the response
 }
 
 // --- ADDED: Define Chat interface for frontend state ---
@@ -195,6 +197,7 @@ export default function Home() {
               content: msg.content,
               sources: msg.sources,
               metadata: msg.metadata,
+              modelUsed: msg.metadata?.modelUsed || msg.modelUsed, // Support both locations
             }));
             setMessages(loadedMessages);
             setCurrentChatId(data.chat._id);
@@ -352,6 +355,7 @@ export default function Home() {
               content: msg.content,
               sources: msg.sources,
               metadata: msg.metadata,
+              modelUsed: msg.metadata?.modelUsed || msg.modelUsed, // Support both locations
             }));
             console.log(
               `[handleSelectChat] Setting messages (count: ${loadedMessages.length}) and currentChatId to ${data.chat._id}`
@@ -783,6 +787,7 @@ export default function Home() {
             role: 'assistant',
             content: data.answer || 'Error: Could not parse response content.',
             sources: data.sources || [],
+            modelUsed: data.modelUsed, // Include which model generated the response
           };
 
           // Update chatId if returned by backend (for persistence)
@@ -894,6 +899,17 @@ export default function Home() {
       isUserDocsSelected ? 'user' : 'system'
     );
   }, [isUserDocsSelected]);
+
+  // --- ADDED: Auto-switch tab to match selected knowledge base ---
+  useEffect(() => {
+    if (searchMode === 'user-docs') {
+      setSelectedTab('my-docs');
+    } else if (searchMode === 'system-kb') {
+      setSelectedTab('system-kb');
+    }
+    // Note: We don't automatically switch to 'notes' to allow manual tab selection
+  }, [searchMode]);
+  // --- END ADDITION ---
 
   // --- ADDED: Handler to update chat name via API ---
   const handleUpdateChatName = async (chatId: string, newName: string) => {
@@ -1048,7 +1064,15 @@ export default function Home() {
                   <div
                     className={`max-w-[75%] rounded-lg px-4 py-2 shadow-sm border ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-card text-card-foreground'}`}
                   >
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    {/* Model badge - show for assistant messages */}
+                    {msg.role === 'assistant' && msg.modelUsed && (
+                      <div className="mb-2">
+                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                          {msg.modelUsed}
+                        </span>
+                      </div>
+                    )}
+                    <p className={`text-sm whitespace-pre-wrap ${msg._id.startsWith('progress-') ? 'thinking-glow' : ''}`}>{msg.content}</p>
                     {/* Sources */}
                     {msg.role === 'assistant' &&
                       msg.sources &&
@@ -1158,11 +1182,11 @@ export default function Home() {
                 </TabsContent>
                 
                 <TabsContent value="system-kb" className="flex-1 m-0 overflow-hidden">
-                  <FileTreeView onDocumentSelect={handleSystemKbSelect} />
+                  <FileTreeView onDocumentSelect={handleSystemKbSelect} isActive={selectedTab === 'system-kb'} />
                 </TabsContent>
-                
+
                 <TabsContent value="my-docs" className="flex-1 m-0 overflow-hidden">
-                  <FileTreeManager mode="user" />
+                  <FileTreeManager mode="user" isActive={selectedTab === 'my-docs'} />
                 </TabsContent>
               </Tabs>
             )}

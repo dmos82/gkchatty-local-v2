@@ -295,15 +295,18 @@ const KnowledgeBaseContent: React.FC<KnowledgeBaseContentProps> = ({
                 {documents.map(doc => (
                   <TableRow key={doc._id}>
                     <TableCell
-                      className="font-medium truncate max-w-xs"
+                      className="font-medium max-w-xs"
                       title={doc.originalFileName}
                     >
-                      <span
-                        onClick={() => handleViewSystemKbDocument(doc._id, doc.originalFileName)}
-                        className="cursor-pointer text-primary hover:underline"
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewSystemKbDocument(doc._id, doc.originalFileName);
+                        }}
+                        className="cursor-pointer text-primary hover:underline bg-transparent border-none p-0 text-left inline truncate max-w-full"
                       >
                         {doc.originalFileName}
-                      </span>
+                      </button>
                     </TableCell>
                     <TableCell>{formatBytes(doc.fileSize)}</TableCell>
                     <TableCell>{new Date(doc.uploadTimestamp).toLocaleString()}</TableCell>
@@ -311,7 +314,10 @@ const KnowledgeBaseContent: React.FC<KnowledgeBaseContentProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleDeleteDocument(doc._id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteDocument(doc._id);
+                        }}
                         title="Delete Document"
                         className="text-destructive hover:text-destructive/80"
                       >

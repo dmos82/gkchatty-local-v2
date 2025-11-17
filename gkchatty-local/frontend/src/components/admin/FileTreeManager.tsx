@@ -472,18 +472,23 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
     }
 
     // Handle internal item move (existing logic)
-    // Only process drop for folders
-    if (!targetNode || targetNode.type !== 'folder') {
+    // If targetNode exists but is not a folder, reject the drop
+    if (targetNode && targetNode.type !== 'folder') {
       handleDragEnd();
       return;
     }
 
-    const targetId = targetNode._id;
+    // targetNode === undefined means dropping to root (null)
+    // targetNode with type === 'folder' means dropping into a folder
+    const targetId = targetNode?._id || null;
 
     // Don't allow dropping items into themselves or their children
-    if (draggedItems.length > 0 && targetId && !draggedItems.includes(targetId)) {
-      // Check if any dragged item is a parent of the target
+    if (draggedItems.length > 0) {
+      // Check if any dragged item is a parent of the target (only if targetNode exists)
       const isValidDrop = !draggedItems.some(draggedId => {
+        // If dropping to root, always valid
+        if (!targetNode) return false;
+
         const draggedNode = allItems.find(item => item._id === draggedId);
         if (draggedNode?.type === 'folder') {
           // Simple check - prevent dropping a folder into itself
@@ -497,7 +502,9 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           await moveItems(draggedItems, targetId);
           toast({
             title: 'Success',
-            description: `${draggedItems.length} item(s) moved successfully`
+            description: targetId
+              ? `${draggedItems.length} item(s) moved to folder`
+              : `${draggedItems.length} item(s) moved to root level`
           });
         } catch (error) {
           toast({
@@ -531,13 +538,8 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           )}
           style={{ paddingLeft: `${level * 20 + 8}px` }}
           onClick={(e) => {
-            // If clicking on a PDF file, open the viewer
-            if (!isFolder && (node.mimeType?.includes('pdf') || node.name.toLowerCase().endsWith('.pdf'))) {
-              setViewingPdf({id: node._id, name: node.name});
-            } else {
-              // Otherwise, handle normal selection
-              handleItemSelect(node._id, e);
-            }
+            // Handle normal selection when clicking on the row background
+            handleItemSelect(node._id, e);
           }}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -570,7 +572,21 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           ) : (
             <File className="h-4 w-4" />
           )}
-          <span className="flex-1 truncate text-sm">{node.name}</span>
+          <span className="flex-1 truncate text-sm overflow-hidden">
+            {(!isFolder && (node.mimeType?.includes('pdf') || node.name.toLowerCase().endsWith('.pdf'))) ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewingPdf({id: node._id, name: node.name});
+                }}
+                className="text-primary hover:underline bg-transparent border-none p-0 text-left cursor-pointer inline"
+              >
+                {node.name}
+              </button>
+            ) : (
+              <span>{node.name}</span>
+            )}
+          </span>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -682,13 +698,7 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
               "flex flex-col items-center p-4 rounded-lg hover:bg-accent cursor-pointer",
               selectedItems.has(item._id) && "bg-accent"
             )}
-            onClick={(e) => {
-              if (item.type === 'file' && (item.mimeType?.includes('pdf') || item.name.toLowerCase().endsWith('.pdf'))) {
-                setViewingPdf({id: item._id, name: item.name});
-              } else {
-                handleItemSelect(item._id, e);
-              }
-            }}
+            onClick={(e) => handleItemSelect(item._id, e)}
             onDoubleClick={() => item.type === 'folder' && toggleFolder(item._id)}
           >
             {item.type === 'folder' ? (
@@ -696,7 +706,21 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
             ) : (
               <File className="h-12 w-12 mb-2 text-gray-500" />
             )}
-            <span className="text-sm text-center truncate w-full">{item.name}</span>
+            <span className="text-sm text-center truncate w-full">
+              {(item.type === 'file' && (item.mimeType?.includes('pdf') || item.name.toLowerCase().endsWith('.pdf'))) ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setViewingPdf({id: item._id, name: item.name});
+                  }}
+                  className="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer inline"
+                >
+                  {item.name}
+                </button>
+              ) : (
+                <span>{item.name}</span>
+              )}
+            </span>
           </div>
         ))}
       </div>
@@ -730,20 +754,28 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
               "flex items-center gap-2 p-2 rounded hover:bg-accent cursor-pointer",
               selectedItems.has(item._id) && "bg-accent"
             )}
-            onClick={(e) => {
-              if (item.type === 'file' && (item.mimeType?.includes('pdf') || item.name.toLowerCase().endsWith('.pdf'))) {
-                setViewingPdf({id: item._id, name: item.name});
-              } else {
-                handleItemSelect(item._id, e);
-              }
-            }}
+            onClick={(e) => handleItemSelect(item._id, e)}
           >
             {item.type === 'folder' ? (
               <Folder className="h-4 w-4" />
             ) : (
               <File className="h-4 w-4" />
             )}
-            <span className="flex-1 text-sm">{item.name}</span>
+            <span className="flex-1 text-sm overflow-hidden">
+              {(item.type === 'file' && (item.mimeType?.includes('pdf') || item.name.toLowerCase().endsWith('.pdf'))) ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setViewingPdf({id: item._id, name: item.name});
+                  }}
+                  className="text-primary hover:underline bg-transparent border-none p-0 text-left cursor-pointer inline"
+                >
+                  {item.name}
+                </button>
+              ) : (
+                <span>{item.name}</span>
+              )}
+            </span>
             {item.size && (
               <span className="text-xs text-muted-foreground">
                 {(item.size / 1024 / 1024).toFixed(2)} MB
@@ -875,7 +907,10 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
       
       {/* Content */}
       <div
-        className="flex-1 overflow-auto"
+        className={cn(
+          "flex-1 overflow-auto relative",
+          isDragging && !dragOverFolder && "bg-accent/20 border-2 border-dashed border-primary"
+        )}
         onDragOver={handleDragOver}
         onDrop={(e) => {
           // If dropping on background but we were hovering over a folder, use that folder
@@ -890,6 +925,15 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           handleDrop(e);
         }}
       >
+        {/* Drop to root indicator */}
+        {isDragging && !dragOverFolder && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+            <div className="bg-background/90 border-2 border-primary rounded-lg p-4 flex flex-col items-center gap-2">
+              <Folder className="h-8 w-8 text-primary" />
+              <p className="text-sm font-medium">Drop here to move to root level</p>
+            </div>
+          </div>
+        )}
         {isLoading ? (
           <div className="p-4 space-y-2">
             <Skeleton className="h-8 w-full" />

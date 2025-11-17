@@ -2,10 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 
 export function LoginForm() {
@@ -27,11 +24,10 @@ export function LoginForm() {
       console.log('[LoginForm] handleLogin triggered for:', { username });
 
       await login(username, password);
-      const loginSuccess = true;  // If login doesn't throw, it succeeded
+      const loginSuccess = true;
 
       if (loginSuccess) {
         console.log('[LoginForm] AuthContext login successful. Redirecting to /');
-        // Add a small delay to ensure auth state is updated before navigation
         setTimeout(() => {
           router.push('/');
         }, 100);
@@ -50,50 +46,86 @@ export function LoginForm() {
   };
 
   return (
-    <Card className="w-full max-w-sm h-full flex flex-col">
-      <CardHeader className="flex-shrink-0">
-        <CardTitle>Login</CardTitle>
-      </CardHeader>
-      <form onSubmit={handleLogin} className="flex flex-col flex-grow">
-        <CardContent className="space-y-4 flex-grow">
-          <div className="grid w-full items-center gap-4">
-            <div className="flex flex-col space-y-1.5">
-              <Label htmlFor="login-username">Username</Label>
-              <Input
-                id="login-username"
-                placeholder="Your username"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                required
-                disabled={isSubmitting}
-                autoComplete="off"
-              />
-            </div>
-            <div className="flex flex-col space-y-1.5">
-              <Label htmlFor="login-password">Password</Label>
-              <Input
-                id="login-password"
-                type="password"
-                placeholder="Your password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                disabled={isSubmitting}
-                autoComplete="new-password"
-              />
-            </div>
-          </div>
-          {error && (
-            <p className="text-sm font-medium text-destructive text-center px-1 pt-2">{error}</p>
-          )}
-        </CardContent>
-        <CardFooter className="flex-shrink-0">
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? 'Logging in...' : 'Login v2'}
-          </Button>
-        </CardFooter>
+    <div className="w-full flex flex-col items-center">
+      {/* GK Circle Logo - replacing LOGIN text */}
+      <div className="mb-16">
+        <div
+          className="rounded-full overflow-hidden"
+          style={{
+            width: '230px',
+            height: '230px',
+            boxShadow: '0 0 40px 15px rgba(255, 221, 0, 0.6), 0 0 80px 30px rgba(255, 221, 0, 0.3)'
+          }}
+        >
+          <Image
+            src="/GKCIRCLELOGO.JPG"
+            alt="GK Circle Logo"
+            width={230}
+            height={230}
+            priority
+            className="object-cover w-full h-full"
+          />
+        </div>
+      </div>
+
+      <form onSubmit={handleLogin} className="w-full flex flex-col gap-6">
+        {/* Username input - Figma design */}
+        <input
+          id="login-username"
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          required
+          disabled={isSubmitting}
+          autoComplete="off"
+          className="w-full h-12 px-4 bg-transparent border border-[#B9B9B9] rounded-[5px] text-white placeholder-[#808080] focus:outline-none focus:border-white transition-colors"
+          style={{
+            fontFamily: 'M PLUS 2, sans-serif',
+            fontSize: '16px',
+            fontWeight: 400
+          }}
+        />
+
+        {/* Password input - Figma design */}
+        <input
+          id="login-password"
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          required
+          disabled={isSubmitting}
+          autoComplete="new-password"
+          className="w-full h-12 px-4 bg-transparent border border-[#B9B9B9] rounded-[5px] text-white placeholder-[#808080] focus:outline-none focus:border-white transition-colors"
+          style={{
+            fontFamily: 'M PLUS 2, sans-serif',
+            fontSize: '16px',
+            fontWeight: 400
+          }}
+        />
+
+        {error && (
+          <p className="text-sm font-medium text-red-400 text-center">{error}</p>
+        )}
+
+        {/* LOGIN button - Figma design */}
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full h-12 rounded-[5px] transition-opacity hover:opacity-90 disabled:opacity-50"
+          style={{
+            backgroundColor: '#EAA221',
+            color: '#252525',
+            fontFamily: 'M PLUS 2, sans-serif',
+            fontSize: '24px',
+            fontWeight: 700
+          }}
+        >
+          {isSubmitting ? 'LOGGING IN...' : 'LOGIN'}
+        </button>
       </form>
-    </Card>
+    </div>
   );
 }
 
