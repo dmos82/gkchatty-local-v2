@@ -376,7 +376,7 @@ router.post(
             );
 
             if (results?.matches) {
-              const numericVectors = results.matches.filter((match: PineconeMatch) => {
+              const numericVectors = (results.matches as unknown as PineconeMatch[]).filter((match: PineconeMatch) => {
                 const fileName = match.metadata?.originalFileName || match.metadata?.fileName;
                 return fileName && /^\d{13}-\d+\.pdf$/.test(fileName);
               });
@@ -388,7 +388,7 @@ router.post(
                 );
 
                 // Delete by vector IDs
-                const numericVectorIds = numericVectors.map((v: PineconeMatch) => v.id);
+                const numericVectorIds = (numericVectors as PineconeMatch[]).map(v => v.id);
                 const { deleteVectorsById } = await import('../utils/pineconeService');
                 await deleteVectorsById(numericVectorIds, namespace);
                 deletedCount += numericVectors.length;

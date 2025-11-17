@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import https from 'https';
 import fs from 'fs';
-import * as cookieParserModule from 'cookie-parser';
-const cookieParser = cookieParserModule.default || cookieParserModule;
+import cookieParser from 'cookie-parser';
 import Setting from './models/SettingModel'; // Ensure uppercase 'M'
 import User from './models/UserModel'; // Import User model for seeding
 import bcrypt from 'bcryptjs'; // Import bcrypt for password hashing
@@ -40,14 +39,9 @@ if (!process.env.JWT_SECRET) {
 console.log('-----------------------------------------------------');
 // --- END: Environment Configuration Check ---
 
-import * as expressModule from 'express';
-const express = expressModule.default || expressModule;
-import type { Application } from 'express';
-import { Request, Response, NextFunction } from 'express';
-import * as corsModule from 'cors';
-const cors = corsModule.default || corsModule;
-import * as morganModule from 'morgan';
-const morgan = morganModule.default || morganModule;
+import express, { Application, Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import morgan from 'morgan';
 import { connectDB } from './utils/mongoHelper';
 import mongoose from 'mongoose'; // Import mongoose for database connection info
 import documentRoutes from './routes/documentRoutes'; // <-- Ensure this is uncommented
@@ -74,8 +68,7 @@ import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import { standardLimiter } from './middleware/rateLimiter'; // Import rate limiters
 import { DEFAULT_API_PORT, DEFAULT_FRONTEND_PORT, BCRYPT_SALT_ROUNDS } from './config/constants';
-import * as helmetModule from 'helmet'; // HIGH-005: Import helmet.js for security headers
-const helmet = helmetModule.default || helmetModule;
+import helmet from 'helmet'; // HIGH-005: Import helmet.js for security headers
 
 // ← Added: Diagnostic log for import type
 console.log('*** [Index Module] Imported systemKbRouter:', typeof systemKbRoutes);
@@ -92,7 +85,7 @@ export { app };
 // and req.id is available for subsequent middleware and handlers.
 app.use(
   pinoHttp({
-    logger: pinoLogger,
+    logger: pinoLogger as any, // Type cast to avoid pino-http type mismatch
     genReqId: function (req, res) {
       // req and res types are inferred by pino-http
       const existingId =

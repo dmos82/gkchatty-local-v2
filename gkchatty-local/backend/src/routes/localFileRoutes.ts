@@ -1,6 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
-import * as asyncHandlerModule from 'express-async-handler';
-const asyncHandler = asyncHandlerModule.default || asyncHandlerModule;
+import asyncHandler from 'express-async-handler';
 import { getFileStream, uploadFile } from '../utils/s3Helper'; // s3Helper will handle local vs S3
 import path from 'path';
 import mime from 'mime-types'; // For determining content type

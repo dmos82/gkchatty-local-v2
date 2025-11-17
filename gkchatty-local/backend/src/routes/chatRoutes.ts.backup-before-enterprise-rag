@@ -6,13 +6,15 @@ import { withRetry, DEFAULT_OPENAI_RETRY_CONFIG } from '../utils/retryHelper';
 import { ChatCompletionMessageParam as OpenAIChatCompletionMessageParam } from 'openai/resources/chat';
 import type { ChatCompletion } from 'openai/resources/chat/completions';
 import Chat, { IChat, IChatMessage } from '../models/ChatModel';
-import User, { IUser } from '../models/UserModel';
+import User from '../models/UserModel';
 import Setting from '../models/SettingModel';
 import { inspect } from 'util';
 import { getLogger } from '../utils/logger';
 import UserSettings, { IUserSettings } from '../models/UserSettings';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { getContext } from '../services/ragService';
+import { chatService } from '../services/chatService';
+import { getFeatures } from '../config/features';
 
 // Type for chat response object
 interface ChatResponseObject {
@@ -27,8 +29,8 @@ interface ChatResponseObject {
   chatId?: string;
   persistenceError?: string;
   iconUrl?: string;
-  modelUsed?: string; // Show which AI model generated the response
-  modelMode?: string; // Show model mode (e.g., "thinking", "chat")
+  modelUsed?: string;
+  modelMode?: 'openai' | 'ollama';
 }
 
 const router: Router = express.Router();
@@ -78,7 +80,7 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
   );
   log.info({ path: req.path }, 'Chat route hit - request received');
 
-  const userId = req.user && '_id' in req.user ? req.user._id : (req.user as any)?.userId;
+  const userId = req.user && '_id' in req.user ? req.user._id : req.user?.userId;
   // Fetch User and UserSettings documents early
   let userDoc:
     | (mongoose.Document<unknown, object, IUser> & IUser & Required<{ _id: unknown }>)
@@ -109,10 +111,11 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
     knowledgeBaseTarget: rawKnowledgeBaseTarget,
     searchMode, // Primary field from frontend
     activePersonaId, // Changed from personaId to activePersonaId
+    preferredModel, // Ollama model name (e.g., "llama3.2:3b") or "openai"
   } = req.body as Record<string, unknown>;
 
   // --- Normalize knowledge base targeting parameters ---
-  let knowledgeBaseTarget: string | undefined = (rawKnowledgeBaseTarget as string) || (searchMode as string);
+  let knowledgeBaseTarget: string | undefined = rawKnowledgeBaseTarget || searchMode;
 
   // Map any legacy values to the canonical set
   switch (knowledgeBaseTarget) {
@@ -258,86 +261,139 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
     );
 
     // CRITICAL FIX: Check if we have any sources before proceeding
-    if (finalSourcesForLlm.length === 0) {
-      log.info(
-        { knowledgeBaseTarget, query: sanitizedQuery.substring(0, 50) },
-        '[Chat Route] No sources found for query - preventing hallucination'
-      );
+    // ========================================
+    // ENTERPRISE HYBRID RAG SOLUTION
+    // ========================================
 
-      // Return a specific message based on the search mode
-      let noSourcesMessage = '';
-      if (knowledgeBaseTarget === 'user') {
-        noSourcesMessage =
-          'No matching documents found in your personal documents. Please upload relevant documents or try a different search.';
-      } else if (knowledgeBaseTarget === 'kb' || knowledgeBaseTarget === 'system') {
-        noSourcesMessage =
-          'No matching information found in the knowledge base. Please try rephrasing your question or contact support.';
+    // Get feature flags ONCE at start (efficient, consistent state)
+    const features = await getFeatures();
+
+    // Configure relevance threshold (environment variable allows admin tuning)
+    const MIN_RELEVANCE_SCORE = parseFloat(process.env.RAG_MIN_RELEVANCE_SCORE || '0.7');
+
+    // Filter sources by relevance score (quality control)
+    const highRelevanceSources = finalSourcesForLlm.filter(s => s.score >= MIN_RELEVANCE_SCORE);
+
+    const hasHighRelevanceSources = highRelevanceSources.length > 0;
+
+    // Track which mode we're using for metadata
+    let ragMode: 'strict-rag-only' | 'docs-first-hybrid' | 'general-knowledge' = 'strict-rag-only';
+    let systemPromptPrefix = '';
+
+    // ========================================
+    // MODE DETERMINATION
+    // ========================================
+
+    if (!features.allowGeneralQuestions) {
+      // ========================================
+      // MODE 1: STRICT RAG-ONLY (Compliance Mode)
+      // ========================================
+
+      if (!hasHighRelevanceSources) {
+        // No relevant sources → return "no sources" message immediately
+        log.info(
+          {
+            ragMode: 'strict-rag-only',
+            sourcesSearched: finalSourcesForLlm.length,
+            relevantSourcesFound: 0,
+            minScoreRequired: MIN_RELEVANCE_SCORE,
+          },
+          '[Chat Route] RAG-only mode: No relevant sources, returning no-sources message'
+        );
+
+      if (features.allowGeneralQuestions) {
+        // Allow LLM to answer without document context (general knowledge mode)
+        log.info(
+          '[Chat Route] allowGeneralQuestions=true, proceeding with general knowledge mode'
+        );
+        // Continue to LLM call with empty context - do NOT return early
       } else {
-        noSourcesMessage =
-          'No matching documents found in the available sources. Please try a different search or contact support.';
-      }
+        // Feature disabled - return "no sources" message
+        log.info(
+          '[Chat Route] allowGeneralQuestions=false, returning no-sources message'
+        );
 
-      // Still save the chat history but with the no-sources message
-      const responseObject: ChatResponseObject = {
-        success: true,
-        answer: noSourcesMessage,
-        sources: [],
-        metadata: {
-          tokenUsage: { prompt: 0, completion: 0, total: 0 },
-          cost: 0,
-        },
-        knowledgeBaseTarget,
-      };
-
-      // Chat persistence logic (simplified for no-sources case)
-      if (userId) {
-        try {
-          const userMessage: IChatMessage = {
-            role: 'user',
-            content: sanitizedQuery,
-            timestamp: new Date(),
-          };
-
-          const assistantMessage: IChatMessage = {
-            role: 'assistant',
-            content: noSourcesMessage,
-            sources: [],
-            timestamp: new Date(),
-            metadata: responseObject.metadata,
-          };
-
-          let chat: IChat | null = null;
-          if (chatId && mongoose.Types.ObjectId.isValid(chatId as string)) {
-            chat = await Chat.findOne({ _id: chatId as string, userId: userId });
-          }
-
-          if (chat) {
-            chat.messages.push(userMessage, assistantMessage);
-            chat.updatedAt = new Date();
-          } else {
-            const MAX_TITLE_LENGTH = 40;
-            let generatedChatName = sanitizedQuery.substring(0, MAX_TITLE_LENGTH);
-            if (sanitizedQuery.length > MAX_TITLE_LENGTH) generatedChatName += '...';
-            if (!generatedChatName.trim()) generatedChatName = 'Chat Session';
-
-            chat = new Chat({
-              userId: new mongoose.Types.ObjectId(userId.toString()),
-              chatName: generatedChatName.trim(),
-              messages: [userMessage, assistantMessage],
-            });
-          }
-
-          if (chat) {
-            await chat.save();
-            responseObject.chatId = chat._id?.toString();
-          }
-        } catch (dbError: unknown) {
-          log.error({ error: dbError }, '[Chat Persistence] Error saving no-sources chat');
-          responseObject.persistenceError = 'Failed to save chat history.';
+        // Return a specific message based on the search mode
+        let noSourcesMessage = '';
+        if (knowledgeBaseTarget === 'user') {
+          noSourcesMessage =
+            'No matching documents found in your personal documents. Please upload relevant documents or try a different search.';
+        } else if (knowledgeBaseTarget === 'kb' || knowledgeBaseTarget === 'system') {
+          noSourcesMessage =
+            'No matching information found in the knowledge base. Please try rephrasing your question or contact support.';
+        } else {
+          noSourcesMessage =
+            'No matching documents found in the available sources. Please try a different search or contact support.';
         }
-      }
 
-      return res.status(200).json(responseObject);
+        // Still save the chat history but with the no-sources message
+        const modelUsed = process.env.OPENAI_PRIMARY_CHAT_MODEL || 'gpt-4o-mini';
+
+        const responseObject: ChatResponseObject = {
+          success: true,
+          answer: noSourcesMessage,
+          sources: [],
+          metadata: {
+            tokenUsage: { prompt: 0, completion: 0, total: 0 },
+            cost: 0,
+          },
+          knowledgeBaseTarget,
+          modelUsed,
+          modelMode: 'openai',
+        };
+
+        // Chat persistence logic (simplified for no-sources case)
+        if (userId) {
+          try {
+            const userMessage: IChatMessage = {
+              role: 'user',
+              content: sanitizedQuery,
+              timestamp: new Date(),
+            };
+
+            const assistantMessage: IChatMessage = {
+              role: 'assistant',
+              content: noSourcesMessage,
+              sources: [],
+              timestamp: new Date(),
+              metadata: responseObject.metadata,
+              modelUsed: responseObject.modelUsed,
+              modelMode: responseObject.modelMode,
+            };
+
+            let chat: IChat | null = null;
+            if (chatId && mongoose.Types.ObjectId.isValid(chatId)) {
+              chat = await Chat.findOne({ _id: chatId, userId: userId });
+            }
+
+            if (chat) {
+              chat.messages.push(userMessage, assistantMessage);
+              chat.updatedAt = new Date();
+            } else {
+              const MAX_TITLE_LENGTH = 40;
+              let generatedChatName = sanitizedQuery.substring(0, MAX_TITLE_LENGTH);
+              if (sanitizedQuery.length > MAX_TITLE_LENGTH) generatedChatName += '...';
+              if (!generatedChatName.trim()) generatedChatName = 'Chat Session';
+
+              chat = new Chat({
+                userId: new mongoose.Types.ObjectId(userId.toString()),
+                chatName: generatedChatName.trim(),
+                messages: [userMessage, assistantMessage],
+              });
+            }
+
+            if (chat) {
+              await chat.save();
+              responseObject.chatId = chat._id?.toString();
+            }
+          } catch (dbError: unknown) {
+            log.error({ error: dbError }, '[Chat Persistence] Error saving no-sources chat');
+            responseObject.persistenceError = 'Failed to save chat history.';
+          }
+        }
+
+        return res.status(200).json(responseObject);
+      }
     }
 
     const context = finalSourcesForLlm.map(s => s.text).join('\n\n---\n\n');
@@ -453,7 +509,7 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
     const finalSystemMessageContent = `${systemPromptText}\n\n--- CONTEXT START --- \n${context}\n--- CONTEXT END ---`;
     const messagesForOpenAI: OpenAIChatCompletionMessageParam[] = [
       { role: 'system', content: finalSystemMessageContent },
-      ...(history as Array<{role?: string; content?: string}>)
+      ...history
         .filter(
           (msg: { role?: string; content?: string }) =>
             msg.role &&
@@ -462,10 +518,10 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
             msg.content.trim().length > 0
         )
         .map((msg: { role: string; content: string }) => ({
-          role: msg.role as 'user' | 'assistant' | 'system',
+          role: msg.role,
           content: msg.content.trim(),
         })),
-      { role: 'user' as const, content: sanitizedQuery },
+      { role: 'user', content: sanitizedQuery },
     ];
 
     // --- START ADDITION: Log messages array before OpenAI call ---
@@ -490,79 +546,80 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
     );
     // --- END ADDED LOGGING ---
 
-    // 9. Call OpenAI (No change needed here, getChatCompletion takes messages)
-    log.debug({ timerLabel: 'OpenAICallDuration' }, 'Timer started for OpenAICallDuration');
+    // 9. Determine model mode based on feature flag AND user preference
+    const features = await getFeatures();
+    const ollamaFeatureEnabled = features.ollama;
 
-    // Add logging to verify OpenAI configuration is being used
-    log.info('[Chat Route] Calling getChatCompletion with admin-aware configuration');
+    // Check if user wants Ollama AND feature is enabled
+    const isOllamaModel =
+      ollamaFeatureEnabled &&
+      preferredModel &&
+      typeof preferredModel === 'string' &&
+      preferredModel !== 'openai';
 
-    // Wrap the OpenAI call with withRetry to ensure errors are properly retried
-    const completion = await withRetry<ChatCompletion>(
-      async (): Promise<ChatCompletion> => {
-        const result = await getChatCompletion(messagesForOpenAI);
-        if (!result) {
-          const err = new Error(
-            'Failed to get response from AI assistant: Null result'
-          ) as Error & { status: number };
-          err.status = 503;
-          throw err;
-        }
+    const modelMode: 'ollama' | 'openai' = isOllamaModel ? 'ollama' : 'openai';
 
-        // Additional safety: verify completion tokens and content
-        if (result.usage?.completion_tokens === 0 || !result.choices?.[0]?.message?.content) {
-          log.error(
-            '[Chat Route] Detected zero completion tokens or empty content – triggering retry'
-          );
-          const err = new Error('OpenAI returned response with no generated content') as Error & {
-            status: number;
-          };
-          err.status = 503;
-          throw err;
-        }
-
-        return result;
-      },
-      DEFAULT_OPENAI_RETRY_CONFIG,
-      'Chat Route - OpenAI Call'
+    log.info(
+      '[Chat Route] Model selection:',
+      'mode:', modelMode,
+      'preferredModel:', preferredModel,
+      'ollamaFeature:', ollamaFeatureEnabled ? 'enabled' : 'disabled'
     );
 
-    log.debug({ timerLabel: 'OpenAICallDuration' }, 'Timer ended for OpenAICallDuration');
+    // Call unified chat service
+    log.debug({ timerLabel: 'ChatServiceCallDuration' }, 'Timer started for ChatServiceCallDuration');
 
-    // Log the raw OpenAI response for diagnostic purposes
-    log.debug('[OpenAI Raw Chat Response]', safeStringify(completion));
+    const chatResponse = await chatService.getChatCompletion({
+      messages: messagesForOpenAI,
+      modelMode,
+      model: isOllamaModel ? (preferredModel as string) : undefined,
+      temperature: 0.7,
+      enableFallback: true, // Enable fallback to OpenAI if Ollama fails
+    });
+
+    log.debug({ timerLabel: 'ChatServiceCallDuration' }, 'Timer ended for ChatServiceCallDuration');
+
+    // Log the response
+    log.debug('[Chat Service Response]', {
+      modelUsed: chatResponse.modelUsed,
+      modelMode: chatResponse.modelMode,
+      fallbackUsed: chatResponse.fallbackUsed,
+      contentLength: chatResponse.content?.length || 0,
+    });
 
     // --- Token Usage & Cost ---
     let requestCost = 0;
-    let tokenUsage = null; // Renamed from usageData for clarity
+    let tokenUsage = null;
 
-    // --- START REPLACEMENT: Dynamic Pricing ---
-    const configuredModel = process.env.OPENAI_CHAT_MODEL || 'default';
-    const prices = MODEL_PRICING[configuredModel] || MODEL_PRICING['default'];
-
-    if (completion && completion.usage) {
+    // Use token usage from chatResponse
+    if (chatResponse && chatResponse.usage) {
       tokenUsage = {
-        // Structure for response/persistence
-        prompt: completion.usage.prompt_tokens ?? 0,
-        completion: completion.usage.completion_tokens ?? 0,
-        total: completion.usage.total_tokens ?? 0,
+        prompt: chatResponse.usage.promptTokens ?? 0,
+        completion: chatResponse.usage.completionTokens ?? 0,
+        total: chatResponse.usage.totalTokens ?? 0,
       };
 
-      // Calculate cost based on MILLION tokens pricing
-      requestCost =
-        (tokenUsage.prompt / 1_000_000) * prices.input +
-        (tokenUsage.completion / 1_000_000) * prices.output;
+      // Calculate cost (Ollama is free, only calculate for OpenAI)
+      if (chatResponse.modelMode === 'openai') {
+        const configuredModel = chatResponse.modelUsed || process.env.OPENAI_CHAT_MODEL || 'default';
+        const prices = MODEL_PRICING[configuredModel] || MODEL_PRICING['default'];
+
+        requestCost =
+          (tokenUsage.prompt / 1_000_000) * prices.input +
+          (tokenUsage.completion / 1_000_000) * prices.output;
+      }
 
       log.debug(
         {
-          model: configuredModel,
+          model: chatResponse.modelUsed,
+          modelMode: chatResponse.modelMode,
           promptTokens: tokenUsage.prompt,
           completionTokens: tokenUsage.completion,
           totalTokens: tokenUsage.total,
           calculatedCost: requestCost.toFixed(8),
         },
-        `[Chat] OpenAI usage for model`
+        `[Chat] Model usage`
       );
-      // --- END REPLACEMENT: Dynamic Pricing ---
 
       // --- Usage Tracking Update (Uses requestCost, tokenUsage.prompt, tokenUsage.completion) ---
       if (userId && tokenUsage.prompt >= 0 && tokenUsage.completion >= 0) {
@@ -618,29 +675,19 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
     }
     // --- End Token Usage ---\
 
-    // Note: These checks are redundant now since the withRetry wrapper already validates the response
-    // If we get here, the completion object has already been validated
-
-    // Get the answer from the validated completion object
-    const answer = completion?.choices?.[0]?.message?.content?.trim() || '';
-
-    // DEBUG: Log the entire completion object to see what OpenAI is returning
-    log.debug('[Chat] Full completion object:', JSON.stringify(completion, null, 2));
-
-    // Extract model used from completion response
-    const modelUsed = completion?.model || undefined;
-    log.debug(`[Chat] Extracted modelUsed: ${modelUsed}`);
+    // Get the answer from the chat service response
+    const answer = chatResponse.content?.trim() || '';
 
     // Validate the answer is not empty before proceeding with chat persistence
     if (!answer || answer.length === 0) {
-      log.error('[Chat] OpenAI returned empty or null response content');
+      log.error('[Chat] Chat service returned empty or null response content');
       return res.status(500).json({
         success: false,
         message: 'Failed to generate a response. Please try again.',
       });
     }
 
-    log.info('[Chat] Received response from OpenAI.');
+    log.info('[Chat] Received response from chat service.');
 
     // 8. Prepare response
     const finalSourcesForResponse = await Promise.all(
@@ -819,9 +866,7 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
       `[Chat Deduplicate] Reduced ${filteredSources.length} sources to ${uniqueFinalSources.length} unique sources.`
     );
 
-    const messageMetadata = tokenUsage
-      ? { tokenUsage, cost: requestCost, ...(modelUsed && { modelUsed }) }
-      : undefined;
+    const messageMetadata = tokenUsage ? { tokenUsage, cost: requestCost } : undefined;
 
     // Check if we should include a custom user icon
     let iconUrl = null;
@@ -849,6 +894,7 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
       log.error({ error: iconError, knowledgeBaseTarget }, '[Chat] Error determining icon:');
     }
 
+    // Get the model used from chat response
     const responseObject: ChatResponseObject = {
       success: true,
       answer,
@@ -856,8 +902,8 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
       metadata: messageMetadata,
       iconUrl,
       knowledgeBaseTarget, // Include the target in the response for the frontend
-      modelUsed, // Include model used
-      modelMode: 'openai', // Indicate which service was used
+      modelUsed: chatResponse.modelUsed, // Model that answered (e.g., "llama3.2:3b" or "gpt-4o-mini")
+      modelMode: chatResponse.modelMode, // "ollama" or "openai"
     };
 
     log.debug(
@@ -909,12 +955,14 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
           }),
           timestamp: new Date(),
           metadata: messageMetadata,
+          modelUsed: responseObject.modelUsed,
+          modelMode: responseObject.modelMode,
         };
 
         let chat: IChat | null = null;
-        if (chatId && mongoose.Types.ObjectId.isValid(chatId as string)) {
+        if (chatId && mongoose.Types.ObjectId.isValid(chatId)) {
           log.info({ userId, chatId }, `[Chat Persistence] Attempting to find existing chat`);
-          chat = await Chat.findOne({ _id: chatId as string, userId: userId });
+          chat = await Chat.findOne({ _id: chatId, userId: userId });
         }
 
         if (chat) {
@@ -1016,7 +1064,7 @@ router.get('/latest', async (req: Request, res: Response): Promise<void | Respon
 
 // GET /api/chats - Fetch list of chats for the logged-in user
 router.get('/', async (req: Request, res: Response): Promise<void | Response> => {
-  const userId = req.user && '_id' in req.user ? req.user._id : (req.user as any)?.userId;
+  const userId = req.user && '_id' in req.user ? req.user._id : req.user?.userId;
 
   if (!userId) {
     return res
@@ -1049,7 +1097,7 @@ router.get('/', async (req: Request, res: Response): Promise<void | Response> =>
 
 // GET /api/chats/:chatId - Fetch a specific chat by its ID
 router.get('/:chatId', async (req: Request, res: Response): Promise<void | Response> => {
-  const userId = req.user && '_id' in req.user ? req.user._id : (req.user as any)?.userId;
+  const userId = req.user && '_id' in req.user ? req.user._id : req.user?.userId;
   const { chatId } = req.params;
 
   if (!userId) {

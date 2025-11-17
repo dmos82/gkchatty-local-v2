@@ -397,7 +397,7 @@ export function createSmartFallbackChain(
     if (!aIsLocal && bIsLocal) return 1;
 
     // Within same type, sort by cost (lower first)
-    return (a.info.estimatedCost || 0) - (b.info.estimatedCost || 0);
+    return Number(a.info.estimatedCost || 0) - Number(b.info.estimatedCost || 0);
   });
 
   const providerIds = sortedProviders.map(p => p.id);

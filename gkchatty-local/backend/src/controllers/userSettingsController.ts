@@ -1,14 +1,12 @@
 import { Request, Response, RequestHandler } from 'express';
 import mongoose from 'mongoose';
 import UserSettings from '../models/UserSettings';
-import * as asyncHandlerModule from 'express-async-handler';
+import asyncHandler from 'express-async-handler';
 import { getLogger } from '../utils/logger';
 import { saveFile } from '../utils/s3Helper';
 import path from 'path';
 import fs from 'fs';
 import User from '../models/UserModel';
-
-const asyncHandler = asyncHandlerModule.default || asyncHandlerModule;
 // Create logger but use it in future updates
 const log = getLogger('userSettingsController');
 

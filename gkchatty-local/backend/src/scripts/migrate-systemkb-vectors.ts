@@ -63,7 +63,7 @@ async function getNamespaceStats(namespace: string): Promise<number> {
   try {
     const index = await getPineconeIndex();
     const stats = await index.describeIndexStats();
-    return stats.namespaces?.[namespace]?.vectorCount ?? 0;
+    return stats.namespaces?.[namespace]?.recordCount ?? 0;
   } catch (error) {
     log.error(`Failed to get stats for namespace '${namespace}':`, error);
     return 0;

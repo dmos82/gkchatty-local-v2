@@ -1,7 +1,6 @@
 import { Request, Response, RequestHandler } from 'express';
 import Setting from '../models/SettingModel'; // Corrected casing
-import * as asyncHandlerModule from 'express-async-handler';
-const asyncHandler = asyncHandlerModule.default || asyncHandlerModule;
+import asyncHandler from 'express-async-handler';
 
 const SYSTEM_PROMPT_KEY = 'systemPrompt';
 

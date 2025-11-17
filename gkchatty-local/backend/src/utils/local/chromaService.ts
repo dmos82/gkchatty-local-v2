@@ -2,7 +2,7 @@ import 'dotenv/config';
 import path from 'path';
 import os from 'os';
 import { getLogger } from '../logger';
-import { ChromaClient, Collection } from 'chromadb';
+import { ChromaClient, Collection, IncludeEnum } from 'chromadb';
 
 const log = getLogger('chromaService');
 
@@ -134,7 +134,7 @@ export const querySimilarVectors = async (
       queryEmbeddings: [queryVector],
       nResults: topK,
       where: filter,
-      include: includeMetadata ? ['metadatas', 'distances'] : ['distances']
+      include: includeMetadata ? [IncludeEnum.Metadatas, IncludeEnum.Distances] : [IncludeEnum.Distances]
     });
 
     // Convert ChromaDB results to Pinecone-like format
@@ -223,7 +223,8 @@ export const listCollections = async (): Promise<string[]> => {
 
   try {
     const collections = await client.listCollections();
-    return collections.map(c => c.name);
+    // ChromaDB returns collection objects with name property
+    return collections.map(c => (typeof c === 'string' ? c : (c as { name: string }).name));
   } catch (err: any) {
     log.error('❌ Failed to list collections:', err);
     throw err;

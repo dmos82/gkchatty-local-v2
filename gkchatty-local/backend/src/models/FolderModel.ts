@@ -8,6 +8,7 @@ export interface IFolder extends Document {
   ownerId: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
+  buildPath(): Promise<string>;
 }
 
 const folderSchema = new Schema<IFolder>(

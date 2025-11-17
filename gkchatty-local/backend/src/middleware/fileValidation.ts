@@ -42,14 +42,14 @@ export type AllowedMimeType = keyof typeof ALLOWED_FILE_TYPES;
  */
 export function validateMimeTypeExtension(mimetype: string, filename: string): boolean {
   const allowedExtensions = ALLOWED_FILE_TYPES[mimetype as AllowedMimeType];
-  
+
   if (!allowedExtensions) {
     console.log(`[File Validation] Blocked unknown MIME type: ${mimetype}`);
     return false;
   }
-  
+
   const fileExtension = path.extname(filename).toLowerCase();
-  const isValid = allowedExtensions.includes(fileExtension as any);
+  const isValid = (allowedExtensions as readonly string[]).includes(fileExtension);
   
   if (!isValid) {
     console.log(

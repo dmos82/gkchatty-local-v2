@@ -107,10 +107,16 @@ export async function transcribeAudio(
       `[AudioProcessor] Transcription completed. Text length: ${transcription.text.length}`
     );
 
+    // Type assertion for verbose_json response format which includes language and duration
+    const verboseTranscription = transcription as typeof transcription & {
+      language?: string;
+      duration?: number;
+    };
+
     return {
-      text: transcription.text,
-      language: transcription.language,
-      duration: transcription.duration,
+      text: verboseTranscription.text,
+      language: verboseTranscription.language,
+      duration: verboseTranscription.duration,
     };
   } catch (error) {
     log.error(`[AudioProcessor] Error transcribing audio:`, error);

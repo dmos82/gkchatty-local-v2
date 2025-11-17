@@ -9,6 +9,7 @@ export interface ISystemFolder extends Document {
     createdAt: Date;
     updatedAt: Date;
   };
+  buildPath(): Promise<string>;
 }
 
 const systemFolderSchema = new Schema<ISystemFolder>(

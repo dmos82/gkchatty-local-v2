@@ -108,7 +108,6 @@ async function initRedisClient() {
 
     // Create RedisStore instance with proper v4 client
     redisStore = new RedisStore({
-      // @ts-expect-error - Rate limit redis expects different client type
       sendCommand: (...args: any[]) => redisClient.sendCommand(args),
       prefix: 'rl:', // Rate limit prefix
     });

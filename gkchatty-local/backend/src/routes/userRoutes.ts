@@ -222,7 +222,7 @@ router.put(
           userAgent: req.get('user-agent'),
           timestamp: new Date().toISOString(),
           event: 'SUCCESSFUL_PASSWORD_CHANGE',
-          wasForced: userWithPassword.forcePasswordChange === true,
+          wasForced: !!userWithPassword.forcePasswordChange,
         },
         'Security Event: User password changed successfully'
       );
