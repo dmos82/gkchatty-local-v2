@@ -1,6 +1,6 @@
 [build]
-  base = "packages/web"
-  command = "pnpm install && pnpm build"
+  base = "gkchatty-local/frontend"
+  command = "npm install && npm run build"
   publish = ".next"
 
 [build.environment]
