@@ -157,31 +157,34 @@ export default function DocumentList({ onOpenFile }: DocumentListProps) {
             key={doc.id}
             className="flex items-center justify-between p-3 bg-gray-50 rounded shadow-sm hover:shadow"
           >
-            <a
-              href="#"
-              onClick={e => {
-                e.preventDefault();
-                onOpenFile(doc.id, doc.fileName);
-              }}
-              className="flex-1 cursor-pointer group p-1 rounded"
-            >
-              <div className="flex items-center space-x-3 overflow-hidden group">
-                <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                <div className="overflow-hidden">
-                  <h3 className="font-medium text-gray-800 group-hover:text-indigo-600 truncate">
+            <div className="flex-1 p-1 rounded flex items-center space-x-3 overflow-hidden">
+              <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+              <div className="overflow-hidden">
+                <div className="truncate">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenFile(doc.id, doc.fileName);
+                    }}
+                    className="font-medium text-gray-800 hover:text-indigo-600 bg-transparent border-none p-0 text-left cursor-pointer hover:underline inline"
+                  >
                     {doc.fileName}
-                  </h3>
-                  <p className="text-xs text-gray-500 pl-7">
-                    {doc.uploadDate
-                      ? `Uploaded: ${new Date(doc.uploadDate).toLocaleDateString()}`
-                      : 'Date unavailable'}
-                  </p>
-                  <p className="text-xs text-gray-500 pl-7">Status: {doc.processingStatus}</p>
+                  </button>
                 </div>
+                <p className="text-xs text-gray-500">
+                  {doc.uploadDate
+                    ? `Uploaded: ${new Date(doc.uploadDate).toLocaleDateString()}`
+                    : 'Date unavailable'}
+                </p>
+                <p className="text-xs text-gray-500">Status: {doc.processingStatus}</p>
               </div>
-            </a>
+            </div>
             <button
-              onClick={() => handleDelete(doc.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(doc.id);
+              }}
               disabled={deletingId === doc.id}
               className={`px-2 py-1 text-sm rounded transition-colors ml-3 flex items-center ${
                 deletingId === doc.id

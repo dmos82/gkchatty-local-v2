@@ -16,6 +16,10 @@
 
 /* Define CSS variables OUTSIDE of layers */
 :root {
+  /* Font Families */
+  --font-livvic: 'Livvic', sans-serif;
+  --font-mplus2: 'M PLUS 2', sans-serif;
+
   /* Light Theme - Ensure these are appropriate light mode values */
   --background: 0 0% 100%;
   --foreground: 215 28% 17%; /* slate-800 */

@@ -4,7 +4,7 @@
 import '@/lib/polyfills';
 
 // import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Livvic, M_PLUS_2 } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/toast';
@@ -27,6 +27,16 @@ import { Header } from '@/components/layout/Header';
 // No PdfWorkerSetup import here anymore
 
 const inter = Inter({ subsets: ['latin'] });
+const livvic = Livvic({
+  subsets: ['latin'],
+  weight: ['100', '200', '300', '400', '500', '600', '700', '900'],
+  variable: '--font-livvic'
+});
+const mPlus2 = M_PLUS_2({
+  subsets: ['latin'],
+  weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900'],
+  variable: '--font-mplus2'
+});
 
 // Metadata must be in a separate file or accessed via route segment config
 // when using 'use client' directive
@@ -58,7 +68,7 @@ export default function RootLayout({
         {/* Touch Icons */}
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico" />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} ${livvic.variable} ${mPlus2.variable}`}>
         {/* TODO: SettingsProvider commented out - implementation not found */}
         {/* <SettingsProvider> */}
           <AuthProvider>
