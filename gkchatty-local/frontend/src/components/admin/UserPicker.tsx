@@ -36,7 +36,7 @@ const UserPicker: React.FC<UserPickerProps> = ({ selectedUsers, onSelectionChang
     try {
       console.log('[UserPicker] Fetching users...');
 
-      const response = await fetchWithAuth('/api/users', {
+      const response = await fetchWithAuth('/api/admin/users', {
         method: 'GET',
       });
 
