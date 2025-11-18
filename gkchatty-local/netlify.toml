@@ -2,7 +2,7 @@
 
 [build]
   # Base directory where the frontend code lives
-  base = "gkchatty-local/frontend"
+  base = "frontend"
 
   # Build command (Next.js build)
   command = "npm run build"
