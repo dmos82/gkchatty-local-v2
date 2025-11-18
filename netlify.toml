@@ -5,7 +5,8 @@
   base = "gkchatty-local/frontend"
 
   # Build command (install dependencies + build)
-  command = "npm install --legacy-peer-deps && npm run build"
+  # Force install devDeps even in production (needed for cssnano)
+  command = "NODE_ENV=development npm install --legacy-peer-deps && npm run build"
 
   # Directory to publish (Next.js output)
   publish = ".next"
@@ -22,7 +23,7 @@
 
 # Production deployment from local-ollama-dev branch
 [context.production]
-  command = "npm install --legacy-peer-deps && npm run build"
+  command = "NODE_ENV=development npm install --legacy-peer-deps && npm run build"
 
 [context.production.environment]
   NODE_ENV = "production"
