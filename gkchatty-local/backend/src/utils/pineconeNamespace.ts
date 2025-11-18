@@ -1,10 +1,28 @@
 /**
  * Utility for determining the correct Pinecone namespace based on environment and configuration
+ *
+ * ENVIRONMENT ISOLATION:
+ * Each environment (production, staging, localhost) uses prefixed namespaces to prevent data bleed.
+ * Set GKCHATTY_ENV to: 'prod', 'staging', or 'local'
  */
 
 import { getLogger } from './logger';
 
 const log = getLogger('pineconeNamespace');
+
+/**
+ * Gets the environment prefix for namespace isolation
+ * Prevents cross-environment data bleed between prod/staging/localhost
+ */
+function getEnvironmentPrefix(): string {
+  const env = process.env.GKCHATTY_ENV || process.env.NODE_ENV || 'local';
+
+  // Normalize environment names
+  if (env === 'production') return 'prod';
+  if (env === 'development') return 'local';
+
+  return env; // 'prod', 'staging', 'local', or custom
+}
 
 /**
  * Determines the correct Pinecone namespace to use based on:
@@ -69,19 +87,39 @@ export function getPineconeNamespace(
 
 /**
  * Gets the namespace for system/tenant KB queries
+ * Uses environment prefix for isolation between prod/staging/local
  */
 export function getSystemKbNamespace(): string {
-  return getPineconeNamespace(undefined, 'system');
+  const baseNamespace = getPineconeNamespace(undefined, 'system');
+  const envPrefix = getEnvironmentPrefix();
+
+  // For production index with default namespace, add environment prefix
+  if (baseNamespace === '') {
+    const namespace = `${envPrefix}-system-kb`;
+    log.debug({ envPrefix, namespace }, '[Namespace] Using environment-prefixed system namespace');
+    return namespace;
+  }
+
+  // For non-production, prefix the existing namespace
+  const namespace = `${envPrefix}-${baseNamespace}`;
+  log.debug({ envPrefix, baseNamespace, namespace }, '[Namespace] Using environment-prefixed system namespace');
+  return namespace;
 }
 
 /**
  * Gets the namespace for user document queries
+ * Uses environment prefix for isolation between prod/staging/local
  * @param userId - The user ID to create namespace for
  */
 export function getUserNamespace(userId: string): string {
-  // For production, user docs might also be in default namespace with metadata filtering
-  if (process.env.PINECONE_INDEX_NAME === 'gkchatty-prod') {
-    return '';
-  }
-  return `user-${userId}`;
+  const envPrefix = getEnvironmentPrefix();
+  const namespace = `${envPrefix}-user-${userId}`;
+
+  log.debug({ envPrefix, userId, namespace }, '[Namespace] Using environment-prefixed user namespace');
+  return namespace;
 }
+
+/**
+ * Gets the environment prefix (exported for use in cleanup scripts)
+ */
+export { getEnvironmentPrefix };
