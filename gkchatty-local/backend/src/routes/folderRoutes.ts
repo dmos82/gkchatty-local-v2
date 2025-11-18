@@ -6,6 +6,7 @@ import {
   renameItem,
   moveItems,
   deleteItems,
+  updateFolderPermissions,
 } from '../controllers/folderController';
 
 const router = express.Router();
@@ -27,5 +28,8 @@ router.post('/move', moveItems);
 
 // Delete items
 router.post('/delete', deleteItems);
+
+// Update folder permissions (admin only)
+router.patch('/:folderId/permissions', updateFolderPermissions);
 
 export default router;

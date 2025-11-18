@@ -5,6 +5,7 @@ import { UserDocument } from '../models/UserDocument';
 import { SystemKbDocument } from '../models/SystemKbDocument';
 import { getSystemKbNamespace, getUserNamespace } from '../utils/pineconeNamespace';
 import { escapeRegExp } from '../utils/regexEscape';
+import { getAccessibleFolderIds } from '../utils/folderPermissionHelper';
 
 const log = getLogger('ragService');
 
@@ -16,6 +17,7 @@ const KWD_BOOST_FACTOR = 1.5;
 interface SearchOptions {
   knowledgeBaseTarget?: 'unified' | 'user' | 'system' | 'kb';
   tenantKbId?: string;
+  userRole?: string; // SECURITY: User's role for permission checks
 }
 
 async function getContext(
@@ -72,25 +74,52 @@ async function getContext(
   log.debug('[DIAGNOSTIC] getRelevantContext started.');
   log.debug(`[DIAGNOSTIC] knowledgeBaseTarget: ${knowledgeBaseTarget}`);
 
+  // SECURITY: Get accessible folders for the user
+  const { userRole = 'user' } = options;
+  const isAdmin = userRole === 'admin';
+  let accessibleFolderIds: string[] = [];
+
   // Process System KB content search
   if (
     knowledgeBaseTarget === 'unified' ||
     knowledgeBaseTarget === 'system' ||
     knowledgeBaseTarget === 'kb'
   ) {
+    // SECURITY: Get folders user has access to
+    accessibleFolderIds = await getAccessibleFolderIds(userId, isAdmin);
+
+    log.debug(
+      {
+        userId,
+        isAdmin,
+        accessibleFolderCount: accessibleFolderIds.length,
+        knowledgeBaseTarget,
+      },
+      '[RAG Service - SECURITY] Retrieved accessible folders for user'
+    );
+
     // In 'kb' or 'system' mode, we search ONLY System KB documents
     // In 'unified' mode, we search System KB AND user documents
     try {
-      const systemKeywordDocs = await SystemKbDocument.find({
+      // SECURITY FIX: Filter by accessible folders
+      // Documents can be in accessible folders OR have no folder (root level)
+      const folderQuery: any = {
         originalFileName: { $regex: escapedQuery, $options: 'i' },
-      })
+        $or: [
+          { folderId: { $in: accessibleFolderIds } }, // In accessible folder
+          { folderId: null }, // Or at root level (no folder)
+          { folderId: { $exists: false } }, // Or folderId field doesn't exist
+        ],
+      };
+
+      const systemKeywordDocs = await SystemKbDocument.find(folderQuery)
         .select('_id')
         .limit(KEYWORD_SEARCH_LIMIT)
         .lean();
       systemKeywordDocIds = systemKeywordDocs.map(doc => doc._id.toString());
       log.debug(
-        { count: systemKeywordDocIds.length },
-        '[RAG Service] System KB keyword matches found'
+        { count: systemKeywordDocIds.length, accessibleFolders: accessibleFolderIds.length },
+        '[RAG Service - SECURITY] System KB keyword matches found (filtered by permissions)'
       );
     } catch (e) {
       log.error(e, '[RAG Service] System KB keyword search failed');

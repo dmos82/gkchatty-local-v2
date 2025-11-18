@@ -5,6 +5,7 @@ import {
   renameSystemItem,
   moveSystemItems,
   deleteSystemItems,
+  updateSystemFolderPermissions,
 } from '../controllers/systemFolderController';
 import { protect, checkSession } from '../middleware/authMiddleware';
 
@@ -27,5 +28,13 @@ router.post('/move', protect, checkSession, moveSystemItems);
 
 // Delete system items
 router.post('/delete', protect, checkSession, deleteSystemItems);
+
+// Update system folder permissions (admin only)
+router.patch('/:folderId/permissions', (req, res, next) => {
+  console.log('[systemFolderRoutes] ROUTE MATCHED - URL:', req.url);
+  console.log('[systemFolderRoutes] ROUTE MATCHED - params:', JSON.stringify(req.params));
+  console.log('[systemFolderRoutes] ROUTE MATCHED - folderId extracted:', req.params.folderId);
+  next();
+}, protect, checkSession, updateSystemFolderPermissions);
 
 export default router;

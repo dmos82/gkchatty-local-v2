@@ -6,6 +6,10 @@ export interface IFolder extends Document {
   knowledgeBaseId?: mongoose.Types.ObjectId;
   path: string;
   ownerId: mongoose.Types.ObjectId;
+  permissions: {
+    type: 'all' | 'admin' | 'specific-users';
+    allowedUsers?: mongoose.Types.ObjectId[];
+  };
   createdAt: Date;
   updatedAt: Date;
   buildPath(): Promise<string>;
@@ -38,6 +42,18 @@ const folderSchema = new Schema<IFolder>(
       ref: 'User',
       required: true,
       index: true,
+    },
+    permissions: {
+      type: {
+        type: String,
+        enum: ['all', 'admin', 'specific-users'],
+        default: 'all',
+      },
+      allowedUsers: {
+        type: [Schema.Types.ObjectId],
+        ref: 'User',
+        default: undefined,
+      },
     },
   },
   {

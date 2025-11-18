@@ -8,6 +8,7 @@ import {
   updateOwnSettings,
   uploadOwnIcon,
 } from '../controllers/userSettingsController';
+import { getAllUsers } from '../controllers/userController';
 // import {
 //   getUserAccessibleKBs,
 //   toggleKBAccess,
@@ -126,6 +127,9 @@ router.put('/me/settings', protect, checkSession, authorizePersonaAccess, saniti
 // router.put('/knowledge-bases/:kbId/toggle', protect, checkSession, toggleKBAccess);
 // router.put('/knowledge-bases/preferences', protect, checkSession, updateKBPreferences);
 // router.post('/knowledge-bases/:kbId/track-usage', protect, checkSession, trackKBUsage);
+
+// GET /api/users - Get all users (admin only, for permission picker)
+router.get('/', protect, checkSession, getAllUsers);
 
 // POST /api/users/me/icon - Upload and set user's own icon
 router.post(

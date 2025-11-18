@@ -4,6 +4,10 @@ export interface ISystemFolder extends Document {
   name: string;
   parentId?: mongoose.Types.ObjectId | null;
   path: string;
+  permissions: {
+    type: 'all' | 'admin' | 'specific-users';
+    allowedUsers?: mongoose.Types.ObjectId[];
+  };
   metadata: {
     createdBy: mongoose.Types.ObjectId;
     createdAt: Date;
@@ -28,6 +32,18 @@ const systemFolderSchema = new Schema<ISystemFolder>(
       type: String,
       required: true,
       index: true,
+    },
+    permissions: {
+      type: {
+        type: String,
+        enum: ['all', 'admin', 'specific-users'],
+        default: 'admin', // System folders default to admin-only
+      },
+      allowedUsers: {
+        type: [Schema.Types.ObjectId],
+        ref: 'User',
+        default: undefined,
+      },
     },
     metadata: {
       createdBy: {

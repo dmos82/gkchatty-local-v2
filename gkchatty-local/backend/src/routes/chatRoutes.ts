@@ -238,8 +238,12 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
   );
 
   try {
+    // SECURITY: Pass user role for folder permission checks
+    const userRole = req.user?.role || 'user';
+
     const finalSourcesForLlm = await getContext(sanitizedQuery, userId.toString(), {
       knowledgeBaseTarget,
+      userRole, // Pass role for permission filtering
     });
 
     // Debug log to check what sources we got from RAG service

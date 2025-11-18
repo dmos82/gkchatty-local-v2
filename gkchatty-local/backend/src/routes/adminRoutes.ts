@@ -607,9 +607,10 @@ router.delete('/system-kb/all', deleteAllSystemDocuments);
 // --- NEW: DOWNLOAD System KB Document ---
 router.get('/system-kb/download/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const adminUserId = req.user?._id;
+  const userId = req.user?._id;
+  const isAdmin = req.user?.role === 'admin';
 
-  logger.info({ documentId: id, adminUserId }, 'Request to download System KB document');
+  logger.info({ documentId: id, userId }, 'Request to download System KB document');
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({ success: false, message: 'Invalid document ID format.' });
@@ -617,12 +618,34 @@ router.get('/system-kb/download/:id', async (req: Request, res: Response) => {
 
   try {
     // Fetch the document metadata from SystemKbDocument collection
-    const document = await SystemKbDocument.findById(id).select('filename s3Key fileUrl');
+    const document = await SystemKbDocument.findById(id).select('filename s3Key fileUrl folderId');
 
     if (!document) {
       logger.warn({ documentId: id }, 'System KB document not found');
       return res.status(404).json({ success: false, message: 'System document not found.' });
     }
+
+    // PERMISSION CHECK: Verify user has access to this document's folder
+    if (document.folderId) {
+      const { hasAccessToFolder } = await import('../utils/folderPermissionHelper');
+      const hasAccess = await hasAccessToFolder(
+        userId.toString(),
+        isAdmin,
+        document.folderId.toString()
+      );
+
+      if (!hasAccess) {
+        logger.warn(
+          { documentId: id, userId, folderId: document.folderId },
+          'User denied access to document - insufficient folder permissions'
+        );
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You do not have permission to access this document.',
+        });
+      }
+    }
+    // Documents at root level (no folderId) are accessible to all authenticated users
 
     // Determine storage mode
     const useS3 = isS3Storage();

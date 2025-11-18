@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { 
-  ChevronRight, 
-  ChevronDown, 
-  Folder, 
-  FolderOpen, 
-  File, 
-  Upload, 
-  Plus, 
+import {
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  File,
+  Upload,
+  Plus,
   Trash2,
   Grid3x3,
   List,
@@ -22,7 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -42,6 +42,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import useFileTreeStore, { FileNode } from '@/stores/fileTreeStore';
 import { PdfViewer } from '@/components/common/PdfViewer';
+import FolderContextMenu from './FolderContextMenu';
+import FolderPermissionsModal from './FolderPermissionsModal';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 interface FileTreeManagerProps {
   mode?: 'user' | 'system';
@@ -90,6 +93,11 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<string | null>(null);
   const [contextItem, setContextItem] = useState<FileNode | null>(null);
+
+  // Context menu and permissions states
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+  const [permissionsFolder, setPermissionsFolder] = useState<FileNode | null>(null);
   
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
@@ -214,13 +222,38 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
   // File upload handler
   const handleFileUpload = useCallback(async (files: FileList, folderId?: string | null) => {
     if (files.length === 0) return;
-    
+
     try {
-      await uploadFiles(files, folderId);
-      toast({
-        title: 'Success',
-        description: `${files.length} file(s) uploaded successfully`
-      });
+      const result = await uploadFiles(files, folderId);
+
+      // Check the result to show appropriate message
+      const uploaded = result?.uploadedDocuments?.length || 0;
+      const skipped = result?.skippedDocuments?.length || 0;
+      const errors = result?.errors?.length || 0;
+
+      if (uploaded > 0) {
+        let description = `${uploaded} file(s) uploaded successfully`;
+        if (skipped > 0) {
+          description += `, ${skipped} skipped (duplicates)`;
+        }
+        toast({
+          title: 'Upload Complete',
+          description
+        });
+      } else if (skipped > 0) {
+        toast({
+          title: 'Files Skipped',
+          description: `${skipped} file(s) skipped - files with same names already exist`,
+          variant: 'default'
+        });
+      } else if (errors > 0) {
+        toast({
+          title: 'Upload Failed',
+          description: `${errors} file(s) failed to upload`,
+          variant: 'destructive'
+        });
+      }
+
       // Refresh the tree to show newly uploaded files
       await fetchFileTree(selectedKnowledgeBase || undefined);
     } catch (error) {
@@ -400,6 +433,47 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
     }
   }, [selectedItems, contextItem, moveTarget, moveItems, toast]);
 
+  // Permission save handler
+  const handleSavePermissions = useCallback(async (folderId: string, permissionType: string, allowedUsers?: string[]) => {
+    try {
+      const endpoint = mode === 'system'
+        ? `/api/admin/system-folders/${folderId}/permissions`
+        : `/api/folders/${folderId}/permissions`;
+
+      console.log('[FileTreeManager] Saving permissions:', { folderId, permissionType, allowedUsers });
+
+      const response = await fetchWithAuth(endpoint, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          permissionType,
+          allowedUsers: permissionType === 'specific-users' ? allowedUsers : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update permissions');
+      }
+
+      toast({
+        title: 'Success',
+        description: 'Folder permissions updated successfully',
+      });
+
+      // Refresh the tree to reflect permission changes
+      fetchFileTree();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update folder permissions',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [mode, toast, fetchFileTree]);
+
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, node: FileNode) => {
     setIsDragging(true);
@@ -457,6 +531,11 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
       // Handle external file drop
       const files = e.dataTransfer.files;
       console.log(`[FileTreeManager] Dropped ${files.length} file(s) from OS`);
+
+      // Log each file name and size
+      Array.from(files).forEach((file, index) => {
+        console.log(`[FileTreeManager]   File ${index + 1}: ${file.name} (${file.size} bytes, ${file.type})`);
+      });
 
       // If dropping on a folder, use that folder's ID, otherwise use null for root
       const targetFolderId = targetNode?.type === 'folder' ? targetNode._id : null;
@@ -549,6 +628,10 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
             if (!selectedItems.has(node._id)) {
               clearSelection();
               selectItem(node._id, false);
+            }
+            // Show context menu for folders
+            if (node.type === 'folder') {
+              setContextMenuPosition({ x: e.clientX, y: e.clientY });
             }
           }}
           draggable
@@ -1090,6 +1173,45 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           filename={viewingPdf.name}
           type={mode}
           onClose={() => setViewingPdf(null)}
+        />
+      )}
+
+      {/* Context Menu */}
+      {contextMenuPosition && contextItem && contextItem.type === 'folder' && (
+        <FolderContextMenu
+          x={contextMenuPosition.x}
+          y={contextMenuPosition.y}
+          folderId={contextItem._id}
+          folderName={contextItem.name}
+          isSystemFolder={mode === 'system'}
+          onClose={() => setContextMenuPosition(null)}
+          onRename={(folderId) => {
+            setRenameValue(contextItem.name);
+            setIsRenameOpen(true);
+          }}
+          onDelete={(folderId) => {
+            handleDelete();
+          }}
+          onPermissions={(folderId) => {
+            setPermissionsFolder(contextItem);
+            setIsPermissionsModalOpen(true);
+          }}
+        />
+      )}
+
+      {/* Permissions Modal */}
+      {isPermissionsModalOpen && permissionsFolder && (
+        <FolderPermissionsModal
+          isOpen={isPermissionsModalOpen}
+          onClose={() => {
+            setIsPermissionsModalOpen(false);
+            setPermissionsFolder(null);
+          }}
+          folderId={permissionsFolder._id}
+          folderName={permissionsFolder.name}
+          isSystemFolder={mode === 'system'}
+          currentPermissions={permissionsFolder.permissions}
+          onSave={handleSavePermissions}
         />
       )}
     </div>

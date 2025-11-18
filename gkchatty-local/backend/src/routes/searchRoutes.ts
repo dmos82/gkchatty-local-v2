@@ -5,6 +5,7 @@ import { protect, checkSession } from '../middleware/authMiddleware'; // Import 
 import mongoose from 'mongoose';
 import { getLogger } from '../utils/logger';
 import { getContext } from '../services/ragService';
+import { getAccessibleFolderIds } from '../utils/folderPermissionHelper';
 
 const router: Router = express.Router();
 const logger = getLogger('searchRoutes');
@@ -36,6 +37,20 @@ router.get(
     try {
       logger.info({ userId: req.user._id, searchQuery }, 'Filename search initiated');
 
+      // SECURITY: Get accessible folders for the user
+      const userRole = req.user?.role || 'user';
+      const isAdmin = userRole === 'admin';
+      const accessibleFolderIds = await getAccessibleFolderIds(req.user._id.toString(), isAdmin);
+
+      logger.debug(
+        {
+          userId: req.user._id,
+          isAdmin,
+          accessibleFolderCount: accessibleFolderIds.length,
+        },
+        '[Search Routes - SECURITY] Retrieved accessible folders for filename search'
+      );
+
       // Search User Documents
       const userDocuments = await UserDocument.find(
         {
@@ -50,10 +65,16 @@ router.get(
         .limit(10) // Limit user results
         .lean(); // Use lean for performance
 
-      // Search System KB Documents (available to all users)
+      // SECURITY FIX: Search System KB Documents with folder permission filtering
       const systemDocuments = await SystemKbDocument.find(
         {
           $text: { $search: searchQuery },
+          // Filter by accessible folders OR root level
+          $or: [
+            { folderId: { $in: accessibleFolderIds } }, // In accessible folder
+            { folderId: null }, // Or at root level (no folder)
+            { folderId: { $exists: false } }, // Or folderId field doesn't exist
+          ],
         },
         { score: { $meta: 'textScore' } } // Project relevance score
       )

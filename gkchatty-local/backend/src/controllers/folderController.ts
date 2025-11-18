@@ -207,7 +207,38 @@ export const getFolderTree = async (req: Request, res: Response) => {
       })) as unknown as Record<string, unknown>[];
     }
 
-    const folders = await Folder.find(folderQuery).sort({ name: 1 });
+    // Fetch all folders first
+    let folders = await Folder.find(folderQuery).sort({ name: 1 });
+
+    // Filter folders based on permissions
+    folders = folders.filter(folder => {
+      // If user is admin, they can see all folders
+      if (isAdmin) {
+        return true;
+      }
+
+      // Check folder permissions
+      const permissions = folder.permissions || { type: 'all' }; // Default to 'all' for backward compatibility
+
+      if (permissions.type === 'all') {
+        return true; // Everyone can see
+      }
+
+      if (permissions.type === 'admin') {
+        return false; // Non-admin users can't see admin-only folders
+      }
+
+      if (permissions.type === 'specific-users') {
+        // Check if user is in allowed list
+        const allowedUsers = permissions.allowedUsers || [];
+        return allowedUsers.some(allowedUserId =>
+          allowedUserId.toString() === userId.toString()
+        );
+      }
+
+      return false; // Default to deny access
+    });
+
     const tree = buildTree(folders, documents);
 
     return res.json({
@@ -559,6 +590,85 @@ export const deleteItems = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to delete items',
+    });
+  }
+};
+
+// Update folder permissions
+export const updateFolderPermissions = async (req: Request, res: Response) => {
+  try {
+    const { folderId } = req.params;
+    const { permissionType, allowedUsers } = req.body;
+    const userId = req.user?._id;
+    const userRole = req.user?.role;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Only admins can update permissions
+    if (userRole !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can update folder permissions'
+      });
+    }
+
+    // Validate permission type
+    const validTypes = ['all', 'admin', 'specific-users'];
+    if (!validTypes.includes(permissionType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid permission type. Must be one of: all, admin, specific-users'
+      });
+    }
+
+    // If specific-users, validate allowedUsers array
+    if (permissionType === 'specific-users') {
+      if (!allowedUsers || !Array.isArray(allowedUsers) || allowedUsers.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'allowedUsers array is required when permission type is specific-users'
+        });
+      }
+
+      // TODO: Validate that all user IDs exist in database
+      // This would require importing User model and checking each ID
+    }
+
+    // Find and update the folder
+    const folder = await Folder.findById(folderId);
+
+    if (!folder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Folder not found'
+      });
+    }
+
+    // Update permissions
+    folder.permissions = {
+      type: permissionType as 'all' | 'admin' | 'specific-users',
+      allowedUsers: permissionType === 'specific-users' ? allowedUsers : undefined,
+    };
+
+    await folder.save();
+
+    log.info(`Permissions updated for folder ${folderId} by user ${userId}`);
+
+    return res.json({
+      success: true,
+      folder: {
+        _id: folder._id,
+        name: folder.name,
+        permissions: folder.permissions,
+      },
+    });
+  } catch (error: unknown) {
+    log.error('Error updating folder permissions:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update folder permissions',
     });
   }
 };
