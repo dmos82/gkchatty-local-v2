@@ -4,8 +4,8 @@
   # Base directory where the frontend code lives
   base = "gkchatty-local/frontend"
 
-  # Build command (Next.js build)
-  command = "npm run build"
+  # Build command (install dependencies + build)
+  command = "npm install && npm run build"
 
   # Directory to publish (Next.js output)
   publish = ".next"
@@ -22,7 +22,7 @@
 
 # Production deployment from local-ollama-dev branch
 [context.production]
-  command = "npm run build"
+  command = "npm install && npm run build"
 
 [context.production.environment]
   NODE_ENV = "production"
