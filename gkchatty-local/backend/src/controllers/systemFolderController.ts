@@ -16,6 +16,10 @@ interface FolderNode {
   uploadTimestamp?: string;
   path?: string;
   s3Key?: string;
+  permissions?: {
+    type: 'all' | 'admin' | 'specific-users';
+    allowedUsers?: string[];
+  };
 }
 
 // Build tree structure from flat data
@@ -39,6 +43,10 @@ const buildTree = (folders: ISystemFolder[], documents: Record<string, unknown>[
       parentId: folder.parentId?.toString() || null,
       path: folder.path,
       children: [],
+      permissions: folder.permissions ? {
+        type: folder.permissions.type,
+        allowedUsers: folder.permissions.allowedUsers?.map(id => id.toString()) || []
+      } : undefined,
     };
     folderMap.set(node._id, node);
   });
@@ -62,6 +70,7 @@ const buildTree = (folders: ISystemFolder[], documents: Record<string, unknown>[
   // Add documents to their folders
   let docsWithFolder = 0;
   let docsWithoutFolder = 0;
+  let orphanedDocs = 0;
 
   documents.forEach(doc => {
     const fileName = doc.filename;
@@ -83,14 +92,22 @@ const buildTree = (folders: ISystemFolder[], documents: Record<string, unknown>[
     };
 
     if (node.parentId && folderMap.has(node.parentId)) {
+      // Document has a valid parent folder - add to that folder
       const parent = folderMap.get(node.parentId);
       if (parent && parent.children) {
         parent.children.push(node);
         docsWithFolder++;
       }
     } else if (!node.parentId) {
+      // Document has no folder - show at root
       rootFolders.push(node);
       docsWithoutFolder++;
+    } else {
+      // Document has parentId but folder doesn't exist (orphaned) - show at root
+      log.debug(`[buildTree] Warning: Orphaned document ${fileName} - folder ${node.parentId} not found`);
+      node.parentId = null; // Clear invalid parentId
+      rootFolders.push(node);
+      orphanedDocs++;
     }
   });
 
@@ -98,7 +115,9 @@ const buildTree = (folders: ISystemFolder[], documents: Record<string, unknown>[
     '[buildTree] Documents added - with folder:',
     docsWithFolder,
     'without folder:',
-    docsWithoutFolder
+    docsWithoutFolder,
+    'orphaned (auto-moved to root):',
+    orphanedDocs
   );
   log.debug('[buildTree] Final root items:', rootFolders.length);
 
@@ -136,15 +155,17 @@ export const getSystemFolderTree = async (req: Request, res: Response) => {
     const userId = req.user?._id;
     const isAdmin = req.user?.role === 'admin';
 
-    if (!userId || !isAdmin) {
-      return res.status(403).json({ success: false, message: 'Admin access required' });
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
     }
 
-    log.info('getSystemFolderTree - Admin user:', {
+    log.info('getSystemFolderTree - User:', {
       userId: userId?.toString(),
+      isAdmin,
     });
 
-    // Fetch system folders (no owner filter - all system folders)
+    // Fetch ALL system folders - visibility is not restricted
+    // Permission checks happen when user tries to access document content
     const folders = await SystemFolder.find({}).sort({ name: 1 });
 
     // Fetch system documents
@@ -442,6 +463,88 @@ export const deleteSystemItems = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to delete items',
+    });
+  }
+};
+
+// Update system folder permissions
+export const updateSystemFolderPermissions = async (req: Request, res: Response) => {
+  try {
+    console.log('[updateSystemFolderPermissions] CALLED - URL:', req.url);
+    console.log('[updateSystemFolderPermissions] CALLED - params:', JSON.stringify(req.params));
+    console.log('[updateSystemFolderPermissions] CALLED - body:', JSON.stringify(req.body));
+    const { folderId } = req.params;
+    console.log('[updateSystemFolderPermissions] folderId extracted:', folderId);
+    const { permissionType, allowedUsers } = req.body;
+    const userId = req.user?._id;
+    const userRole = req.user?.role;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Only admins can update system folder permissions
+    if (userRole !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can update system folder permissions'
+      });
+    }
+
+    // Validate permission type
+    const validTypes = ['all', 'admin', 'specific-users'];
+    if (!validTypes.includes(permissionType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid permission type. Must be one of: all, admin, specific-users'
+      });
+    }
+
+    // If specific-users, validate allowedUsers array
+    if (permissionType === 'specific-users') {
+      if (!allowedUsers || !Array.isArray(allowedUsers) || allowedUsers.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'allowedUsers array is required when permission type is specific-users'
+        });
+      }
+
+      // TODO: Validate that all user IDs exist in database
+    }
+
+    // Find and update the system folder
+    const folder = await SystemFolder.findById(folderId);
+
+    if (!folder) {
+      return res.status(404).json({
+        success: false,
+        message: 'System folder not found'
+      });
+    }
+
+    // Update permissions
+    folder.permissions = {
+      type: permissionType as 'all' | 'admin' | 'specific-users',
+      allowedUsers: permissionType === 'specific-users' ? allowedUsers : undefined,
+    };
+
+    await folder.save();
+
+    log.info(`System folder permissions updated for ${folderId} by user ${userId}`);
+
+    return res.json({
+      success: true,
+      folder: {
+        _id: folder._id,
+        name: folder.name,
+        permissions: folder.permissions,
+      },
+    });
+  } catch (error: unknown) {
+    log.error('Error updating system folder permissions:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update system folder permissions',
     });
   }
 };

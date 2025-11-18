@@ -68,6 +68,12 @@ export function PdfViewer({ documentId, filename, type, onClose }: PdfViewerProp
         if (!response.ok) {
           const errorText = await response.text();
           console.error('[PdfViewer] Fetch failed:', response.status, errorText.substring(0, 150));
+
+          // Handle 403 Forbidden specially - user doesn't have permission
+          if (response.status === 403) {
+            throw new Error('Access Denied: You do not have permission to view this document.');
+          }
+
           throw new Error(`Failed to fetch PDF (${response.status}): ${errorText}`);
         }
 

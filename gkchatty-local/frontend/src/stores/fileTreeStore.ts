@@ -15,6 +15,10 @@ export interface FileNode {
   s3Key?: string;
   isExpanded?: boolean;
   knowledgeBaseId?: string;
+  permissions?: {
+    type: 'all' | 'admin' | 'specific-users';
+    allowedUsers?: string[];
+  };
 }
 
 export interface KnowledgeBase {
@@ -57,7 +61,12 @@ interface FileTreeState {
   deleteItems: (itemIds: string[]) => Promise<void>;
   moveItems: (itemIds: string[], targetFolderId: string | null) => Promise<void>;
   renameItem: (itemId: string, newName: string) => Promise<void>;
-  uploadFiles: (files: FileList, folderId?: string | null) => Promise<void>;
+  uploadFiles: (files: FileList, folderId?: string | null) => Promise<{
+    success: boolean;
+    uploadedDocuments?: any[];
+    skippedDocuments?: any[];
+    errors?: any[];
+  } | undefined>;
   fetchKnowledgeBases: () => Promise<void>;
 }
 
@@ -111,16 +120,18 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
       const kb = kbId || get().selectedKnowledgeBase;
 
       // Build endpoint based on mode
-      let endpoint = '/api/folders/tree';
+      let endpoint: string;
 
-      if (mode === 'user') {
-        // For user mode, explicitly request user documents
-        endpoint += '?sourceType=user';
-      } else if (kb) {
-        // For system mode with KB selection
-        endpoint += `?knowledgeBase=${kb}`;
+      if (mode === 'system') {
+        // For system mode, use system folders endpoint
+        endpoint = '/api/admin/system-folders/tree';
+        if (kb) {
+          endpoint += `?knowledgeBase=${kb}`;
+        }
+      } else {
+        // For user mode, use user folders endpoint
+        endpoint = '/api/folders/tree?sourceType=user';
       }
-      // For system mode without KB, use default (returns system docs for admins)
 
       console.log('[FileTreeStore] Fetching tree from:', endpoint, 'mode:', mode);
       const response = await fetchWithAuth(endpoint, {
@@ -175,7 +186,16 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
   createFolder: async (name: string, parentId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetchWithAuth('/api/folders', {
+      const mode = get().mode;
+
+      // Use the correct endpoint based on mode
+      const endpoint = mode === 'system'
+        ? '/api/admin/system-folders'
+        : '/api/folders';
+
+      console.log('[FileTreeStore] Creating folder in mode:', mode, 'endpoint:', endpoint);
+
+      const response = await fetchWithAuth(endpoint, {
         method: 'POST',
         body: JSON.stringify({
           name,
@@ -185,10 +205,13 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[FileTreeStore] Create folder failed:', response.status, errorText);
         throw new Error(`Failed to create folder: ${response.statusText}`);
       }
 
       const newFolder = await response.json();
+      console.log('[FileTreeStore] Folder created successfully:', newFolder);
 
       // Store current expanded folders before refresh
       const currentExpanded = new Set(get().expandedFolders);
@@ -208,6 +231,7 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
     } catch (error: any) {
       set({ error: error.message });
       console.error('Failed to create folder:', error);
+      throw error; // Re-throw so UI can show error
     } finally {
       set({ isLoading: false });
     }
@@ -216,21 +240,33 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
   deleteItems: async (itemIds: string[]) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetchWithAuth('/api/folders/delete', {
+      const mode = get().mode;
+
+      // Use the correct endpoint based on mode
+      const endpoint = mode === 'system'
+        ? '/api/admin/system-folders/delete'
+        : '/api/folders/delete';
+
+      console.log('[FileTreeStore] Deleting items in mode:', mode, 'endpoint:', endpoint);
+
+      const response = await fetchWithAuth(endpoint, {
         method: 'POST',
         body: JSON.stringify({ itemIds })
       });
-      
+
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[FileTreeStore] Delete failed:', response.status, errorText);
         throw new Error(`Failed to delete items: ${response.statusText}`);
       }
-      
+
       // Clear selection and refresh
       set({ selectedItems: new Set<string>() });
       await get().fetchFileTree();
     } catch (error: any) {
       set({ error: error.message });
       console.error('Failed to delete items:', error);
+      throw error;
     } finally {
       set({ isLoading: false });
     }
@@ -239,12 +275,23 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
   moveItems: async (itemIds: string[], targetFolderId: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetchWithAuth('/api/folders/move', {
+      const mode = get().mode;
+
+      // Use the correct endpoint based on mode
+      const endpoint = mode === 'system'
+        ? '/api/admin/system-folders/move'
+        : '/api/folders/move';
+
+      console.log('[FileTreeStore] Moving items in mode:', mode, 'endpoint:', endpoint);
+
+      const response = await fetchWithAuth(endpoint, {
         method: 'POST',
         body: JSON.stringify({ itemIds, targetFolderId })
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[FileTreeStore] Move failed:', response.status, errorText);
         throw new Error(`Failed to move items: ${response.statusText}`);
       }
 
@@ -265,6 +312,7 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
     } catch (error: any) {
       set({ error: error.message });
       console.error('Failed to move items:', error);
+      throw error;
     } finally {
       set({ isLoading: false });
     }
@@ -273,19 +321,31 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
   renameItem: async (itemId: string, newName: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetchWithAuth(`/api/folders/${itemId}/rename`, {
+      const mode = get().mode;
+
+      // Use the correct endpoint based on mode
+      const endpoint = mode === 'system'
+        ? `/api/admin/system-folders/${itemId}/rename`
+        : `/api/folders/${itemId}/rename`;
+
+      console.log('[FileTreeStore] Renaming item in mode:', mode, 'endpoint:', endpoint);
+
+      const response = await fetchWithAuth(endpoint, {
         method: 'PATCH',
         body: JSON.stringify({ name: newName })
       });
-      
+
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[FileTreeStore] Rename failed:', response.status, errorText);
         throw new Error(`Failed to rename item: ${response.statusText}`);
       }
-      
+
       await get().fetchFileTree();
     } catch (error: any) {
       set({ error: error.message });
       console.error('Failed to rename item:', error);
+      throw error;
     } finally {
       set({ isLoading: false });
     }
@@ -301,7 +361,11 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
       if (mode === 'system') {
         // System KB upload (existing behavior)
         const formData = new FormData();
-        Array.from(files).forEach(file => {
+        const filesArray = Array.from(files);
+
+        console.log('[FileTreeStore] SYSTEM MODE UPLOAD - Total files:', filesArray.length);
+        filesArray.forEach((file, index) => {
+          console.log(`[FileTreeStore] Adding file ${index + 1}/${filesArray.length}: ${file.name} (${file.size} bytes)`);
           formData.append('files', file);
         });
 
@@ -338,6 +402,9 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
 
         const uploadResult = await response.json();
         console.log('[FileTreeStore] Upload result:', uploadResult);
+
+        // Return the result so caller can show appropriate message
+        return uploadResult;
       } else {
         // User documents upload (use existing user upload flow)
         for (const file of Array.from(files)) {
@@ -387,6 +454,9 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
             throw new Error(`Failed to process file: ${processResponse.status}`);
           }
         }
+
+        // Return success for user mode
+        return { success: true, uploadedDocuments: Array.from(files).map(f => ({ filename: f.name })) };
       }
 
       // Wait a bit for backend processing then refresh
