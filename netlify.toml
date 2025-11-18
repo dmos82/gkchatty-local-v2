@@ -5,7 +5,7 @@
   base = "gkchatty-local/frontend"
 
   # Build command (install dependencies + build)
-  command = "npm install && npm run build"
+  command = "npm install -g pnpm@8.15.0 && pnpm install && pnpm run build"
 
   # Directory to publish (Next.js output)
   publish = ".next"
@@ -22,7 +22,7 @@
 
 # Production deployment from local-ollama-dev branch
 [context.production]
-  command = "npm install && npm run build"
+  command = "npm install -g pnpm@8.15.0 && pnpm install && pnpm run build"
 
 [context.production.environment]
   NODE_ENV = "production"
