@@ -1,12 +1,51 @@
+# Netlify Configuration for GKChatty Local Frontend
+# This site deploys from packages/web but the actual source is in gkchatty-local/frontend
+
 [build]
-  command = "pnpm install && pnpm build"
+  # Build from gkchatty-local/frontend directory
+  base = "gkchatty-local/frontend"
+
+  # Build command (Next.js build)
+  command = "npm run build"
+
+  # Directory to publish (Next.js output - relative to base)
   publish = ".next"
 
+[build.environment]
+  # Node version
+  NODE_VERSION = "18"
+
+  # Disable Husky in CI (prevents build failures)
+  HUSKY = "0"
+
+  # Next.js environment
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Production deployment from local-ollama-dev branch
+[context.production]
+  command = "npm run build"
+
+[context.production.environment]
+  NODE_ENV = "production"
+
+# Branch-specific settings for local-ollama-dev
+[context.local-ollama-dev]
+  command = "npm run build"
+
+# Redirect API requests to backend (if needed)
 [[redirects]]
   from = "/api/*"
   to = "https://staging-gk-chatty.onrender.com/api/:splat"
   status = 200
   force = true
+
+# Headers for security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
 
 [[headers]]
   for = "/api/*"
