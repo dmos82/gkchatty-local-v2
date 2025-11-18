@@ -47,13 +47,13 @@ export function LoginForm() {
   return (
     <div className="w-full flex flex-col items-center">
       {/* GK Circle Logo - replacing LOGIN text */}
-      <div className="mb-16">
+      <div className="mb-8">
         <div
           className="rounded-full overflow-hidden"
           style={{
-            width: '230px',
-            height: '230px',
-            boxShadow: '0 0 40px 15px rgba(255, 221, 0, 0.6), 0 0 80px 30px rgba(255, 221, 0, 0.3)'
+            width: '160px',
+            height: '160px',
+            boxShadow: '0 0 30px 10px rgba(255, 221, 0, 0.5), 0 0 60px 20px rgba(255, 221, 0, 0.2)'
           }}
         >
           <img
@@ -64,7 +64,7 @@ export function LoginForm() {
         </div>
       </div>
 
-      <form onSubmit={handleLogin} className="w-full flex flex-col gap-6">
+      <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
         {/* Username input - Figma design */}
         <input
           id="login-username"
@@ -75,11 +75,9 @@ export function LoginForm() {
           required
           disabled={isSubmitting}
           autoComplete="off"
-          className="w-full h-12 px-4 bg-transparent border border-[#B9B9B9] rounded-[5px] text-white placeholder-[#808080] focus:outline-none focus:border-white transition-colors"
+          className="w-full h-10 px-3 bg-transparent border border-[#B9B9B9] rounded-[5px] text-white placeholder-[#808080] focus:outline-none focus:border-white transition-colors text-sm"
           style={{
-            fontFamily: 'M PLUS 2, sans-serif',
-            fontSize: '16px',
-            fontWeight: 400
+            fontFamily: 'M PLUS 2, sans-serif'
           }}
         />
 
@@ -93,11 +91,9 @@ export function LoginForm() {
           required
           disabled={isSubmitting}
           autoComplete="new-password"
-          className="w-full h-12 px-4 bg-transparent border border-[#B9B9B9] rounded-[5px] text-white placeholder-[#808080] focus:outline-none focus:border-white transition-colors"
+          className="w-full h-10 px-3 bg-transparent border border-[#B9B9B9] rounded-[5px] text-white placeholder-[#808080] focus:outline-none focus:border-white transition-colors text-sm"
           style={{
-            fontFamily: 'M PLUS 2, sans-serif',
-            fontSize: '16px',
-            fontWeight: 400
+            fontFamily: 'M PLUS 2, sans-serif'
           }}
         />
 
@@ -109,7 +105,7 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full h-12 rounded-[5px] transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="w-full h-10 rounded-[5px] transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{
             backgroundColor: '#EAA221',
             color: '#252525',
