@@ -2,7 +2,7 @@ import 'dotenv/config';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { pipeline, Pipeline } from '@xenova/transformers';
+import { pipeline, FeatureExtractionPipeline } from '@xenova/transformers';
 import { getLogger } from '../logger';
 
 const log = getLogger('embeddingService');
@@ -13,7 +13,7 @@ const GKCHATTY_HOME = process.env.GKCHATTY_HOME || path.join(os.homedir(), '.gkc
 const MODELS_PATH = path.join(GKCHATTY_HOME, 'data', 'models');
 const DEFAULT_MODEL = process.env.EMBEDDING_MODEL || 'Xenova/all-MiniLM-L6-v2';
 
-let embeddingPipeline: Pipeline | null = null;
+let embeddingPipeline: FeatureExtractionPipeline | null = null;
 let currentModel = DEFAULT_MODEL;
 
 /**

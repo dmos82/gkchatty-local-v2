@@ -45,6 +45,7 @@ import { PdfViewer } from '@/components/common/PdfViewer';
 
 interface FileTreeManagerProps {
   mode?: 'user' | 'system';
+  isActive?: boolean;
 }
 
 const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) => {

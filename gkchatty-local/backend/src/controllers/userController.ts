@@ -1,6 +1,5 @@
 import { Response, RequestHandler } from 'express';
-import * as asyncHandlerModule from 'express-async-handler';
-const asyncHandler = asyncHandlerModule.default || asyncHandlerModule;
+import asyncHandler from 'express-async-handler';
 import { RequestWithUser } from '../middleware/authMiddleware'; // Import the custom request type
 
 // @desc    Get user profile

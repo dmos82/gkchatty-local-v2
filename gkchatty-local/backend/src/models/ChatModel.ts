@@ -21,6 +21,7 @@ interface IChatMessage {
       total: number;
     };
     cost: number;
+    modelUsed?: string; // Track which AI model generated the response
   };
 }
 

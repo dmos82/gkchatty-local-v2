@@ -1,11 +1,12 @@
 [build]
-  base = "packages/web"
-  command = "pnpm install && pnpm build"
+  base = "gkchatty-local/frontend"
+  command = "npm install --ignore-scripts && npm run build"
   publish = ".next"
 
 [build.environment]
   NODE_VERSION = "20"
   NEXT_PUBLIC_API_BASE_URL = "https://staging-gk-chatty.onrender.com"
+  HUSKY = "0"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

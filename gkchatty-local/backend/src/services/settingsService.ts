@@ -12,21 +12,21 @@ interface OpenAIConfig {
   apiKey: string | null; // This will be the decrypted key
 }
 
-// Predefined list of allowed OpenAI models for validation (Updated January 2025)
+// Predefined list of allowed OpenAI models for validation
+// Tested and verified as of January 2025
+// See: backend/src/scripts/test-model-availability.ts for testing script
 export const ALLOWED_OPENAI_MODELS = [
-  // GPT-5 Series (Released August 2025)
-  'gpt-5', // GPT-5 flagship model
-  'gpt-5-mini', // GPT-5 mini - cost-effective version
-  'gpt-5-nano', // GPT-5 nano - ultra-fast, lowest cost
+  // GPT-5 Series (2025)
   'gpt-5-chat-latest', // Non-reasoning GPT-5 (ChatGPT default)
+  // Note: gpt-5, gpt-5-mini, gpt-5-nano require max_completion_tokens (reasoning models)
 
   // GPT-4.1 Series (2025)
   'gpt-4.1', // GPT-4.1 - specialized for coding
   'gpt-4.1-mini', // GPT-4.1 mini - improved instruction-following
 
-  // GPT-4o Series (2024-2025)
+  // GPT-4o Series (2024-2025) - RECOMMENDED
   'gpt-4o', // GPT-4 Omni - multimodal flagship
-  'gpt-4o-mini', // GPT-4o mini - cost-effective version
+  'gpt-4o-mini', // GPT-4o mini - cost-effective version (BEST FOR MOST QUERIES)
   'gpt-4o-2024-11-20', // Specific GPT-4o snapshot
   'gpt-4o-2024-08-06', // Previous GPT-4o snapshot
   'gpt-4o-mini-2024-07-18', // Specific GPT-4o-mini snapshot
@@ -35,11 +35,10 @@ export const ALLOWED_OPENAI_MODELS = [
   'gpt-4-turbo', // GPT-4 Turbo
   'gpt-4-turbo-2024-04-09', // Specific turbo snapshot
 
-  // O-Series Reasoning Models (2025)
-  'o3', // O3 reasoning model
-  'o3-mini', // O3 mini - fast reasoning
-  'o3-pro', // O3 pro - extended reasoning (Pro users)
-  'o4-mini', // O4 mini - optimized reasoning (latest)
+  // O-Series Reasoning Models - REMOVED
+  // These models require max_completion_tokens instead of max_tokens
+  // and are not compatible with current implementation
+  // 'o3', 'o3-mini', 'o3-pro', 'o4-mini'
 
   // GPT-3.5 Models (Legacy support)
   'gpt-3.5-turbo',

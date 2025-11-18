@@ -44,6 +44,7 @@ interface MessageProps {
     sources?: Source[];
     iconUrl?: string | null;
     knowledgeBaseTarget?: 'unified' | 'system' | 'user';
+    modelUsed?: string;
   };
   isGenerating: boolean;
   persona?: MessagePersona;
@@ -130,9 +131,16 @@ const ChatMessage: React.FC<MessageProps> = ({
           </div>
         )}
 
-        {/* Display name - only show for assistant messages */}
+        {/* Display name and model badge - only show for assistant messages */}
         {message.role === 'assistant' && (
-          <span className="text-xs text-gray-500 font-medium">{displayName}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 font-medium">{displayName}</span>
+            {message.modelUsed && (
+              <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
+                {message.modelUsed}
+              </span>
+            )}
+          </div>
         )}
       </div>
 

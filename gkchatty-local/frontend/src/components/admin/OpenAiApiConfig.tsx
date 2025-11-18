@@ -46,13 +46,30 @@ const OpenAiApiConfig: React.FC<OpenAiApiConfigProps> = () => {
 
   const { toast } = useToast();
 
-  // List of OpenAI models (will be replaced by API response)
+  // List of OpenAI models (tested and verified)
+  // See: backend/src/scripts/test-model-availability.ts
   const defaultModels = [
+    // GPT-5 Series
+    'gpt-5-chat-latest',
+
+    // GPT-4.1 Series
+    'gpt-4.1',
+    'gpt-4.1-mini',
+
+    // GPT-4o Series (RECOMMENDED)
     'gpt-4o',
-    'gpt-4o-mini',
+    'gpt-4o-mini', // BEST for most queries
+    'gpt-4o-2024-11-20',
+    'gpt-4o-2024-08-06',
+    'gpt-4o-mini-2024-07-18',
+
+    // GPT-4 Turbo
     'gpt-4-turbo',
-    'gpt-4',
+    'gpt-4-turbo-2024-04-09',
+
+    // GPT-3.5 (Legacy)
     'gpt-3.5-turbo',
+    'gpt-3.5-turbo-0125',
   ];
 
   // Fetch initial configuration

@@ -1,0 +1,51 @@
+# Environment Variables
+.env
+.env.backup.*
+
+# BUT DO commit templates
+!.env.cloud
+!.env.local
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build Output
+dist/
+build/
+.next/
+out/
+
+# Logs
+logs/
+*.log
+
+# Uploads
+backend/uploads/
+!backend/uploads/.gitkeep
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Backups (created by switch-mode.sh)
+*.backup.*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary
+tmp/
+temp/
+
+# Backup directories
+*-BACKUP-*/
+backup-*/
+pnpm-workspace.yaml
+pnpm-lock.yaml

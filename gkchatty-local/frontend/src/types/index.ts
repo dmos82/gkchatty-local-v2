@@ -25,6 +25,7 @@ export interface Message {
     total_tokens: number;
   } | null;
   cost?: number | null;
+  modelUsed?: string; // AI model that generated the response
 }
 
 // Frontend representation of a source
@@ -85,6 +86,7 @@ export interface ChatApiResponse {
     total_tokens: number;
   } | null;
   cost?: number | null;
+  modelUsed?: string; // AI model that generated the response
   chatId?: string; // Can be null/undefined for new chats initially
   persistenceError?: string; // Optional error message
   message?: string; // Optional general message from backend

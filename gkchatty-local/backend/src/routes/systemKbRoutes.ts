@@ -134,11 +134,11 @@ router.get(
       let document: any = await UserDocument.findOne({
         _id: new mongoose.Types.ObjectId(docId),
         sourceType: 'system',
-      }).select('s3Bucket s3Key originalFileName mimeType');
+      }).select('s3Bucket s3Key originalFileName mimeType folderId');
 
       if (!document) {
         const { SystemKbDocument } = await import('../models/SystemKbDocument');
-        document = await SystemKbDocument.findById(docId).select('s3Key filename mimeType');
+        document = await SystemKbDocument.findById(docId).select('s3Key filename mimeType folderId');
         if (document) {
           // Normalize field names to match legacy logic
           (document as any).originalFileName = document.filename;
@@ -158,6 +158,33 @@ router.get(
         logger.warn({ docId }, 'DB lookup failed - system document not found');
         return res.status(404).json({ success: false, message: 'System document not found.' });
       }
+
+      // --- FOLDER PERMISSION CHECK ---
+      // Check if user has access to the folder containing this document
+      if (document.folderId) {
+        const { hasAccessToFolder } = await import('../utils/folderPermissionHelper');
+        const isAdmin = req.user?.role === 'admin';
+
+        const hasAccess = await hasAccessToFolder(
+          userId.toString(),
+          isAdmin,
+          document.folderId.toString()
+        );
+
+        if (!hasAccess) {
+          logger.warn({
+            docId,
+            userId,
+            folderId: document.folderId
+          }, 'Access denied - user does not have permission to access this folder');
+
+          return res.status(403).json({
+            success: false,
+            message: 'Access denied. You do not have permission to access this document.',
+          });
+        }
+      }
+      // --- END FOLDER PERMISSION CHECK ---
 
       const isLocalStorage = process.env.AWS_BUCKET_NAME === 'local';
       if (

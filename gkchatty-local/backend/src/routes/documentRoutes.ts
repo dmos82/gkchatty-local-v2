@@ -28,6 +28,16 @@ const router: Router = express.Router();
 
 const log = getLogger('documentRoutes'); // Initialize logger
 
+// Type interface for RAG source results
+interface RAGSource {
+  text: string;
+  documentId: string;
+  fileName: string;
+  origin: string;
+  type?: string;
+  boostedScore: number;
+}
+
 // === ULTRA-EARLY DEBUG LOGGING FOR UPLOAD ROUTE ===
 // This runs for ALL routes under /api/documents
 router.use((req: Request, res: Response, next: NextFunction) => {
@@ -1091,7 +1101,8 @@ router.post('/chat', protect, checkSession, async (req: Request, res: Response) 
 
     if (sources && sources.length > 0) {
       // Sort sources by boosted score in descending order
-      sources.sort((a, b) => b.boostedScore - a.boostedScore);
+      const typedSources = sources as RAGSource[];
+      typedSources.sort((a, b) => b.boostedScore - a.boostedScore);
 
       // Concatenate text from relevant sources to form context, ensuring it doesn't exceed a reasonable length
       const MAX_CONTEXT_LENGTH = 3000; // Define a max context length
@@ -1099,7 +1110,7 @@ router.post('/chat', protect, checkSession, async (req: Request, res: Response) 
       const contextChunks: string[] = [];
       const usedSourceIds = new Set<string>(); // To track unique document IDs used in context
 
-      for (const source of sources) {
+      for (const source of typedSources) {
         if (source.text) {
           const chunkId = source.documentId; // Assuming documentId is unique per document
           if (!usedSourceIds.has(chunkId)) {
@@ -1189,7 +1200,7 @@ router.post('/chat', protect, checkSession, async (req: Request, res: Response) 
     // Ensure openaiResponse is not null before accessing properties
     const openaiResponse = await getChatCompletion(messages);
     const rawAssistantResponse = openaiResponse?.choices?.[0]?.message?.content;
-    const refusalReason = openaiResponse?.choices?.[0]?.message?.refusal || null; // Capture refusal reason
+    const refusalReason = (openaiResponse?.choices?.[0]?.message as any)?.refusal || null; // Capture refusal reason (not in all OpenAI types)
 
     // Validate assistant response content to prevent null/empty values
     let assistantResponse = '';
@@ -1214,13 +1225,13 @@ router.post('/chat', protect, checkSession, async (req: Request, res: Response) 
       role: 'assistant',
       content: assistantResponse,
       timestamp: new Date(),
-      sources: sources.map(s => ({
+      sources: (sources as RAGSource[]).map(s => ({
         documentId: s.documentId,
         fileName: s.fileName,
-        type: s.type,
+        type: s.type as 'user' | 'system',
         origin: s.origin,
       })),
-    });
+    } as IChatMessage);
     await chatSession.save();
 
     if (refusalReason) {
@@ -1242,7 +1253,7 @@ router.post('/chat', protect, checkSession, async (req: Request, res: Response) 
     return res.status(200).json({
       success: true,
       message: assistantResponse,
-      sources: sources.map(s => ({
+      sources: (sources as RAGSource[]).map(s => ({
         documentId: s.documentId,
         fileName: s.fileName,
         type: s.type,
@@ -1845,7 +1856,7 @@ router.delete('/:docId', protect, checkSession, handleDeleteDocument);
 // Final Error Handler (Keep original)
 router.use((err: unknown, req: Request, res: Response, next: NextFunction): void => {
   log.error('[Global Error Handler] Caught error:', err);
-  const statusCode = err.statusCode || 500;
+  const statusCode = (err as any)?.statusCode || 500;
   const message =
     err instanceof Error ? err.message : String(err) || 'An unexpected error occurred.';
   res.status(statusCode).json({
