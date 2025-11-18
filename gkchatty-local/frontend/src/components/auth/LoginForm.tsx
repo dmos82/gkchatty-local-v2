@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 
 export function LoginForm() {
@@ -57,13 +56,10 @@ export function LoginForm() {
             boxShadow: '0 0 40px 15px rgba(255, 221, 0, 0.6), 0 0 80px 30px rgba(255, 221, 0, 0.3)'
           }}
         >
-          <Image
+          <img
             src="/GKCIRCLELOGO.JPG"
             alt="GK Circle Logo"
-            width={230}
-            height={230}
-            priority
-            className="object-cover w-full h-full"
+            className="object-cover w-full h-full rounded-full"
           />
         </div>
       </div>
