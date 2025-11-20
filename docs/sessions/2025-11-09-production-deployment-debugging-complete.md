@@ -277,7 +277,7 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 
 **Database Connection String:**
 ```
-mongodb+srv://gkchatty_trueprod_app_user:hpU6PeRDkSv5AK4d@gkchatty-staging-cluste.2l9dc.mongodb.net/GKCHATTY-SANDBOX?retryWrites=true&w=majority&appName=gkchatty-staging-cluster
+mongodb+srv://gkchatty_trueprod_app_user:[REDACTED]@gkchatty-staging-cluste.2l9dc.mongodb.net/GKCHATTY-SANDBOX?retryWrites=true&w=majority&appName=gkchatty-staging-cluster
 ```
 
 **Health Check:**
@@ -526,7 +526,7 @@ curl -H "Authorization: Bearer $RENDER_API_KEY" \
 
 **Connection String:**
 ```
-mongodb+srv://gkchatty_trueprod_app_user:hpU6PeRDkSv5AK4d@gkchatty-staging-cluste.2l9dc.mongodb.net/GKCHATTY-SANDBOX?retryWrites=true&w=majority&appName=gkchatty-staging-cluster
+mongodb+srv://gkchatty_trueprod_app_user:[REDACTED]@gkchatty-staging-cluste.2l9dc.mongodb.net/GKCHATTY-SANDBOX?retryWrites=true&w=majority&appName=gkchatty-staging-cluster
 ```
 
 **Data Isolation:**
