@@ -1064,14 +1064,6 @@ export default function Home() {
                   <div
                     className={`max-w-[75%] rounded-lg px-4 py-2 shadow-sm border ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-card text-card-foreground'}`}
                   >
-                    {/* Model badge - show for assistant messages */}
-                    {msg.role === 'assistant' && msg.modelUsed && (
-                      <div className="mb-2">
-                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                          {msg.modelUsed}
-                        </span>
-                      </div>
-                    )}
                     <p className={`text-sm whitespace-pre-wrap ${msg._id.startsWith('progress-') ? 'thinking-glow' : ''}`}>{msg.content}</p>
                     {/* Sources */}
                     {msg.role === 'assistant' &&
@@ -1116,6 +1108,14 @@ export default function Home() {
                           </div>
                         );
                       })()}
+                    {/* Model badge - bottom right of message */}
+                    {msg.role === 'assistant' && msg.modelUsed && (
+                      <div className="flex justify-end mt-2">
+                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                          {msg.modelUsed}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
