@@ -17,6 +17,7 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 // import { pdfjs } from 'react-pdf'; // pdfjs likely not needed directly here if worker setup is removed
 // import { SessionProvider } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -51,6 +52,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname();
+
+  // Global cleanup: Remove stale Radix UI portal elements on route changes
+  // This prevents dialog overlays from persisting after navigation
+  useEffect(() => {
+    // Clean up any stale portal elements when route changes
+    if (typeof document !== 'undefined') {
+      const stalePortals = document.querySelectorAll('[data-radix-portal]');
+      stalePortals.forEach(portal => {
+        // Only remove if the portal doesn't have an active dialog inside
+        const hasOpenDialog = portal.querySelector('[data-state="open"]');
+        if (!hasOpenDialog) {
+          portal.remove();
+        }
+      });
+    }
+  }, [pathname]);
 
   return (
     <html lang="en" suppressHydrationWarning>

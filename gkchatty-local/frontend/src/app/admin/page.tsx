@@ -396,6 +396,21 @@ export default function AdminPage() {
   const [isAdminDragging, setIsAdminDragging] = useState(false);
   // --- END NEW: State for Drag & Drop on Admin Page ---
 
+  // --- Cleanup effect to prevent dialog overlay from persisting on navigation ---
+  useEffect(() => {
+    return () => {
+      // Close all dialogs when component unmounts
+      setIsDeleteDialogOpen(false);
+      setIsChangePasswordDialogOpen(false);
+      setIsCreateUserDialogOpen(false);
+      setIsAdminViewerOpen(false);
+      // Clean up any lingering Radix UI portal elements
+      if (typeof document !== 'undefined') {
+        document.querySelectorAll('[data-radix-portal]').forEach(el => el.remove());
+      }
+    };
+  }, []);
+
   // --- PDF Viewer State (Admin) ---
   const [adminPdfUrl, setAdminPdfUrl] = useState<string | null>(null);
   const [adminViewingDocName, setAdminViewingDocName] = useState<string>('');
