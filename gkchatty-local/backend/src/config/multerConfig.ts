@@ -77,7 +77,7 @@ const iconUpload = multer({
   storage: storage,
   fileFilter: imageFileFilter,
   limits: {
-    fileSize: 3 * 1024 * 1024, // 3 MB limit for icons (50% increase from 2MB)
+    fileSize: 10 * 1024 * 1024, // 10 MB limit for icons
   },
 });
 

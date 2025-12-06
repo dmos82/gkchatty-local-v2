@@ -10,9 +10,10 @@ interface UserStatusProps {
   // Use a more robust way to get the type if possible, e.g., from useAuth directly
   user: ReturnType<typeof import('@/hooks/useAuth').useAuth>['user'];
   onClick?: () => void; // Optional click handler
+  iconUrl?: string | null; // Optional custom icon URL
 }
 
-const UserStatus: React.FC<UserStatusProps> = ({ user, onClick }) => {
+const UserStatus: React.FC<UserStatusProps> = ({ user, onClick, iconUrl }) => {
   if (!user) {
     return (
       <div className="flex items-center space-x-3 p-2 border-t border-border mt-auto">
@@ -36,7 +37,7 @@ const UserStatus: React.FC<UserStatusProps> = ({ user, onClick }) => {
     >
       <Avatar className="h-8 w-8">
         <AvatarImage
-          src={`https://avatar.vercel.sh/${user.username}.png`}
+          src={iconUrl || `https://avatar.vercel.sh/${user.username}.png`}
           alt={`@${user.username}`}
         />
         <AvatarFallback>{user.username.substring(0, 2).toUpperCase()}</AvatarFallback>

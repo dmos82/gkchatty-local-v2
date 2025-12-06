@@ -260,4 +260,79 @@ router.put(
  */
 // router.get('/tenant-kb/:kbId/documents', protect, checkSession, getUserTenantKBDocuments);
 
+// DELETE /api/users/me - Delete own account (self-deletion)
+router.delete(
+  '/me',
+  protect,
+  checkSession,
+  async (req: Request, res: Response): Promise<void | Response> => {
+    const user = req.user as (IUser & { _id: any }) | null;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated',
+      });
+    }
+
+    const userId = user._id;
+
+    logger.info(
+      {
+        username: user.username,
+        userId,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+        timestamp: new Date().toISOString(),
+        event: 'ACCOUNT_DELETION_REQUESTED',
+      },
+      'Security Event: User requested account deletion'
+    );
+
+    try {
+      // Import models for cascading delete
+      const Chat = (await import('../models/ChatModel')).default;
+      const { UserDocument } = await import('../models/UserDocument');
+      const UserSettings = (await import('../models/UserSettings')).default;
+
+      // Delete all user's chats
+      const chatDeleteResult = await Chat.deleteMany({ userId });
+      logger.info({ userId, deletedChats: chatDeleteResult.deletedCount }, 'Deleted user chats');
+
+      // Delete all user's documents
+      const docDeleteResult = await UserDocument.deleteMany({ userId });
+      logger.info({ userId, deletedDocs: docDeleteResult.deletedCount }, 'Deleted user documents');
+
+      // Delete user settings
+      await UserSettings.deleteOne({ userId });
+      logger.info({ userId }, 'Deleted user settings');
+
+      // Finally, delete the user
+      await User.findByIdAndDelete(userId);
+
+      logger.info(
+        {
+          username: user.username,
+          userId,
+          ip: req.ip,
+          timestamp: new Date().toISOString(),
+          event: 'ACCOUNT_DELETED',
+        },
+        'Security Event: User account permanently deleted'
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: 'Account deleted successfully',
+      });
+    } catch (error) {
+      logger.error({ error, userId }, 'Error deleting user account');
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete account',
+      });
+    }
+  }
+);
+
 export default router;

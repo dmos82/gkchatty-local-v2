@@ -725,7 +725,7 @@ router.get('/users', async (req: Request, res: Response): Promise<void | Respons
       .sort({ username: 1 }); // Sort alphabetically by username
 
     logger.info({ count: users.length }, 'Found users');
-    return res.status(200).json({ success: true, users: users });
+    return res.status(200).json({ success: true, users });
   } catch (error) {
     logger.error({ error }, 'Error fetching users');
     return res.status(500).json({

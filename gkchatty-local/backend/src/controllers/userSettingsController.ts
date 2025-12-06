@@ -363,28 +363,25 @@ const uploadOwnIcon: RequestHandler = asyncHandler(
       const fileName = `user-icon-${Date.now()}${fileExtension}`;
       const filePath = `user_icons/${userIdStr}/${fileName}`;
 
-      let iconUrl: string;
+      log.info({ reqId, userId, filePath, msg: 'Uploading user icon' });
 
-      // Check if S3 is enabled
-      if (process.env.S3_ENABLED === 'true') {
-        log.info({ reqId, userId, msg: 'Uploading icon to S3' });
-        // Upload to S3
-        iconUrl = await saveFile(
-          filePath,
-          req.file.buffer || (await fs.promises.readFile(req.file.path)),
-          req.file.mimetype
-        );
-      } else {
-        log.info({ reqId, userId, msg: 'Using local storage for icon' });
-        // For local storage
-        iconUrl = `/api/files/local/${encodeURIComponent(filePath)}`;
+      // Use saveFile which returns the correct URL for both S3 and local storage
+      const iconUrl = await saveFile(
+        filePath,
+        req.file.buffer || (await fs.promises.readFile(req.file.path)),
+        req.file.mimetype
+      );
 
-        // Save the file using the saveFile utility which handles both S3 and local
-        await saveFile(
-          filePath,
-          req.file.buffer || (await fs.promises.readFile(req.file.path)),
-          req.file.mimetype
-        );
+      log.info({ reqId, userId, iconUrl, msg: 'Icon saved successfully' });
+
+      // Clean up temp file created by multer
+      if (req.file.path) {
+        try {
+          await fs.promises.unlink(req.file.path);
+          log.debug({ reqId, userId, tempPath: req.file.path, msg: 'Cleaned up temp file' });
+        } catch (cleanupErr) {
+          log.warn({ reqId, userId, tempPath: req.file.path, cleanupErr, msg: 'Failed to clean up temp file' });
+        }
       }
 
       // Update user settings with the icon URL

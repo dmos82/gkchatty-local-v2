@@ -11,9 +11,10 @@ export async function fetchWithAuth(
   const apiUrl = getApiBaseUrl();
   const url = endpoint.startsWith('http') ? endpoint : `${apiUrl}${endpoint}`;
 
-  // Build headers
+  // Build headers - don't set Content-Type for FormData (browser sets it with boundary)
+  const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...((options.headers as Record<string, string>) || {}),
   };
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -34,6 +34,8 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import FeedbackModal from '@/components/common/FeedbackModal';
+import ProfileDialog from '@/components/profile/ProfileDialog';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 interface SidebarProps {
   user: ReturnType<typeof import('@/hooks/useAuth').useAuth>['user'];
@@ -73,9 +75,32 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editedName, setEditedName] = useState<string>('');
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [userIconUrl, setUserIconUrl] = useState<string | null>(null);
 
   const { toast } = useToast();
   const {} = useAuth();
+
+  // Fetch user settings to get icon URL
+  useEffect(() => {
+    const fetchUserSettings = async () => {
+      try {
+        const response = await fetchWithAuth('/api/users/me/settings');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.settings?.iconUrl) {
+            setUserIconUrl(data.settings.iconUrl);
+          }
+        }
+      } catch (error) {
+        console.error('[Sidebar] Error fetching user settings:', error);
+      }
+    };
+
+    if (user) {
+      fetchUserSettings();
+    }
+  }, [user]);
 
   const onLogoutClick = () => {
     console.log('[Sidebar] Logout button clicked. Calling handleLogout prop...');
@@ -339,7 +364,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           Logout
         </Button>
 
-        <UserStatus user={user} />
+        <UserStatus user={user} onClick={() => setIsProfileDialogOpen(true)} iconUrl={userIconUrl} />
       </div>
 
       {/* Add FeedbackModal component at the end of the component */}
@@ -347,6 +372,15 @@ const Sidebar: React.FC<SidebarProps> = ({
         isOpen={isFeedbackModalOpen}
         onOpenChange={setIsFeedbackModalOpen}
         currentChatId={selectedChatId}
+      />
+
+      {/* Profile Dialog */}
+      <ProfileDialog
+        isOpen={isProfileDialogOpen}
+        onOpenChange={setIsProfileDialogOpen}
+        user={user}
+        onLogout={handleLogout}
+        onIconUpdate={setUserIconUrl}
       />
     </nav>
   );

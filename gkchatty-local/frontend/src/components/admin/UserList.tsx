@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Plus, RefreshCw, Shield, User } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Shield } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 interface User {
@@ -280,12 +280,7 @@ const UserList: React.FC = () => {
             <TableBody>
               {users.map((user) => (
                 <TableRow key={user._id}>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      {user.username}
-                    </div>
-                  </TableCell>
+                  <TableCell className="font-medium">{user.username}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <Badge

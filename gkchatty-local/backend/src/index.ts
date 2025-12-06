@@ -122,7 +122,7 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'"], // Allow inline scripts for development
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
+        imgSrc: ["'self'", 'data:', 'https:', 'http://localhost:*'],
         // Allow connections to both localhost and network IPs for mobile testing
         connectSrc: ["'self'", 'http://localhost:*', 'http://192.168.1.*:*', 'http://127.0.0.1:*'],
         fontSrc: ["'self'"],
