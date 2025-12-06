@@ -330,17 +330,27 @@ async function startServer() {
     // Split by comma if multiple origins are provided, trim whitespace
     const allowedOrigins = frontendUrl ? frontendUrl.split(',').map(origin => origin.trim()) : [];
 
-    // Add default development and production origins if none specified
-    if (allowedOrigins.length === 0) {
+    // ALWAYS include production domains (regardless of FRONTEND_URL setting)
+    const productionOrigins = [
+      'https://apps.gkchatty.com',
+      'https://gkchatty.com',
+    ];
+    productionOrigins.forEach(origin => {
+      if (!allowedOrigins.includes(origin)) {
+        allowedOrigins.push(origin);
+      }
+    });
+
+    // Add default development origins if none specified
+    if (!frontendUrl) {
       const defaultOrigins = [
-        'https://apps.gkchatty.com',
         'https://gkchatty.netlify.app',
         `http://localhost:${DEFAULT_FRONTEND_PORT}`,
         'http://localhost:3003',
       ];
       allowedOrigins.push(...defaultOrigins);
       console.log(
-        '[CORS] No FRONTEND_URL specified, using default origins for development and production'
+        '[CORS] No FRONTEND_URL specified, adding development origins'
       );
     }
 
