@@ -936,7 +936,7 @@ router.post(
         logger.info({ username: trimmedUsername }, 'Placeholder email detected, skipping welcome email');
       }
 
-      // Return success response (without password)
+      // Return success response with temp password for admin to share
       return res.status(201).json({
         success: true,
         message: 'User created successfully',
@@ -947,6 +947,7 @@ router.post(
           role: newUser.role,
           createdAt: newUser.createdAt,
         },
+        tempPassword,
         emailSent,
       });
     } catch (error: unknown) {

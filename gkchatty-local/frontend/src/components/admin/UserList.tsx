@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Plus, RefreshCw, Mail, Shield, User } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Shield, User } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 interface User {
@@ -88,10 +88,10 @@ const UserList: React.FC = () => {
 
   // Create new user
   const handleCreateUser = async () => {
-    if (!newUser.username || !newUser.email) {
+    if (!newUser.username) {
       toast({
         title: 'Validation Error',
-        description: 'Username and email are required.',
+        description: 'Username is required.',
         variant: 'destructive',
       });
       return;
@@ -110,17 +110,18 @@ const UserList: React.FC = () => {
         throw new Error(data.message || 'Failed to create user');
       }
 
+      // Show credentials in alert for admin to copy
+      alert(`User created!\n\nUsername: ${newUser.username}\nPassword: ${data.tempPassword}\n\nShare these credentials with the user.`);
+
       toast({
         title: 'User Created',
-        description: data.emailSent 
-          ? `User ${newUser.username} created successfully. Welcome email sent to ${newUser.email}.`
-          : `User ${newUser.username} created successfully. Note: Email could not be sent.`,
+        description: `User "${newUser.username}" created. Share the credentials shown above.`,
       });
 
       // Reset form and close dialog
       setNewUser({ username: '', email: '', role: 'user' });
       setIsCreateDialogOpen(false);
-      
+
       // Refresh user list
       fetchUsers();
     } catch (error) {
@@ -183,7 +184,7 @@ const UserList: React.FC = () => {
               <DialogHeader>
                 <DialogTitle>Create New User</DialogTitle>
                 <DialogDescription>
-                  Create a new user account. They will receive an email with login credentials.
+                  Create a new user account. No email is sent - share credentials directly with user.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -209,7 +210,7 @@ const UserList: React.FC = () => {
                     value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                     className="col-span-3"
-                    placeholder="user@example.com"
+                    placeholder="Optional - for records only"
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -249,8 +250,8 @@ const UserList: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <Mail className="h-4 w-4 mr-2" />
-                      Create & Send Invite
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create User
                     </>
                   )}
                 </Button>

@@ -754,22 +754,19 @@ export default function AdminPage() {
       return;
     }
 
-    if (!createUserForm.email.trim()) {
-      setCreateUserError('Email is required');
-      return;
-    }
-
     // Password validation (optional)
     if (createUserForm.password && createUserForm.password.length < 6) {
       setCreateUserError('Password must be at least 6 characters long if provided.');
       return;
     }
 
-    // Basic email validation
-    const emailRegex = /^\S+@\S+\.\S+$/;
-    if (!emailRegex.test(createUserForm.email)) {
-      setCreateUserError('Invalid email format');
-      return;
+    // Basic email validation (only if email provided)
+    if (createUserForm.email.trim()) {
+      const emailRegex = /^\S+@\S+\.\S+$/;
+      if (!emailRegex.test(createUserForm.email)) {
+        setCreateUserError('Invalid email format');
+        return;
+      }
     }
 
     setIsCreatingUser(true);
@@ -1842,33 +1839,27 @@ export default function AdminPage() {
 
             {/* --- Create User Dialog --- */}
             <Dialog open={isCreateUserDialogOpen} onOpenChange={setIsCreateUserDialogOpen}>
-              <DialogContent className="sm:max-w-[425px]">
+              <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                   <DialogTitle>Create New User</DialogTitle>
                   <DialogDescription>
-                    Fill in the details for the new user. An email will be sent with a temporary
-                    password if you do not provide one.
+                    Fill in the details for the new user. Share credentials directly with the user.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="username-create" className="text-right">
-                      Username
-                    </Label>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="username-create">Username</Label>
                     <Input
                       id="username-create"
                       value={createUserForm.username}
                       onChange={e =>
                         setCreateUserForm({ ...createUserForm, username: e.target.value })
                       }
-                      className="col-span-3"
                       required
                     />
                   </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="email-create" className="text-right">
-                      Email
-                    </Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="email-create">Email</Label>
                     <Input
                       id="email-create"
                       type="email"
@@ -1876,14 +1867,11 @@ export default function AdminPage() {
                       onChange={e =>
                         setCreateUserForm({ ...createUserForm, email: e.target.value })
                       }
-                      className="col-span-3"
-                      required
+                      placeholder="Placeholder email (optional)"
                     />
                   </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="password-create" className="text-right">
-                      Password
-                    </Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="password-create">Password</Label>
                     <Input
                       id="password-create"
                       type="password"
@@ -1891,14 +1879,10 @@ export default function AdminPage() {
                       onChange={e =>
                         setCreateUserForm({ ...createUserForm, password: e.target.value })
                       }
-                      className="col-span-3"
-                      placeholder="Optional: Leave blank to send welcome email"
                     />
                   </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="role-create" className="text-right">
-                      Role
-                    </Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="role-create">Role</Label>
                     <Select
                       value={createUserForm.role}
                       onValueChange={(value: 'user' | 'admin') =>
@@ -1906,7 +1890,7 @@ export default function AdminPage() {
                       }
                       disabled={isCreatingUser}
                     >
-                      <SelectTrigger className="col-span-3">
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1916,7 +1900,7 @@ export default function AdminPage() {
                     </Select>
                   </div>
                   {createUserError && (
-                    <p className="col-span-4 text-sm text-red-600 text-center">{createUserError}</p>
+                    <p className="text-sm text-red-500 dark:text-red-400 font-medium text-center">{createUserError}</p>
                   )}
                 </div>
                 <DialogFooter>
