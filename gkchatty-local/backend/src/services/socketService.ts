@@ -74,9 +74,64 @@ class SocketService {
    * Initialize Socket.IO server with JWT authentication
    */
   initialize(httpServer: HTTPServer): Server {
+    // Build comprehensive allowed origins list (matching Express CORS config)
+    const frontendUrl = process.env.FRONTEND_URL;
+    const corsOrigin = process.env.CORS_ORIGIN;
+
+    // Combine all possible origins
+    const allowedOrigins: string[] = [];
+
+    // Add FRONTEND_URL origins (comma-separated)
+    if (frontendUrl) {
+      allowedOrigins.push(...frontendUrl.split(',').map(o => o.trim()));
+    }
+
+    // Add CORS_ORIGIN (comma-separated)
+    if (corsOrigin) {
+      allowedOrigins.push(...corsOrigin.split(',').map(o => o.trim()));
+    }
+
+    // ALWAYS include production domains
+    const productionOrigins = [
+      'https://apps.gkchatty.com',
+      'https://gkchatty.com',
+      'https://staging-gkchatty.netlify.app',
+    ];
+    productionOrigins.forEach(origin => {
+      if (!allowedOrigins.includes(origin)) {
+        allowedOrigins.push(origin);
+      }
+    });
+
+    // Add development defaults if nothing specified
+    if (allowedOrigins.length === 0) {
+      allowedOrigins.push(
+        'http://localhost:4003',
+        'http://localhost:3003',
+        'https://gkchatty.netlify.app'
+      );
+    }
+
+    console.log(`[Socket.IO] CORS Origins: ${allowedOrigins.join(', ')}`);
+
     this.io = new Server(httpServer, {
       cors: {
-        origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:4003'],
+        origin: (origin, callback) => {
+          // Allow requests with no origin (server-to-server, mobile apps)
+          if (!origin) {
+            return callback(null, true);
+          }
+
+          // Check Netlify preview regex pattern
+          const netlifyPreviewRegex = /\.netlify\.app$/i;
+
+          if (allowedOrigins.includes(origin) || netlifyPreviewRegex.test(origin)) {
+            return callback(null, true);
+          }
+
+          console.error(`[Socket.IO CORS] Blocked origin: ${origin}`);
+          return callback(new Error('Not allowed by CORS'));
+        },
         methods: ['GET', 'POST'],
         credentials: true,
       },
