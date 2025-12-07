@@ -6,6 +6,7 @@ import { useIM } from '@/contexts/IMContext';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';
 import BrandedPdfViewer from '@/components/BrandedPdfViewer';
+import { getApiBaseUrl } from '@/lib/config';
 
 interface IMChatWindowProps {
   windowId: string;
@@ -134,7 +135,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
 
     setIsLoading(true);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+      const API_URL = getApiBaseUrl();
       const response = await fetch(`${API_URL}/api/conversations/${conversationId}/messages`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -174,7 +175,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
       if (!token) return;
 
       try {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+        const API_URL = getApiBaseUrl();
         const response = await fetch(`${API_URL}/api/users/me/settings`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -310,7 +311,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
 
       try {
         console.log('[IMChatWindow] Uploading attachment:', file.name, 'to conversation:', conversationId);
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+        const API_URL = getApiBaseUrl();
         const response = await fetch(
           `${API_URL}/api/conversations/${conversationId}/attachments`,
           {
@@ -419,7 +420,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
 
     try {
       // Use streaming endpoint to bypass S3 CORS issues
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+      const API_URL = getApiBaseUrl();
       const response = await fetch(`${API_URL}/api/conversations/${conversationId}/attachments/stream`, {
         method: 'POST',
         headers: {
@@ -491,7 +492,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
       }
 
       // Call backend endpoint to copy file server-side (avoids CORS issues)
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+      const API_URL = getApiBaseUrl();
       const response = await fetch(`${API_URL}/api/conversations/${conversationId}/attachments/copy-to-docs`, {
         method: 'POST',
         headers: {
