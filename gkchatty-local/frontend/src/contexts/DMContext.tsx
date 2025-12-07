@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { io, Socket } from 'socket.io-client';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '@/context/AuthContext';
+import { getApiBaseUrl } from '@/lib/config';
 
 // Types
 export type PresenceStatus = 'online' | 'away' | 'busy' | 'offline';
@@ -117,8 +118,10 @@ interface DMProviderProps {
   children: ReactNode;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
 const TYPING_TIMEOUT = 3000; // 3 seconds
+
+// Use the shared config for API URL (same as rest of app)
+const getSocketUrl = () => getApiBaseUrl();
 
 export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
   // Get auth state to react to login/logout
@@ -223,7 +226,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     }
 
     console.log('[DMContext] Initializing Socket.IO connection');
-    const newSocket = io(API_URL, {
+    const newSocket = io(getSocketUrl(), {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -373,7 +376,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
 
     setIsLoadingConversations(true);
     try {
-      const response = await fetch(`${API_URL}/api/conversations`, {
+      const response = await fetch(`${getSocketUrl()}/api/conversations`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -397,7 +400,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
 
     setIsLoadingUsers(true);
     try {
-      const response = await fetch(`${API_URL}/api/conversations/users/online`, {
+      const response = await fetch(`${getSocketUrl()}/api/conversations/users/online`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -443,7 +446,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       setIsLoadingMessages(true);
       try {
         const response = await fetch(
-          `${API_URL}/api/conversations/${conversation._id}/messages`,
+          `${getSocketUrl()}/api/conversations/${conversation._id}/messages`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -460,7 +463,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
 
         // Mark as read
         if (conversation.unreadCount > 0) {
-          await fetch(`${API_URL}/api/conversations/${conversation._id}/read`, {
+          await fetch(`${getSocketUrl()}/api/conversations/${conversation._id}/read`, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${token}`,
@@ -488,7 +491,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
 
     setIsLoadingMessages(true);
     try {
-      const url = new URL(`${API_URL}/api/conversations/${selectedConversation._id}/messages`);
+      const url = new URL(`${getSocketUrl()}/api/conversations/${selectedConversation._id}/messages`);
       if (oldestMessageId.current) {
         url.searchParams.set('before', oldestMessageId.current);
       }
@@ -527,7 +530,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       try {
         console.log('[DMContext] Uploading attachment:', file.name);
         const response = await fetch(
-          `${API_URL}/api/conversations/${selectedConversation._id}/attachments`,
+          `${getSocketUrl()}/api/conversations/${selectedConversation._id}/attachments`,
           {
             method: 'POST',
             headers: {
@@ -597,7 +600,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       const token = getToken();
       if (!token) throw new Error('Not authenticated');
 
-      const response = await fetch(`${API_URL}/api/conversations`, {
+      const response = await fetch(`${getSocketUrl()}/api/conversations`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -654,7 +657,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       if (!conversation || conversation.unreadCount === 0) return;
 
       try {
-        await fetch(`${API_URL}/api/conversations/${conversationId}/read`, {
+        await fetch(`${getSocketUrl()}/api/conversations/${conversationId}/read`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
