@@ -56,12 +56,20 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   const handleAttachClick = () => {
+    console.log('[MessageInput] Attach button clicked');
+    console.log('[MessageInput] onUploadAttachment is:', onUploadAttachment ? 'defined' : 'undefined');
+    console.log('[MessageInput] fileInputRef:', fileInputRef.current);
     fileInputRef.current?.click();
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('[MessageInput] handleFileSelect triggered');
     const files = e.target.files;
-    if (!files || files.length === 0 || !onUploadAttachment) return;
+    console.log('[MessageInput] Files selected:', files?.length);
+    if (!files || files.length === 0 || !onUploadAttachment) {
+      console.log('[MessageInput] Early return - files:', files?.length, 'onUploadAttachment:', !!onUploadAttachment);
+      return;
+    }
 
     setIsUploading(true);
     setUploadError(null);
@@ -76,10 +84,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           continue;
         }
 
+        console.log('[MessageInput] Uploading file:', file.name, file.size, file.type);
         const attachment = await onUploadAttachment(file);
+        console.log('[MessageInput] Upload result:', attachment);
         if (attachment) {
           setPendingAttachments(prev => [...prev, attachment]);
         } else {
+          console.error('[MessageInput] Upload returned null for file:', file.name);
           setUploadError(`Failed to upload "${file.name}"`);
         }
       }
