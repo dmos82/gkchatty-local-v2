@@ -408,7 +408,7 @@ async function startServer() {
     app.get('/', (_req: Request, res: Response) => {
       res.status(200).json({
         status: 'ok',
-        deployment_version: 'v2.0.0-im-dm-realtime-messaging',
+        deployment_version: 'v2.0.1-fix-new-conversation-delivery',
       });
     });
 

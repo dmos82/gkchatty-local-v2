@@ -285,6 +285,16 @@ class SocketService {
       // Use socket.to() instead of io.to() to exclude the sender
       socket.to(`conversation:${conversationId}`).emit('dm:receive', messageData);
 
+      // ALSO emit to each participant's user room to handle NEW conversations
+      // where recipients haven't joined the conversation room yet
+      for (const participantId of conversation.participants) {
+        if (!participantId.equals(socket.userObjectId)) {
+          // Emit to user:${participantId} room (they always join this on connect)
+          this.io?.to(`user:${participantId.toString()}`).emit('dm:receive', messageData);
+          console.log(`[Socket DM] Also emitted to user:${participantId} room for new conversation support`);
+        }
+      }
+
       // Send delivery receipts to online participants
       for (const participantId of conversation.participants) {
         if (!participantId.equals(socket.userObjectId)) {
