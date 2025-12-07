@@ -156,6 +156,14 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
   // (Backend emits to both conversation room and user room, causing duplicates)
   const processedMessageIds = useRef<Set<string>>(new Set());
 
+  // Ref to track current selected conversation (for use in socket handlers to avoid stale closures)
+  const selectedConversationRef = useRef<Conversation | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
+
   // Get auth token - must match key used by AuthContext
   const getToken = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -309,7 +317,8 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
           if (conv._id === messageConversationId) {
             // Check if this conversation is currently selected (chat window open)
             // If so, don't increment unread - user is already viewing this chat
-            const isCurrentlyViewing = selectedConversation?._id === messageConversationId;
+            // Use ref to get current value (avoids stale closure from when socket handler was created)
+            const isCurrentlyViewing = selectedConversationRef.current?._id === messageConversationId;
 
             // Only increment unread if: not a duplicate AND not currently viewing
             const shouldIncrementUnread = !alreadyProcessed && !isCurrentlyViewing;
