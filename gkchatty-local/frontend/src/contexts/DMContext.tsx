@@ -275,6 +275,8 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     // Handle incoming DM (backend emits 'dm:receive')
     newSocket.on('dm:receive', (message: Message) => {
       console.log('[DMContext] Received new message:', message._id);
+      const messageConversationId = (message as any).conversationId;
+
       setMessages((prev) => {
         // Check if message already exists (by _id or tempId)
         const exists = prev.some((m) => m._id === message._id);
@@ -283,9 +285,14 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       });
 
       // Update conversation's last message
+      // Only increment unread count if the chat window for this conversation is NOT currently open
       setConversations((prev) =>
         prev.map((conv) => {
-          if (conv._id === (message as any).conversationId) {
+          if (conv._id === messageConversationId) {
+            // Check if this conversation is currently selected (chat window open)
+            // If so, don't increment unread - user is already viewing this chat
+            const isCurrentlyViewing = selectedConversation?._id === messageConversationId;
+
             return {
               ...conv,
               lastMessage: {
@@ -293,9 +300,10 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
                 senderId: message.senderId,
                 senderUsername: message.senderUsername,
                 sentAt: message.createdAt,
-                isRead: false,
+                isRead: isCurrentlyViewing, // Mark as read if viewing
               },
-              unreadCount: conv.unreadCount + 1,
+              // Don't increment unread if user is currently viewing this conversation
+              unreadCount: isCurrentlyViewing ? conv.unreadCount : conv.unreadCount + 1,
               updatedAt: message.createdAt,
             };
           }
