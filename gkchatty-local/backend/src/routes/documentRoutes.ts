@@ -1656,6 +1656,140 @@ router.get(
   }
 );
 
+// GET /api/documents/stream/:docId - Stream document through backend (bypasses S3 CORS)
+// This endpoint is designed for pdf.js and other viewers that can't fetch from S3 directly due to CORS
+router.get(
+  '/stream/:docId',
+  protect,
+  checkSession,
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { docId } = req.params;
+    const userId = req.user?._id;
+    const userRole = req.user?.role;
+
+    log.debug(`[Stream Doc] Request to stream document ${docId} by user ${userId}`);
+
+    if (!mongoose.Types.ObjectId.isValid(docId)) {
+      return res.status(400).json({ success: false, message: 'Invalid document ID format.' });
+    }
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
+    try {
+      // Find the document
+      const document = await UserDocument.findOne({
+        _id: new mongoose.Types.ObjectId(docId),
+      }).select(
+        's3Bucket s3Key file_extension originalFileName mimeType userId sourceType tenantKbId'
+      );
+
+      if (!document) {
+        log.warn(`[Stream Doc] Document ${docId} not found`);
+        return res.status(404).json({ success: false, message: 'Document not found.' });
+      }
+
+      // Check access permissions based on document type
+      if (document.sourceType === 'user') {
+        // User documents: only owner can view
+        if (!document.userId || document.userId.toString() !== userId.toString()) {
+          log.warn(`[Stream Doc] User ${userId} denied access to user document ${docId}`);
+          return res.status(403).json({ success: false, message: 'Access denied.' });
+        }
+      } else if (document.sourceType === 'tenant' && document.tenantKbId) {
+        // Tenant KB documents: check if user has access or is admin
+        if (userRole !== 'admin') {
+          const { TenantKnowledgeBase } = await import('../models/TenantKnowledgeBase');
+          const { UserKBAccess } = await import('../models/UserKBAccess');
+
+          const kb = await TenantKnowledgeBase.findById(document.tenantKbId);
+          const userAccess = await UserKBAccess.findOne({ userId });
+
+          const hasAccess =
+            kb &&
+            (kb.accessType === 'public' ||
+              (userAccess &&
+                userAccess.enabledKnowledgeBases.some(
+                  id => id.toString() === document!.tenantKbId!.toString()
+                )));
+
+          if (!hasAccess) {
+            log.warn(`[Stream Doc] User ${userId} denied access to tenant document ${docId}`);
+            return res
+              .status(403)
+              .json({ success: false, message: 'Access denied to this document.' });
+          }
+        }
+      } else if (document.sourceType === 'system') {
+        // System KB documents: only admins can view
+        if (userRole !== 'admin') {
+          log.warn(`[Stream Doc] Non-admin user ${userId} denied access to system document ${docId}`);
+          return res
+            .status(403)
+            .json({ success: false, message: 'Only administrators can view system documents.' });
+        }
+      }
+
+      if (!document.s3Key || !document.originalFileName || !document.mimeType) {
+        log.error(`[Stream Doc] Missing required properties for document ${docId}`);
+        return res
+          .status(404)
+          .json({ success: false, message: 'Document file information is incomplete.' });
+      }
+
+      // Get file stream from S3
+      const { getFileStream } = await import('../utils/s3Helper');
+
+      // Construct S3 key
+      let s3KeyForFetch: string;
+      if (document.s3Key.includes('/') || document.s3Key.includes('.')) {
+        s3KeyForFetch = document.s3Key;
+      } else {
+        // s3Key is just a UUID, construct the full path based on document type
+        if (document.sourceType === 'user' && document.userId) {
+          s3KeyForFetch = `user_docs/${document.userId.toString()}/${document.s3Key}.${document.file_extension}`;
+        } else if (document.sourceType === 'tenant' && document.tenantKbId) {
+          s3KeyForFetch = `tenant_kb/${document.tenantKbId.toString()}/${document.s3Key}.${document.file_extension}`;
+        } else if (document.sourceType === 'system') {
+          s3KeyForFetch = `system_kb/${document.s3Key}.${document.file_extension}`;
+        } else {
+          log.error(
+            `[Stream Doc] Unable to construct S3 key for document ${docId} with sourceType: ${document.sourceType}`
+          );
+          return res
+            .status(500)
+            .json({ success: false, message: 'Document storage path could not be determined.' });
+        }
+      }
+
+      log.debug(`[Stream Doc] Fetching from S3: ${s3KeyForFetch}`);
+
+      const fileStream = await getFileStream(s3KeyForFetch);
+
+      // Set headers for inline viewing (not download)
+      res.setHeader('Content-Type', document.mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${document.originalFileName}"`);
+      // Allow caching for 1 hour since the content doesn't change
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+
+      // Pipe the stream to response
+      fileStream.pipe(res);
+
+      fileStream.on('error', error => {
+        log.error(`[Stream Doc] Stream error for document ${docId}:`, error);
+        if (!res.headersSent) {
+          res.status(500).json({ success: false, message: 'Error streaming document.' });
+        }
+      });
+    } catch (error) {
+      log.error(`[Stream Doc] Error streaming document ${docId}:`, error);
+      if (!res.headersSent) {
+        return next(error);
+      }
+    }
+  }
+);
+
 // --- Refactored Delete Single User Document Handler ---
 const handleDeleteDocument = async (req: Request, res: Response, next: NextFunction) => {
   const { docId } = req.params;

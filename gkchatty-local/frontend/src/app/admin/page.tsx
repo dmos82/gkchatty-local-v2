@@ -1320,8 +1320,8 @@ export default function AdminPage() {
 
     // No need to check for token from localStorage since we're using HttpOnly cookies
 
-    // --- CHANGE: Use the ID-based download endpoint ---
-    const fetchUrl = `/api/admin/system-kb/download/${docId}`;
+    // --- CHANGE: Use streaming endpoint to bypass S3 CORS ---
+    const fetchUrl = `/api/system-kb/stream/${docId}`;
     // --- END CHANGE ---
 
     // Log BEFORE fetch

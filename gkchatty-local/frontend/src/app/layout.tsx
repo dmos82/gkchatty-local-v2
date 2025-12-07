@@ -25,6 +25,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 // import { SettingsProvider } from '@/contexts/SettingsContext';
 // import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Header } from '@/components/layout/Header';
+import { AuthenticatedIMContainer } from '@/components/im';
 // No PdfWorkerSetup import here anymore
 
 const inter = Inter({ subsets: ['latin'] });
@@ -112,6 +113,8 @@ export default function RootLayout({
                               {children}
                             </main>
                           </div>
+                          {/* IM Popup System - only renders for authenticated users */}
+                          <AuthenticatedIMContainer />
                         </div>
                       </motion.div>
                     </AnimatePresence>

@@ -89,9 +89,64 @@ module.exports = {
             transform: 'translateY(0)',
           },
         },
+        scaleIn: {
+          '0%': {
+            opacity: '0',
+            transform: 'scale(0.9)',
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'scale(1)',
+          },
+        },
+        scaleOut: {
+          '0%': {
+            opacity: '1',
+            transform: 'scale(1)',
+          },
+          '100%': {
+            opacity: '0',
+            transform: 'scale(0.9)',
+          },
+        },
+        slideInFromBottom: {
+          '0%': {
+            opacity: '0',
+            transform: 'translateY(20px) scale(0.95)',
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'translateY(0) scale(1)',
+          },
+        },
+        minimizeToButton: {
+          '0%': {
+            opacity: '1',
+            transform: 'scale(1)',
+          },
+          '100%': {
+            opacity: '0',
+            transform: 'scale(0.5) translateY(100px)',
+          },
+        },
+        expandFromButton: {
+          '0%': {
+            opacity: '0',
+            transform: 'scale(0.5) translateY(100px)',
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'scale(1) translateY(0)',
+          },
+        },
       },
       animation: {
         fadeInUp: 'fadeInUp 0.3s ease-out',
+        scaleIn: 'scaleIn 0.2s ease-out',
+        scaleOut: 'scaleOut 0.2s ease-out',
+        slideInFromBottom: 'slideInFromBottom 0.25s ease-out',
+        minimizeToButton: 'minimizeToButton 0.2s ease-in forwards',
+        expandFromButton: 'expandFromButton 0.25s ease-out',
       },
       borderRadius: {
         lg: 'var(--radius)',

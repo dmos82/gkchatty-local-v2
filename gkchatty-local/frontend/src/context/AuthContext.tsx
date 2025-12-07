@@ -246,6 +246,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Function to handle logout
   const logout = useCallback(async () => {
     console.log('[AuthContext] logout: Attempting API logout...');
+
+    // Dispatch logout event BEFORE clearing state so socket can disconnect
+    console.log('[AuthContext] logout: Dispatching auth:logout event');
+    window.dispatchEvent(new CustomEvent('auth:logout'));
+
     try {
       const apiUrl = getApiBaseUrl();
       console.log(`[AuthContext] logout: Using API URL: ${apiUrl}`);

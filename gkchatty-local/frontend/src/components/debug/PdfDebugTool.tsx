@@ -28,9 +28,9 @@ export function PdfDebugTool() {
 
     let url;
     if (endpoint === 'system') {
-      url = `${API_BASE_URL}/api/system-kb/download/${documentId}`;
+      url = `${API_BASE_URL}/api/system-kb/stream/${documentId}`;
     } else {
-      url = `${API_BASE_URL}/api/documents/view/${documentId}`;
+      url = `${API_BASE_URL}/api/documents/stream/${documentId}`;
     }
 
     console.log(`[PDF Debug] Testing URL: ${url}`);

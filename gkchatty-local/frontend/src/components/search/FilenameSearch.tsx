@@ -100,9 +100,9 @@ const FilenameSearch: React.FC = () => {
 
   const getDocumentUrl = (doc: SearchResult): string => {
     if (doc.sourceType === 'system') {
-      return `${API_BASE_URL}/api/system-kb/download/${doc._id}`;
+      return `${API_BASE_URL}/api/system-kb/stream/${doc._id}`;
     } else {
-      return `${API_BASE_URL}/api/documents/user/${doc._id}`;
+      return `${API_BASE_URL}/api/documents/stream/${doc._id}`;
     }
   };
 

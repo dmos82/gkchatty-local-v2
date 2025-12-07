@@ -4,7 +4,7 @@ import path from 'path';
 import { protect, isAdmin, checkSession } from '../middleware/authMiddleware';
 import { UserDocument, IUserDocument } from '../models/UserDocument';
 import { deleteVectorsByFilter } from '../utils/pineconeService';
-import { deleteFile } from '../utils/s3Helper'; // Removed getPresignedUrlForView, getFileStream
+import { deleteFile, getFileStream } from '../utils/s3Helper'; // Added getFileStream for streaming endpoint
 // import { processAndEmbedDocument } from '../utils/documentProcessor'; // Removed processAndEmbedDocument
 import { NextFunction } from 'express';
 import { KNOWLEDGE_BASE_S3_PREFIX } from '../config/storageConfig';
@@ -277,6 +277,150 @@ router.get(
           'Cannot pass error to next middleware - headers already sent'
         );
         return;
+      }
+    }
+  }
+);
+
+/**
+ * @route   GET /api/system-kb/stream/:id
+ * @desc    Stream a System Knowledge Base document file (bypasses S3 CORS)
+ * @access  Private (Requires login, NO admin needed)
+ */
+router.get(
+  '/stream/:id',
+  protect,
+  checkSession,
+  async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
+    const { id: docId } = req.params;
+    const userId = req.user?._id;
+
+    logger.info({ docId, userId }, 'Stream system document request');
+
+    if (!mongoose.Types.ObjectId.isValid(docId)) {
+      logger.warn({ docId }, 'Invalid document ID format');
+      return res.status(400).json({ success: false, message: 'Invalid document ID format.' });
+    }
+
+    try {
+      // Try legacy collection first
+      let document: any = await UserDocument.findOne({
+        _id: new mongoose.Types.ObjectId(docId),
+        sourceType: 'system',
+      }).select('s3Bucket s3Key originalFileName mimeType folderId');
+
+      if (!document) {
+        const { SystemKbDocument } = await import('../models/SystemKbDocument');
+        document = await SystemKbDocument.findById(docId).select('s3Key filename mimeType folderId');
+        if (document) {
+          // Normalize field names to match legacy logic
+          (document as any).originalFileName = document.filename;
+          if (!document.mimeType) {
+            document.mimeType = document.filename.endsWith('.pdf')
+              ? 'application/pdf'
+              : 'text/plain';
+          }
+          // Default bucket
+          if (!('s3Bucket' in document) || !document.s3Bucket) {
+            (document as any).s3Bucket = process.env.AWS_BUCKET_NAME || 'local';
+          }
+        }
+      }
+
+      if (!document) {
+        logger.warn({ docId }, 'DB lookup failed - system document not found');
+        return res.status(404).json({ success: false, message: 'System document not found.' });
+      }
+
+      // --- FOLDER PERMISSION CHECK ---
+      if (document.folderId) {
+        const { hasAccessToFolder } = await import('../utils/folderPermissionHelper');
+        const isAdmin = req.user?.role === 'admin';
+
+        const hasAccess = await hasAccessToFolder(
+          userId.toString(),
+          isAdmin,
+          document.folderId.toString()
+        );
+
+        if (!hasAccess) {
+          logger.warn({
+            docId,
+            userId,
+            folderId: document.folderId
+          }, 'Access denied - user does not have permission to access this folder');
+
+          return res.status(403).json({
+            success: false,
+            message: 'Access denied. You do not have permission to access this document.',
+          });
+        }
+      }
+
+      const isLocalStorage = process.env.AWS_BUCKET_NAME === 'local';
+      if (
+        (!isLocalStorage && !document.s3Bucket) ||
+        !document.s3Key ||
+        !document.originalFileName ||
+        !document.mimeType
+      ) {
+        logger.error(
+          { docId, document },
+          'Missing required document properties (S3 info, filename, or mimetype)'
+        );
+        return res
+          .status(500)
+          .json({ success: false, message: 'System document metadata is incomplete.' });
+      }
+
+      let s3KeyToFetch = document.s3Key;
+
+      // If s3Key from DB does not contain a file extension, it's likely a UUID.
+      if (!s3KeyToFetch.includes('.')) {
+        const fileExtension = path.extname(document.originalFileName) || '.pdf';
+        s3KeyToFetch = `${KNOWLEDGE_BASE_S3_PREFIX}${s3KeyToFetch}${fileExtension}`;
+        logger.debug(
+          { s3KeyToFetch, extension: fileExtension, originalFileName: document.originalFileName },
+          'Constructed S3 key for UUID'
+        );
+      } else if (isLocalStorage && !s3KeyToFetch.startsWith(KNOWLEDGE_BASE_S3_PREFIX)) {
+        s3KeyToFetch = `${KNOWLEDGE_BASE_S3_PREFIX}${s3KeyToFetch}`;
+        logger.debug({ s3KeyToFetch }, 'Local storage path correction applied');
+      }
+
+      logger.debug({ s3KeyToFetch }, 'Streaming from S3 key');
+
+      const fileStream = await getFileStream(s3KeyToFetch);
+
+      // Set headers for inline viewing
+      res.setHeader('Content-Type', document.mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${document.originalFileName}"`);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+
+      // Pipe the stream to response
+      fileStream.pipe(res);
+
+      fileStream.on('error', (error: Error) => {
+        logger.error({ docId, error: error.message }, 'Stream error for system document');
+        if (!res.headersSent) {
+          res.status(500).json({ success: false, message: 'Error streaming document.' });
+        }
+      });
+    } catch (error) {
+      logger.error({ error, docId, userId }, 'ERROR during system document streaming');
+
+      if (error instanceof Error && error.message.includes('S3 GetObject Failed')) {
+        logger.error({ docId }, 'Specific S3 GetObject failure');
+        if (!res.headersSent) {
+          return res.status(500).json({
+            success: false,
+            message: 'Could not retrieve the system document file from storage.',
+          });
+        }
+        return;
+      }
+      if (!res.headersSent) {
+        return next(error);
       }
     }
   }

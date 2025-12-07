@@ -73,11 +73,12 @@ export function DocumentViewer({ documentId, filename, type, onClose }: Document
         return;
       }
 
+      // Use streaming endpoints to bypass S3 CORS issues
       let endpoint;
       if (type === 'system') {
-        endpoint = `/api/system-kb/download/${documentId}`;
+        endpoint = `/api/system-kb/stream/${documentId}`;
       } else if (type === 'user') {
-        endpoint = `/api/documents/view/${documentId}`;
+        endpoint = `/api/documents/stream/${documentId}`;
       } else {
         if (isMounted) {
           setError(new Error(`Unknown document type: ${type}`));
@@ -87,11 +88,17 @@ export function DocumentViewer({ documentId, filename, type, onClose }: Document
       }
 
       try {
-        console.log('[DocumentViewer] Fetching document metadata from:', endpoint);
+        console.log('[DocumentViewer] Streaming document from:', endpoint);
         const response = await fetchWithAuth(endpoint, { method: 'GET' });
 
         if (!response.ok) {
-          const errorText = await response.text();
+          let errorText = '';
+          try {
+            const errorData = await response.json();
+            errorText = errorData.message || JSON.stringify(errorData);
+          } catch {
+            errorText = await response.text().catch(() => 'Unknown error');
+          }
           console.error(
             '[DocumentViewer] Fetch failed:',
             response.status,
@@ -100,23 +107,19 @@ export function DocumentViewer({ documentId, filename, type, onClose }: Document
           throw new Error(`Failed to fetch document (${response.status}): ${errorText}`);
         }
 
-        const responseData = await response.json();
-        console.log('[DocumentViewer] Received response:', responseData);
+        // Stream returns the file directly as blob - create object URL
+        const blob = await response.blob();
+        console.log('[DocumentViewer] Received blob. Type:', blob.type, 'Size:', blob.size);
 
-        if (!responseData.success || !responseData.url) {
-          throw new Error('Backend did not return a valid presigned URL');
+        if (blob.size === 0) {
+          throw new Error('Received empty file from server');
         }
 
-        const presignedUrl = responseData.url;
-        const actualFileName = responseData.fileName || filename;
-
-        // If the URL is relative (starts with /), prepend the API base URL
-        const fullUrl = presignedUrl.startsWith('/')
-          ? `${getApiBaseUrl()}${presignedUrl}`
-          : presignedUrl;
+        const objectUrl = URL.createObjectURL(blob);
+        const actualFileName = filename || 'document';
 
         if (isMounted) {
-          setFileUrl(fullUrl);
+          setFileUrl(objectUrl);
           setDisplayFileName(actualFileName);
           setFileType(isPdf ? 'pdf' : isImage ? 'image' : 'other');
           setIsLoading(false);
@@ -139,40 +142,39 @@ export function DocumentViewer({ documentId, filename, type, onClose }: Document
 
   const handleDownload = async () => {
     if (!fileUrl) {
-      // For files that don't have a URL yet, fetch it
+      // For files that don't have a URL yet, stream it and download
       let endpoint;
       if (type === 'system') {
-        endpoint = `/api/system-kb/download/${documentId}`;
+        endpoint = `/api/system-kb/stream/${documentId}`;
       } else {
-        endpoint = `/api/documents/view/${documentId}`;
+        endpoint = `/api/documents/stream/${documentId}`;
       }
 
       try {
         const response = await fetchWithAuth(endpoint, { method: 'GET' });
         if (!response.ok) {
-          throw new Error(`Failed to get download URL: ${response.status}`);
+          throw new Error(`Failed to download file: ${response.status}`);
         }
-        const responseData = await response.json();
-        if (!responseData.success || !responseData.url) {
-          throw new Error('Backend did not return a valid download URL');
-        }
+
+        // Get the blob directly from stream
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
 
         // Create download link
         const link = document.createElement('a');
-        // If the URL is relative (starts with /), prepend the API base URL
-        const downloadUrl = responseData.url.startsWith('/')
-          ? `${getApiBaseUrl()}${responseData.url}`
-          : responseData.url;
         link.href = downloadUrl;
-        link.download = responseData.fileName || filename;
+        link.download = filename || 'document';
         link.target = '_blank';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
 
+        // Revoke the blob URL after download
+        URL.revokeObjectURL(downloadUrl);
+
         toast({
           title: 'Download Started',
-          description: `Downloading ${responseData.fileName || filename}...`,
+          description: `Downloading ${filename || 'document'}...`,
         });
       } catch (error) {
         console.error('[DocumentViewer] Download error:', error);

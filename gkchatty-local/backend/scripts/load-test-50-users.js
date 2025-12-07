@@ -123,14 +123,10 @@ async function simulateUser(userId, token) {
     requestCount++;
 
     try {
-      // Make a chat request
-      const response = await api.post('/api/chat', {
-        messages: [
-          {
-            role: 'user',
-            content: `Test message ${requestCount} from ${username} at ${new Date().toISOString()}`,
-          },
-        ],
+      // Make a chat request (using correct endpoint and body format)
+      const response = await api.post('/api/chats', {
+        query: `Test message ${requestCount} from ${username}: What is insurance?`,
+        searchMode: 'unified',
       });
 
       const responseTime = Date.now() - startTime;

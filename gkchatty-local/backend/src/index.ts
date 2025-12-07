@@ -61,6 +61,7 @@ import adminSettingsRoutes from './routes/adminSettingsRoutes'; // <-- Import ad
 import folderRoutes from './routes/folderRoutes'; // <-- Import folder routes
 import healthRoutes from './routes/healthRoutes'; // <-- Import health routes (BMAD v2.0)
 import embeddingsRoutes from './routes/embeddingsRoutes'; // <-- Import embeddings routes (GKChatty Local)
+import conversationRoutes from './routes/conversationRoutes'; // <-- Import conversation routes (DMs)
 import * as http from 'http'; // Import http
 import { correlationIdMiddleware } from './middleware/correlationId';
 import { pinoLogger } from './utils/logger'; // Import base pinoLogger
@@ -69,6 +70,7 @@ import { randomUUID } from 'crypto';
 import { standardLimiter } from './middleware/rateLimiter'; // Import rate limiters
 import { DEFAULT_API_PORT, DEFAULT_FRONTEND_PORT, BCRYPT_SALT_ROUNDS } from './config/constants';
 import helmet from 'helmet'; // HIGH-005: Import helmet.js for security headers
+import { socketService } from './services/socketService'; // Socket.IO for real-time DMs
 
 // ← Added: Diagnostic log for import type
 console.log('*** [Index Module] Imported systemKbRouter:', typeof systemKbRoutes);
@@ -655,6 +657,15 @@ async function startServer() {
       console.error('>>> !!! [App Setup] Error registering folder routes:', err);
     }
 
+    // --- Conversation Routes (Direct Messages) ---
+    try {
+      console.log('>>> [App Setup] Mounting /api/conversations routes...');
+      app.use('/api/conversations', conversationRoutes);
+      console.log('>>> [App Setup] /api/conversations routes registered.');
+    } catch (err) {
+      console.error('>>> !!! [App Setup] Error registering /api/conversations routes:', err);
+    }
+
     // Document routes (includes /chat endpoint)
     try {
       console.log('>>> [App Setup] Mounting /api document routes (includes /chat endpoint)...');
@@ -737,10 +748,15 @@ async function startServer() {
     console.log('Starting servers...');
 
     // HTTP server (for desktop localhost access)
-    const httpServer = http
-      .createServer(app)
-      .listen(port, '0.0.0.0', () => {
+    const httpServer = http.createServer(app);
+
+    // Initialize Socket.IO for real-time Direct Messages
+    const io = socketService.initialize(httpServer);
+    console.log('[Socket.IO] Real-time DM server attached to HTTP server');
+
+    httpServer.listen(port, '0.0.0.0', () => {
         console.log(`🚀 HTTP API Server listening on port ${port}`);
+        console.log(`🔌 Socket.IO server running on ws://localhost:${port}`);
         console.log('   Desktop: http://localhost:' + port);
         logApiConfiguration();
       })

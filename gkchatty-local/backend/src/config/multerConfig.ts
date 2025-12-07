@@ -81,5 +81,38 @@ const iconUpload = multer({
   },
 });
 
-export { iconUpload };
+// DM attachment file filter - images and common file types
+const dmAttachmentFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const allowedMimes = [
+    // Images
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+    // Documents
+    'application/pdf', 'text/plain', 'text/markdown',
+    // Common files
+    'application/zip', 'application/x-zip-compressed',
+  ];
+
+  if (allowedMimes.includes(file.mimetype)) {
+    console.log(`[Multer] Allowed DM attachment: ${file.originalname} (mime: ${file.mimetype})`);
+    cb(null, true);
+  } else {
+    console.log(`[Multer] Blocked DM attachment: ${file.originalname} (mime: ${file.mimetype})`);
+    cb(new Error('Invalid file type. Only images, PDFs, text files, and ZIP archives are allowed.'));
+  }
+};
+
+// Configure multer instance for DM attachments
+const dmAttachmentUpload = multer({
+  storage: storage,
+  fileFilter: dmAttachmentFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB limit for DM attachments
+  },
+});
+
+export { iconUpload, dmAttachmentUpload };
 export default userUpload;

@@ -45,11 +45,12 @@ export function PdfViewer({ documentId, filename, type, onClose }: PdfViewerProp
         return;
       }
 
+      // Use streaming endpoints to bypass S3 CORS issues
       let endpoint;
       if (type === 'system') {
-        endpoint = `/api/system-kb/download/${documentId}`;
+        endpoint = `/api/system-kb/stream/${documentId}`;
       } else if (type === 'user') {
-        endpoint = `/api/documents/view/${documentId}`;
+        endpoint = `/api/documents/stream/${documentId}`;
       } else {
         if (process.env.NODE_ENV === 'development') {
           console.error('[PdfViewer] Unknown document type:', type);
@@ -62,11 +63,17 @@ export function PdfViewer({ documentId, filename, type, onClose }: PdfViewerProp
       }
 
       try {
-        console.log('[PdfViewer] Fetching document metadata from:', endpoint);
+        console.log('[PdfViewer] Streaming document from:', endpoint);
         const response = await fetchWithAuth(endpoint, { method: 'GET' });
 
         if (!response.ok) {
-          const errorText = await response.text();
+          let errorText = '';
+          try {
+            const errorData = await response.json();
+            errorText = errorData.message || JSON.stringify(errorData);
+          } catch {
+            errorText = await response.text().catch(() => 'Unknown error');
+          }
           console.error('[PdfViewer] Fetch failed:', response.status, errorText.substring(0, 150));
 
           // Handle 403 Forbidden specially - user doesn't have permission
@@ -77,19 +84,19 @@ export function PdfViewer({ documentId, filename, type, onClose }: PdfViewerProp
           throw new Error(`Failed to fetch PDF (${response.status}): ${errorText}`);
         }
 
-        // Parse JSON response expecting presigned URL
-        const responseData = await response.json();
-        console.log('[PdfViewer] Received response:', responseData);
+        // Stream returns the file directly as blob - create object URL for pdf.js
+        const blob = await response.blob();
+        console.log('[PdfViewer] Received blob. Type:', blob.type, 'Size:', blob.size);
 
-        if (!responseData.success || !responseData.url) {
-          throw new Error('Backend did not return a valid presigned URL');
+        if (blob.size === 0) {
+          throw new Error('Received empty PDF file from server');
         }
 
-        const presignedUrl = responseData.url;
-        const actualFileName = responseData.fileName || filename;
+        const objectUrl = URL.createObjectURL(blob);
+        const actualFileName = filename || 'document.pdf';
 
         if (isMounted) {
-          setPdfFileUrl(presignedUrl);
+          setPdfFileUrl(objectUrl);
           setDisplayFileName(actualFileName);
           setIsLoading(false);
         }

@@ -843,48 +843,56 @@ export default function DocumentManagerPage() {
     console.log(`[DocDownload] Starting download for: ${doc.originalFileName} (ID: ${doc._id})`);
 
     try {
-      // Get presigned URL from backend
+      // Use streaming endpoint to bypass S3 CORS issues
       const endpoint =
         doc.sourceType === 'system'
-          ? `/api/system-kb/download/${doc._id}`
-          : `/api/documents/view/${doc._id}`;
+          ? `/api/system-kb/stream/${doc._id}`
+          : `/api/documents/stream/${doc._id}`;
 
-      console.log(`[DocDownload] Fetching presigned URL from: ${endpoint}`);
+      console.log(`[DocDownload] Streaming file from: ${endpoint}`);
 
       const response = await fetchWithAuth(endpoint, {
         method: 'GET',
       });
 
       if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ message: 'Failed to get download URL' }));
-        throw new Error(errorData.message || `Failed to get download URL: ${response.status}`);
+        let errorText = '';
+        try {
+          const errorData = await response.json();
+          errorText = errorData.message || JSON.stringify(errorData);
+        } catch {
+          errorText = await response.text().catch(() => 'Unknown error');
+        }
+        throw new Error(`Failed to download file (${response.status}): ${errorText}`);
       }
 
-      const responseData = await response.json();
-      console.log(`[DocDownload] Backend response:`, responseData);
+      // Stream returns the file directly as blob
+      const blob = await response.blob();
+      console.log(`[DocDownload] Received blob. Type: ${blob.type}, Size: ${blob.size}`);
 
-      if (!responseData.success || !responseData.url) {
-        throw new Error('Backend did not return a valid download URL');
+      if (blob.size === 0) {
+        throw new Error('Received empty file from server');
       }
 
-      // Use the presigned URL to download the file
-      const downloadUrl = responseData.url;
-      const filename = responseData.fileName || doc.originalFileName;
+      // Create blob URL for download
+      const downloadUrl = URL.createObjectURL(blob);
+      const filename = doc.originalFileName;
 
-      console.log(`[DocDownload] Initiating download from S3 URL for file: ${filename}`);
+      console.log(`[DocDownload] Initiating download for file: ${filename}`);
 
       // Create a temporary link element and trigger download
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = filename; // This suggests the filename for download
-      link.target = '_blank'; // Open in new tab as fallback
+      link.download = filename;
+      link.target = '_blank';
 
       // Add link to DOM, click it, then remove it
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // Revoke the blob URL after download
+      URL.revokeObjectURL(downloadUrl);
 
       console.log(`[DocDownload] Download initiated for: ${filename}`);
 
@@ -910,35 +918,43 @@ export default function DocumentManagerPage() {
     console.log(`[ImageView] Starting image view for: ${doc.originalFileName} (ID: ${doc._id})`);
 
     try {
-      // Get presigned URL from backend
+      // Use streaming endpoint to bypass S3 CORS issues
       const endpoint =
         doc.sourceType === 'system'
-          ? `/api/system-kb/download/${doc._id}`
-          : `/api/documents/view/${doc._id}`;
+          ? `/api/system-kb/stream/${doc._id}`
+          : `/api/documents/stream/${doc._id}`;
 
-      console.log(`[ImageView] Fetching presigned URL from: ${endpoint}`);
+      console.log(`[ImageView] Streaming image from: ${endpoint}`);
 
       const response = await fetchWithAuth(endpoint, {
         method: 'GET',
       });
 
       if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ message: 'Failed to get image URL' }));
-        throw new Error(errorData.message || `Failed to get image URL: ${response.status}`);
+        let errorText = '';
+        try {
+          const errorData = await response.json();
+          errorText = errorData.message || JSON.stringify(errorData);
+        } catch {
+          errorText = await response.text().catch(() => 'Unknown error');
+        }
+        throw new Error(`Failed to load image (${response.status}): ${errorText}`);
       }
 
-      const responseData = await response.json();
-      console.log(`[ImageView] Backend response:`, responseData);
+      // Stream returns the file directly as blob
+      const blob = await response.blob();
+      console.log(`[ImageView] Received blob. Type: ${blob.type}, Size: ${blob.size}`);
 
-      if (!responseData.success || !responseData.url) {
-        throw new Error('Backend did not return a valid image URL');
+      if (blob.size === 0) {
+        throw new Error('Received empty image from server');
       }
+
+      // Create blob URL for display
+      const imageUrl = URL.createObjectURL(blob);
 
       // Set image data and open modal
-      setImageUrl(responseData.url);
-      setViewingImageName(responseData.fileName || doc.originalFileName);
+      setImageUrl(imageUrl);
+      setViewingImageName(doc.originalFileName);
       setIsImageViewerModalOpen(true);
 
       console.log(`[ImageView] Image viewer opened for: ${doc.originalFileName}`);
@@ -1039,41 +1055,34 @@ export default function DocumentManagerPage() {
     }
 
     try {
-      // Use token from useAuth hook
-      // if (!token) {
-      //   throw new Error('Authentication token not found. Please log in again.');
-      // }
-      // Consider adding if (!user) throw new Error('User not authenticated'); here
-
-      // Check sourceType to determine the correct endpoint
+      // Use streaming endpoint to bypass S3 CORS issues
+      // The streaming endpoint fetches from S3 server-side and streams to the client
       const endpoint =
         doc.sourceType === 'system'
-          ? `/api/system-kb/download/${doc._id}`
-          : `/api/documents/view/${doc._id}`;
+          ? `/api/system-kb/stream/${doc._id}`
+          : `/api/documents/stream/${doc._id}`;
 
-      console.log(`[DocumentsPage] Using endpoint: ${endpoint} for docId: ${doc._id}`);
+      console.log(`[DocumentsPage] Using streaming endpoint: ${endpoint} for docId: ${doc._id}`);
 
       const response = await fetchWithAuth(endpoint, {
         method: 'GET',
       });
 
       console.log(
-        `[PDFView][Diag] Backend response status for /api/documents/view: ${response.status}`
+        `[PDFView][Diag] Backend streaming response status: ${response.status}`
       );
-      // console.log(`[DocumentsPage] Fetch response status: ${response.status}`); // Original log
 
       if (!response.ok) {
-        let errorMsg = `Failed to fetch PDF metadata/URL from backend (${response.status})`;
-        let errorDataFromServer = null;
+        let errorMsg = `Failed to stream PDF from backend (${response.status})`;
         try {
-          errorDataFromServer = await response.json();
-          errorMsg = `${errorMsg}: ${errorDataFromServer.message || 'Server error'}`;
+          const errorData = await response.json();
+          errorMsg = `${errorMsg}: ${errorData.message || 'Server error'}`;
           console.log(
             `[PDFView][Diag] Backend error response data:`,
-            JSON.stringify(errorDataFromServer, null, 2)
+            JSON.stringify(errorData, null, 2)
           );
         } catch (jsonErr) {
-          // If parsing error JSON fails, use status text
+          // Response might be error text, not JSON
           const textError = await response
             .text()
             .catch(() => 'Could not read error response text.');
@@ -1086,46 +1095,19 @@ export default function DocumentManagerPage() {
         throw new Error(errorMsg);
       }
 
-      // Assuming the backend now returns a presigned URL in a specific format
-      // For example: { success: true, url: "presigned_s3_url", fileName: "actual_filename.pdf" }
-      const responseData = await response.json();
-      console.log(
-        `[PDFView][Diag] Backend success response data (expecting presigned URL):`,
-        JSON.stringify(responseData, null, 2)
-      );
+      // Stream returns the file directly as blob - create object URL for pdf.js
+      const blob = await response.blob();
+      console.log(`[PDFView][Diag] Received blob. Type: ${blob.type}, Size: ${blob.size}`);
 
-      if (!responseData.success || !responseData.url) {
-        const errMsg = `Backend did not return a valid presigned URL. Response: ${JSON.stringify(responseData)}`;
-        console.error(`[PDFView][Diag] ${errMsg}`);
-        throw new Error(errMsg);
+      if (blob.size === 0) {
+        throw new Error('Received empty PDF file from server');
       }
 
-      const presignedS3Url = responseData.url;
-      console.log(`[PDFView][Diag] Received presigned S3 URL: ${presignedS3Url}`);
-      setViewingDocName(responseData.fileName || doc.originalFileName); // Use filename from response if available
+      const objectUrl = URL.createObjectURL(blob);
+      console.log(`[PDFView][Diag] Created Object URL: ${objectUrl.substring(0, 60)}...`);
 
-      // Now, the BrandedPdfViewer component will attempt to load this presignedS3Url.
-      // We are no longer fetching the blob directly here and creating an object URL.
-      // The BrandedPdfViewer will handle the direct S3 fetch.
-      // Errors from S3 will appear in the browser's network tab for the S3 request.
-      setPdfUrl(presignedS3Url); // Set the presigned URL for the viewer
-
-      // --- Process Response into Object URL --- (This part is removed as we expect a presigned URL)
-      // const blob = await response.blob();
-      // console.log(`[DocumentsPage] Received blob. Type: ${blob.type}, Size: ${blob.size}`);
-
-      // Check content type but be more lenient - some servers might not set the correct MIME type
-      // if (blob.type !== 'application/pdf' && blob.type !== '') { // Removed
-      //   console.warn( // Removed
-      //     `[DocumentsPage] Expected PDF but received content type: ${blob.type} from ${fetchUrl}` // Removed
-      //   ); // Removed
-      //   // We'll continue anyway since the file might still be a PDF // Removed
-      // } // Removed
-
-      // const objectUrl = URL.createObjectURL(blob); // Removed
-      // console.log(`[DocumentsPage] Created Object URL: ${objectUrl.substring(0, 60)}...`); // Removed
-      // setPdfUrl(objectUrl); // Set URL to trigger rendering in the modal // Handled by presigned URL now
-      // --- End Process Response ---
+      setViewingDocName(doc.originalFileName);
+      setPdfUrl(objectUrl); // Set blob URL for the viewer - bypasses CORS since it's local
     } catch (error) {
       // console.error('[DocumentsPage] Error fetching/loading PDF:', error); // Original log
       console.error('[PDFView][Diag] Error in handleViewDocument:', error);
