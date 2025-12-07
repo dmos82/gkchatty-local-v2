@@ -56,6 +56,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
     typingUsers,
     sendTyping,
     markConversationAsRead,
+    onlineUsers,
   } = useDM();
 
   const { user } = useAuth();
@@ -100,9 +101,13 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Get recipient's presence status
+  // Get recipient's presence status - check conversations first, then fall back to onlineUsers
   const conversation = conversations.find((c) => c.otherParticipant._id === recipientId);
-  const recipientStatus: PresenceStatus = conversation?.otherParticipant?.status || 'offline';
+  const onlineUser = onlineUsers.find((u) => u._id === recipientId);
+  const recipientStatus: PresenceStatus =
+    conversation?.otherParticipant?.status ||
+    onlineUser?.status ||
+    'offline';
 
   // Reset recipient icon error when recipient changes
   useEffect(() => {
