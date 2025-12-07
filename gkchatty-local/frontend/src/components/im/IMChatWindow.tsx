@@ -17,6 +17,10 @@ interface IMChatWindowProps {
   isMinimized: boolean;
   position: { x: number; y: number };
   zIndex: number;
+  // Group chat props
+  isGroup?: boolean;
+  groupName?: string;
+  participantUsernames?: string[];
 }
 
 const StatusBadge: React.FC<{ status: PresenceStatus; size?: 'sm' | 'md' }> = ({
@@ -44,6 +48,9 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
   isMinimized,
   position,
   zIndex,
+  isGroup = false,
+  groupName,
+  participantUsernames = [],
 }) => {
   const {
     socket,
@@ -95,6 +102,15 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
     filename: string;
   }>({ isOpen: false, url: null, filename: '' });
   const [isLoadingPdfUrl, setIsLoadingPdfUrl] = useState(false);
+
+  // Group management state
+  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [showAddMembersModal, setShowAddMembersModal] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [isAddingMembers, setIsAddingMembers] = useState(false);
+  const [isLeavingGroup, setIsLeavingGroup] = useState(false);
+  const [selectedUsersToAdd, setSelectedUsersToAdd] = useState<Set<string>>(new Set());
+  const [availableUsers, setAvailableUsers] = useState<Array<{ _id: string; username: string; iconUrl?: string }>>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -690,6 +706,114 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
   // Get current user ID from useAuth context (not localStorage, which doesn't store userId)
   const currentUserId = user?._id || null;
 
+  // Group management handlers
+  const fetchAvailableUsers = useCallback(async () => {
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+
+    try {
+      const API_URL = getApiBaseUrl();
+      const response = await fetch(`${API_URL}/api/conversations/users/online`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // Filter out users already in the group
+        const filteredUsers = data.users?.filter(
+          (u: any) => !participantUsernames.includes(u.username)
+        ) || [];
+        setAvailableUsers(filteredUsers);
+      }
+    } catch (error) {
+      console.error('[IMChatWindow] Error fetching users:', error);
+    }
+  }, [participantUsernames]);
+
+  const handleOpenAddMembers = useCallback(() => {
+    setShowGroupMenu(false);
+    setShowAddMembersModal(true);
+    setSelectedUsersToAdd(new Set());
+    fetchAvailableUsers();
+  }, [fetchAvailableUsers]);
+
+  const handleAddMembers = async () => {
+    if (selectedUsersToAdd.size === 0 || !conversationId) return;
+
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+
+    setIsAddingMembers(true);
+    try {
+      const API_URL = getApiBaseUrl();
+      const response = await fetch(`${API_URL}/api/conversations/${conversationId}/members`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ memberIds: Array.from(selectedUsersToAdd) }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[IMChatWindow] Members added:', data);
+        setShowAddMembersModal(false);
+        setSelectedUsersToAdd(new Set());
+        // Refresh to update participant list - would need to update IMContext
+      } else {
+        const error = await response.json();
+        alert(error.message || 'Failed to add members');
+      }
+    } catch (error) {
+      console.error('[IMChatWindow] Error adding members:', error);
+      alert('Failed to add members');
+    } finally {
+      setIsAddingMembers(false);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!conversationId) return;
+
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+
+    setIsLeavingGroup(true);
+    try {
+      const API_URL = getApiBaseUrl();
+      const response = await fetch(`${API_URL}/api/conversations/${conversationId}/leave`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        console.log('[IMChatWindow] Left group successfully');
+        setShowLeaveConfirm(false);
+        closeChatWindow(windowId);
+      } else {
+        const error = await response.json();
+        alert(error.message || 'Failed to leave group');
+      }
+    } catch (error) {
+      console.error('[IMChatWindow] Error leaving group:', error);
+      alert('Failed to leave group');
+    } finally {
+      setIsLeavingGroup(false);
+    }
+  };
+
+  const toggleUserToAdd = (userId: string) => {
+    setSelectedUsersToAdd((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(userId)) {
+        newSet.delete(userId);
+      } else {
+        newSet.add(userId);
+      }
+      return newSet;
+    });
+  };
+
   // Render minimized state
   if (isMinimized) {
     return (
@@ -699,7 +823,13 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
         style={{ right: `${(parseInt(windowId.split('-').pop() || '0') % 5) * 160 + 90}px`, zIndex }}
       >
         <div className="relative">
-          {recipientIconUrl ? (
+          {isGroup ? (
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+          ) : recipientIconUrl ? (
             <img
               src={recipientIconUrl}
               alt={recipientUsername}
@@ -710,11 +840,13 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
               {recipientUsername.charAt(0).toUpperCase()}
             </div>
           )}
-          <div className="absolute -bottom-0.5 -right-0.5">
-            <StatusBadge status={recipientStatus} />
-          </div>
+          {!isGroup && (
+            <div className="absolute -bottom-0.5 -right-0.5">
+              <StatusBadge status={recipientStatus} />
+            </div>
+          )}
         </div>
-        <span className="text-sm font-medium">{recipientUsername}</span>
+        <span className="text-sm font-medium">{isGroup ? groupName : recipientUsername}</span>
       </button>
     );
   }
@@ -765,7 +897,13 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
       >
         <div className="flex items-center gap-2">
           <div className="relative">
-            {recipientIconUrl ? (
+            {isGroup ? (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+            ) : recipientIconUrl ? (
               <img
                 src={recipientIconUrl}
                 alt={recipientUsername}
@@ -776,18 +914,64 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
                 {recipientUsername.charAt(0).toUpperCase()}
               </div>
             )}
-            <div className="absolute -bottom-0.5 -right-0.5">
-              <StatusBadge status={recipientStatus} size="md" />
-            </div>
+            {!isGroup && (
+              <div className="absolute -bottom-0.5 -right-0.5">
+                <StatusBadge status={recipientStatus} size="md" />
+              </div>
+            )}
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-white leading-tight">{recipientUsername}</h4>
-            <span className="text-xs text-slate-400 capitalize">{recipientStatus}</span>
+            <h4 className="text-sm font-semibold text-white leading-tight">
+              {isGroup ? groupName : recipientUsername}
+            </h4>
+            <span className="text-xs text-slate-400 capitalize">
+              {isGroup ? `${participantUsernames.length} members` : recipientStatus}
+            </span>
           </div>
         </div>
 
         {/* Window controls */}
         <div className="window-controls flex items-center gap-1">
+          {/* Group settings button (only for group chats) */}
+          {isGroup && (
+            <div className="relative">
+              <button
+                onClick={() => setShowGroupMenu(!showGroupMenu)}
+                className="p-1.5 rounded hover:bg-[#404040] transition-colors"
+                title="Group settings"
+              >
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v.01M12 12v.01M12 18v.01" />
+                </svg>
+              </button>
+              {/* Dropdown menu */}
+              {showGroupMenu && (
+                <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-[#2a2a2a] rounded-lg shadow-xl border border-slate-200 dark:border-[#404040] py-1 z-50">
+                  <button
+                    onClick={handleOpenAddMembers}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#404040] transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                    </svg>
+                    Add Members
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowGroupMenu(false);
+                      setShowLeaveConfirm(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-slate-100 dark:hover:bg-[#404040] transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Leave Group
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={handleAnimatedMinimize}
             className="p-1.5 rounded hover:bg-[#404040] transition-colors"
@@ -876,7 +1060,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
                     {/* Sender name for received messages */}
                     {!isOwnMessage && (
                       <span className="text-[10px] text-slate-500 dark:text-slate-400 ml-1 mb-0.5 block">
-                        {recipientUsername}
+                        {isGroup ? (message.senderUsername || 'Unknown') : recipientUsername}
                       </span>
                     )}
                     {/* Sender name for own messages */}
@@ -1161,6 +1345,157 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
           title={pdfViewerState.filename}
           onClose={handleClosePdfViewer}
           showDownload={true}
+        />
+      )}
+
+      {/* Add Members Modal */}
+      {showAddMembersModal && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-xl"
+          onClick={() => setShowAddMembersModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-[#2a2a2a] rounded-xl shadow-xl p-4 mx-2 max-w-[280px] w-full max-h-[350px] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
+              Add Members
+            </h3>
+
+            {/* User list */}
+            <div className="flex-1 overflow-y-auto space-y-1 mb-3">
+              {availableUsers.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-4">No users available to add</p>
+              ) : (
+                availableUsers.map((u) => (
+                  <button
+                    key={u._id}
+                    onClick={() => toggleUserToAdd(u._id)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${
+                      selectedUsersToAdd.has(u._id)
+                        ? 'bg-green-100 dark:bg-green-900/30 ring-1 ring-green-400'
+                        : 'hover:bg-slate-100 dark:hover:bg-[#404040]'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                        selectedUsersToAdd.has(u._id)
+                          ? 'bg-green-500 border-green-500'
+                          : 'border-slate-400'
+                      }`}
+                    >
+                      {selectedUsersToAdd.has(u._id) && (
+                        <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                    {u.iconUrl ? (
+                      <img src={u.iconUrl} alt={u.username} className="w-6 h-6 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-slate-800 text-xs font-bold">
+                        {u.username.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <span className="text-sm text-slate-700 dark:text-slate-200 truncate">{u.username}</span>
+                  </button>
+                ))
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowAddMembersModal(false)}
+                className="flex-1 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#404040] rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddMembers}
+                disabled={selectedUsersToAdd.size === 0 || isAddingMembers}
+                className="flex-1 px-3 py-2 text-sm font-medium bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+              >
+                {isAddingMembers ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Adding...
+                  </>
+                ) : (
+                  `Add (${selectedUsersToAdd.size})`
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leave Group Confirmation */}
+      {showLeaveConfirm && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-xl"
+          onClick={() => setShowLeaveConfirm(false)}
+        >
+          <div
+            className="bg-white dark:bg-[#2a2a2a] rounded-xl shadow-xl p-4 mx-4 max-w-[260px] w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Leave Group?</h3>
+                <p className="text-xs text-slate-500">You won&apos;t receive messages</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+              Are you sure you want to leave &quot;{groupName}&quot;?
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowLeaveConfirm(false)}
+                className="flex-1 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#404040] rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLeaveGroup}
+                disabled={isLeavingGroup}
+                className="flex-1 px-3 py-2 text-sm font-medium bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+              >
+                {isLeavingGroup ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Leaving...
+                  </>
+                ) : (
+                  'Leave'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Click outside to close group menu */}
+      {showGroupMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowGroupMenu(false)}
         />
       )}
     </div>

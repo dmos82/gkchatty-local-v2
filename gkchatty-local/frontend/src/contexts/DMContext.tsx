@@ -724,18 +724,16 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       const token = getToken();
       if (!token) return;
 
-      // Find the conversation
-      const conversation = conversations.find((c) => c._id === conversationId);
-      if (!conversation || conversation.unreadCount === 0) return;
-
       try {
+        // Always call API to ensure backend state is synced
+        // This fixes edge cases where frontend/backend unread counts diverge
         await fetch(`${getSocketUrl()}/api/conversations/${conversationId}/read`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
-        // Update local state
+        // Update local state to 0
         setConversations((prev) =>
           prev.map((c) => (c._id === conversationId ? { ...c, unreadCount: 0 } : c))
         );
@@ -743,7 +741,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
         console.error('[DMContext] Error marking conversation as read:', error);
       }
     },
-    [getToken, conversations]
+    [getToken]
   );
 
   // Calculate total unread count

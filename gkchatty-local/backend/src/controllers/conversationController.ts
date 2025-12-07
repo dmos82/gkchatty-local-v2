@@ -460,6 +460,123 @@ export const markConversationRead = async (
 };
 
 /**
+ * Create a group conversation
+ * POST /api/conversations/group
+ */
+export const createGroupConversation = async (
+  req: RequestWithUser,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id;
+    const username = (req.user as any)?.username;
+
+    if (!userId || !username) {
+      res.status(401).json({ success: false, message: 'Not authenticated' });
+      return;
+    }
+
+    const { participantIds, groupName } = req.body;
+
+    if (!participantIds || !Array.isArray(participantIds) || participantIds.length < 1) {
+      res.status(400).json({ success: false, message: 'At least one participant is required' });
+      return;
+    }
+
+    if (!groupName || typeof groupName !== 'string' || groupName.trim().length === 0) {
+      res.status(400).json({ success: false, message: 'Group name is required' });
+      return;
+    }
+
+    // Validate all participant IDs and get usernames
+    const participantObjectIds = participantIds.map((id: string) => new Types.ObjectId(id));
+    const participants = await User.find({ _id: { $in: participantObjectIds } }).select('_id username');
+
+    if (participants.length !== participantIds.length) {
+      res.status(400).json({ success: false, message: 'One or more participants not found' });
+      return;
+    }
+
+    // Cannot include yourself as participant (you're added automatically as creator)
+    if (participantIds.includes(userId.toString())) {
+      res.status(400).json({ success: false, message: 'Cannot include yourself in participant list' });
+      return;
+    }
+
+    // Build full participant list (creator + selected participants)
+    const allParticipantIds = [userId, ...participantObjectIds];
+    const allParticipantUsernames = [username, ...participants.map(p => p.username)];
+
+    // Initialize participant metadata
+    const now = new Date();
+    const participantMeta = new Map<string, {
+      unreadCount: number;
+      lastReadAt: Date | null;
+      isArchived: boolean;
+      isMuted: boolean;
+      joinedAt: Date;
+    }>();
+
+    allParticipantIds.forEach((pId) => {
+      participantMeta.set(pId.toString(), {
+        unreadCount: 0,
+        lastReadAt: null,
+        isArchived: false,
+        isMuted: false,
+        joinedAt: now,
+      });
+    });
+
+    // Create the group conversation
+    const conversation = new Conversation({
+      participants: allParticipantIds,
+      participantUsernames: allParticipantUsernames,
+      participantMeta,
+      isGroup: true,
+      groupName: groupName.trim(),
+      createdBy: userId,
+      deletedBy: [],
+      lastMessage: null,
+    });
+
+    await conversation.save();
+
+    // Get presence for all participants
+    const presenceMap = await UserPresence.getBulkPresence(participantObjectIds);
+
+    // Format participant info for response
+    const memberInfo = participants.map((p) => {
+      const presence = presenceMap.get(p._id.toString());
+      return {
+        _id: p._id.toString(),
+        username: p.username,
+        status: presence?.status || 'offline',
+        lastSeenAt: presence?.lastSeenAt,
+      };
+    });
+
+    res.status(201).json({
+      success: true,
+      conversation: {
+        _id: conversation._id.toString(),
+        isGroup: true,
+        groupName: conversation.groupName,
+        participants: memberInfo,
+        participantUsernames: allParticipantUsernames, // Include usernames array for frontend
+        createdBy: userId.toString(),
+        lastMessage: null,
+        unreadCount: 0,
+        updatedAt: conversation.updatedAt,
+        createdAt: conversation.createdAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get online users (for starting new conversations)
  * GET /api/conversations/users/online
  */
@@ -523,6 +640,221 @@ export const getOnlineUsers = async (
     res.json({
       success: true,
       users: usersWithPresence,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Add members to a group conversation
+ * POST /api/conversations/:id/members
+ */
+export const addGroupMembers = async (
+  req: RequestWithUser,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id;
+    const { id } = req.params;
+    const { memberIds } = req.body;
+
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Not authenticated' });
+      return;
+    }
+
+    if (!Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid conversation ID' });
+      return;
+    }
+
+    if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
+      res.status(400).json({ success: false, message: 'At least one member ID is required' });
+      return;
+    }
+
+    const conversation = await Conversation.findOne({
+      _id: id,
+      participants: userId,
+      isGroup: true,
+    });
+
+    if (!conversation) {
+      res.status(404).json({ success: false, message: 'Group conversation not found' });
+      return;
+    }
+
+    // Validate new member IDs and get usernames
+    const newMemberObjectIds = memberIds.map((mid: string) => new Types.ObjectId(mid));
+    const newMembers = await User.find({ _id: { $in: newMemberObjectIds } }).select('_id username');
+
+    if (newMembers.length !== memberIds.length) {
+      res.status(400).json({ success: false, message: 'One or more members not found' });
+      return;
+    }
+
+    // Filter out members who are already in the group
+    const existingParticipantIds = new Set(conversation.participants.map((p) => p.toString()));
+    const membersToAdd = newMembers.filter((m) => !existingParticipantIds.has(m._id.toString()));
+
+    if (membersToAdd.length === 0) {
+      res.status(400).json({ success: false, message: 'All specified members are already in the group' });
+      return;
+    }
+
+    // Add new members to participants and participantUsernames
+    const now = new Date();
+    for (const member of membersToAdd) {
+      conversation.participants.push(member._id);
+      conversation.participantUsernames.push(member.username);
+
+      // Initialize participantMeta for new member
+      conversation.participantMeta.set(member._id.toString(), {
+        unreadCount: 0,
+        lastReadAt: null,
+        isArchived: false,
+        isMuted: false,
+        joinedAt: now,
+      });
+    }
+
+    await conversation.save();
+
+    res.json({
+      success: true,
+      message: `Added ${membersToAdd.length} member(s) to the group`,
+      addedMembers: membersToAdd.map((m) => ({ _id: m._id.toString(), username: m.username })),
+      participantUsernames: conversation.participantUsernames,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Leave a group conversation (remove self)
+ * POST /api/conversations/:id/leave
+ */
+export const leaveGroup = async (
+  req: RequestWithUser,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id;
+    const username = (req.user as any)?.username;
+    const { id } = req.params;
+
+    if (!userId || !username) {
+      res.status(401).json({ success: false, message: 'Not authenticated' });
+      return;
+    }
+
+    if (!Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid conversation ID' });
+      return;
+    }
+
+    const conversation = await Conversation.findOne({
+      _id: id,
+      participants: userId,
+      isGroup: true,
+    });
+
+    if (!conversation) {
+      res.status(404).json({ success: false, message: 'Group conversation not found' });
+      return;
+    }
+
+    // Check if user is the only member left
+    if (conversation.participants.length <= 2) {
+      res.status(400).json({
+        success: false,
+        message: 'Cannot leave group with 2 or fewer members. Delete the group instead.',
+      });
+      return;
+    }
+
+    // Remove user from participants and participantUsernames
+    const userIndex = conversation.participants.findIndex((p) => p.equals(userId));
+    if (userIndex !== -1) {
+      conversation.participants.splice(userIndex, 1);
+      conversation.participantUsernames.splice(userIndex, 1);
+    }
+
+    // Remove from participantMeta
+    conversation.participantMeta.delete(userId.toString());
+
+    // If user was the creator, transfer ownership to next participant
+    if (conversation.createdBy?.equals(userId)) {
+      conversation.createdBy = conversation.participants[0];
+    }
+
+    await conversation.save();
+
+    res.json({
+      success: true,
+      message: 'Successfully left the group',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete a group conversation (only creator can delete)
+ * DELETE /api/conversations/:id
+ */
+export const deleteGroupConversation = async (
+  req: RequestWithUser,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id;
+    const { id } = req.params;
+
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Not authenticated' });
+      return;
+    }
+
+    if (!Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid conversation ID' });
+      return;
+    }
+
+    const conversation = await Conversation.findOne({
+      _id: id,
+      participants: userId,
+      isGroup: true,
+    });
+
+    if (!conversation) {
+      res.status(404).json({ success: false, message: 'Group conversation not found' });
+      return;
+    }
+
+    // Only creator can delete the group
+    if (!conversation.createdBy?.equals(userId)) {
+      res.status(403).json({
+        success: false,
+        message: 'Only the group creator can delete this group',
+      });
+      return;
+    }
+
+    // Delete all messages in the conversation
+    await DirectMessage.deleteMany({ conversationId: conversation._id });
+
+    // Delete the conversation
+    await Conversation.deleteOne({ _id: id });
+
+    res.json({
+      success: true,
+      message: 'Group conversation deleted successfully',
     });
   } catch (error) {
     next(error);

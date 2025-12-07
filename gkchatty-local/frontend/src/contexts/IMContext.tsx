@@ -12,6 +12,10 @@ interface ChatWindow {
   isMinimized: boolean;
   position: { x: number; y: number };
   zIndex: number;
+  // Group chat fields
+  isGroup?: boolean;
+  groupName?: string;
+  participantUsernames?: string[];
 }
 
 interface IMContextType {
@@ -24,6 +28,7 @@ interface IMContextType {
   // Chat windows
   chatWindows: ChatWindow[];
   openChatWindow: (user: UserPresence, conversationId?: string | null) => void;
+  openGroupChatWindow: (conversationId: string, groupName: string, participantUsernames: string[]) => void;
   closeChatWindow: (windowId: string) => void;
   minimizeChatWindow: (windowId: string) => void;
   restoreChatWindow: (windowId: string) => void;
@@ -190,6 +195,50 @@ export const IMProvider: React.FC<IMProviderProps> = ({ children }) => {
     [chatWindows, getNextZIndex]
   );
 
+  // Open a group chat window
+  const openGroupChatWindow = useCallback(
+    (conversationId: string, groupName: string, participantUsernames: string[]) => {
+      // Check if window already exists for this conversation
+      const existingWindow = chatWindows.find((w) => w.conversationId === conversationId);
+      if (existingWindow) {
+        // Bring existing window to front and restore if minimized
+        setChatWindows((prev) =>
+          prev.map((w) =>
+            w.id === existingWindow.id
+              ? { ...w, isMinimized: false, zIndex: getNextZIndex() }
+              : w
+          )
+        );
+        return;
+      }
+
+      // Calculate position with cascade effect
+      const windowCount = chatWindows.length;
+      const baseX = typeof window !== 'undefined' ? window.innerWidth - 380 : 800;
+      const baseY = typeof window !== 'undefined' ? window.innerHeight - 500 : 300;
+
+      const newWindow: ChatWindow = {
+        id: `group-${conversationId}-${Date.now()}`,
+        recipientId: conversationId, // Use conversationId as identifier
+        recipientUsername: groupName, // Display group name
+        recipientIconUrl: null,
+        conversationId,
+        isMinimized: false,
+        position: {
+          x: Math.max(100, baseX - (windowCount % 5) * WINDOW_OFFSET),
+          y: Math.max(100, baseY - (windowCount % 5) * WINDOW_OFFSET),
+        },
+        zIndex: getNextZIndex(),
+        isGroup: true,
+        groupName,
+        participantUsernames,
+      };
+
+      setChatWindows((prev) => [...prev, newWindow]);
+    },
+    [chatWindows, getNextZIndex]
+  );
+
   // Close a chat window
   const closeChatWindow = useCallback((windowId: string) => {
     setChatWindows((prev) => prev.filter((w) => w.id !== windowId));
@@ -259,6 +308,7 @@ export const IMProvider: React.FC<IMProviderProps> = ({ children }) => {
     closeBuddyList,
     chatWindows,
     openChatWindow,
+    openGroupChatWindow,
     closeChatWindow,
     minimizeChatWindow,
     restoreChatWindow,

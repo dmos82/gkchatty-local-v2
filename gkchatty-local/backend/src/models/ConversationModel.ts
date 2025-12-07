@@ -130,13 +130,21 @@ ConversationSchema.methods.incrementUnread = async function (
 ConversationSchema.methods.markAsRead = async function (
   userId: string
 ): Promise<void> {
-  const meta = this.participantMeta.get(userId);
-  if (meta) {
-    meta.unreadCount = 0;
-    meta.lastReadAt = new Date();
-    this.participantMeta.set(userId, meta);
-    await this.save();
-  }
+  // Get existing meta or create a default entry if missing
+  // This handles edge cases where participantMeta wasn't properly initialized
+  const meta = this.participantMeta.get(userId) || {
+    unreadCount: 0,
+    lastReadAt: null,
+    isArchived: false,
+    isMuted: false,
+    joinedAt: new Date(),
+  };
+
+  // Always update (even if unreadCount was already 0) to ensure data consistency
+  meta.unreadCount = 0;
+  meta.lastReadAt = new Date();
+  this.participantMeta.set(userId, meta);
+  await this.save();
 };
 
 // Static method to find or create a DM conversation between two users

@@ -3,11 +3,15 @@ import { protect, checkSession } from '../middleware/authMiddleware';
 import {
   getConversations,
   createConversation,
+  createGroupConversation,
   getConversation,
   deleteConversation,
   getMessages,
   markConversationRead,
   getOnlineUsers,
+  addGroupMembers,
+  leaveGroup,
+  deleteGroupConversation,
 } from '../controllers/conversationController';
 import { dmAttachmentUpload } from '../config/multerConfig';
 import { uploadFile, getPresignedUrlForView, getFileStream } from '../utils/s3Helper';
@@ -47,6 +51,14 @@ router.get('/', getConversations);
 router.post('/', createConversation);
 
 /**
+ * @route   POST /api/conversations/group
+ * @desc    Create a new group conversation
+ * @access  Private
+ * @body    { participantIds: string[], groupName: string }
+ */
+router.post('/group', createGroupConversation);
+
+/**
  * @route   GET /api/conversations/:id
  * @desc    Get a specific conversation
  * @access  Private
@@ -74,6 +86,28 @@ router.get('/:id/messages', getMessages);
  * @access  Private
  */
 router.post('/:id/read', markConversationRead);
+
+/**
+ * @route   POST /api/conversations/:id/members
+ * @desc    Add members to a group conversation
+ * @access  Private
+ * @body    { memberIds: string[] }
+ */
+router.post('/:id/members', addGroupMembers);
+
+/**
+ * @route   POST /api/conversations/:id/leave
+ * @desc    Leave a group conversation (remove self)
+ * @access  Private
+ */
+router.post('/:id/leave', leaveGroup);
+
+/**
+ * @route   DELETE /api/conversations/:id/group
+ * @desc    Delete a group conversation (only creator can delete)
+ * @access  Private
+ */
+router.delete('/:id/group', deleteGroupConversation);
 
 /**
  * @route   POST /api/conversations/:id/attachments

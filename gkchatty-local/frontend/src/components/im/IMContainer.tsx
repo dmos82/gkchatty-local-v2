@@ -48,6 +48,9 @@ const IMContainerInner: React.FC = () => {
           isMinimized={window.isMinimized}
           position={window.position}
           zIndex={window.zIndex}
+          isGroup={window.isGroup}
+          groupName={window.groupName}
+          participantUsernames={window.participantUsernames}
         />
       ))}
     </>
