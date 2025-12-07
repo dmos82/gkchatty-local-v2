@@ -132,6 +132,42 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
     }
   }, [conversationId]);
 
+  // Sync new messages from DMContext when they arrive
+  // This handles messages received via socket that update allMessages
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const conversationMessages = allMessages.filter(
+      (m) => (m as any).conversationId === conversationId
+    );
+
+    // Only update if there are new messages (compare by length and last message ID)
+    setLocalMessages((prev) => {
+      if (conversationMessages.length === 0) return prev;
+
+      // Check if there are new messages from context that aren't in localMessages
+      const newMessages = conversationMessages.filter(
+        (contextMsg) => !prev.some((localMsg) => localMsg._id === contextMsg._id)
+      );
+
+      if (newMessages.length > 0) {
+        console.log('[IMChatWindow] Syncing', newMessages.length, 'new messages from DMContext');
+        // Merge: keep local messages and add any new ones from context
+        const merged = [...prev];
+        newMessages.forEach((msg) => {
+          if (!merged.some((m) => m._id === msg._id)) {
+            merged.push(msg);
+          }
+        });
+        // Sort by creation date
+        return merged.sort((a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      }
+      return prev;
+    });
+  }, [allMessages, conversationId]);
+
   const loadMessages = async () => {
     if (!conversationId) return;
 

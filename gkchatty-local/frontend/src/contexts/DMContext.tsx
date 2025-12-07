@@ -225,13 +225,17 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       return;
     }
 
-    console.log('[DMContext] Initializing Socket.IO connection');
+    console.log('[DMContext] Initializing Socket.IO connection to:', getSocketUrl());
     const newSocket = io(getSocketUrl(), {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      // Use polling first for better compatibility with restrictive networks/firewalls
+      transports: ['polling', 'websocket'],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity, // Keep trying to reconnect
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000, // Max 10 seconds between attempts
+      randomizationFactor: 0.5, // Add jitter to prevent thundering herd
+      timeout: 20000, // Connection timeout
     });
 
     newSocket.on('connect', () => {
@@ -249,6 +253,23 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       console.error('[DMContext] Socket connection error:', error.message);
       setConnectionError(error.message);
       setIsConnected(false);
+    });
+
+    // Handle reconnection events for debugging
+    newSocket.io.on('reconnect', (attempt) => {
+      console.log('[DMContext] Socket reconnected after', attempt, 'attempts');
+    });
+
+    newSocket.io.on('reconnect_attempt', (attempt) => {
+      console.log('[DMContext] Socket reconnection attempt', attempt);
+    });
+
+    newSocket.io.on('reconnect_error', (error) => {
+      console.error('[DMContext] Socket reconnection error:', error.message);
+    });
+
+    newSocket.io.on('reconnect_failed', () => {
+      console.error('[DMContext] Socket reconnection failed after all attempts');
     });
 
     // Handle incoming DM (backend emits 'dm:receive')
