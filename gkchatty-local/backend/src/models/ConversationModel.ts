@@ -159,7 +159,7 @@ ConversationSchema.statics.findOrCreateDM = async function (
       ? [user1Username, user2Username]
       : [user2Username, user1Username];
 
-  // Try to find existing conversation
+  // Try to find existing conversation first
   let conversation = await this.findOne({
     participants: { $all: participants, $size: 2 },
     isGroup: false,
@@ -182,17 +182,36 @@ ConversationSchema.statics.findOrCreateDM = async function (
     });
   });
 
-  conversation = new this({
-    participants,
-    participantUsernames,
-    participantMeta,
-    isGroup: false,
-    deletedBy: [],
-    lastMessage: null,
-  });
+  try {
+    conversation = new this({
+      participants,
+      participantUsernames,
+      participantMeta,
+      isGroup: false,
+      deletedBy: [],
+      lastMessage: null,
+    });
 
-  await conversation.save();
-  return { conversation, isNew: true };
+    await conversation.save();
+    return { conversation, isNew: true };
+  } catch (error: any) {
+    // Handle race condition - another request may have created the conversation
+    // between our find and create. MongoDB error code 11000 = duplicate key.
+    if (error.code === 11000) {
+      console.log('[Conversation] Race condition detected, fetching existing conversation');
+      const existingConversation = await this.findOne({
+        participants: { $all: participants, $size: 2 },
+        isGroup: false,
+      });
+
+      if (existingConversation) {
+        return { conversation: existingConversation, isNew: false };
+      }
+    }
+
+    // Re-throw if it's not a duplicate key error or we still can't find it
+    throw error;
+  }
 };
 
 // Ensure proper typing for static methods
