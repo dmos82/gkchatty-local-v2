@@ -99,14 +99,10 @@ ConversationSchema.index({ participants: 1 });
 ConversationSchema.index({ participants: 1, updatedAt: -1 });
 ConversationSchema.index({ 'lastMessage.sentAt': -1 });
 
-// Compound index for finding existing DM between two users (unique for non-group chats)
-ConversationSchema.index(
-  { participants: 1, isGroup: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { isGroup: false },
-  }
-);
+// NOTE: We previously had a unique index on { participants: 1, isGroup: 1 } but it was
+// fundamentally broken. MongoDB creates index entries for each array element, so the unique
+// constraint prevented users from being in more than one DM conversation. Removed.
+// Duplicate prevention is now handled in findOrCreateDM via application logic.
 
 // Helper method to get unread count for a user
 ConversationSchema.methods.getUnreadCount = function (userId: string): number {

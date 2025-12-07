@@ -186,6 +186,36 @@ async function startServer() {
     await connectDB();
     console.log('Database connection successful, proceeding with app setup...');
 
+    // --- BEGIN: Drop Broken Conversation Index ---
+    // The unique index on { participants: 1, isGroup: 1 } was fundamentally broken.
+    // MongoDB creates index entries for each array element, so the unique constraint
+    // prevented users from being in more than one DM conversation. Must drop it.
+    try {
+      const db = mongoose.connection.db;
+      if (db) {
+        const conversationsCollection = db.collection('conversations');
+        const indexes = await conversationsCollection.indexes();
+        const brokenIndex = indexes.find(
+          (idx: any) => idx.name === 'participants_1_isGroup_1' && idx.unique === true
+        );
+        if (brokenIndex) {
+          console.log('[Index Migration] Found broken unique index participants_1_isGroup_1, dropping...');
+          await conversationsCollection.dropIndex('participants_1_isGroup_1');
+          console.log('[Index Migration] Successfully dropped broken index.');
+        } else {
+          console.log('[Index Migration] Broken index already dropped or never existed. Good.');
+        }
+      }
+    } catch (indexError: any) {
+      // Index might not exist, which is fine
+      if (indexError.code === 27) {
+        console.log('[Index Migration] Index participants_1_isGroup_1 does not exist, nothing to drop.');
+      } else {
+        console.error('[Index Migration] Error checking/dropping index:', indexError.message);
+      }
+    }
+    // --- END: Drop Broken Conversation Index ---
+
     // --- BEGIN: Seed Default Settings ---
     try {
       const defaultSystemPromptKey = 'systemPrompt';
