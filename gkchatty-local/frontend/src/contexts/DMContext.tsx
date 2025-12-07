@@ -152,6 +152,10 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingSentRef = useRef<number>(0);
 
+  // Track processed message IDs to prevent duplicate notification increments
+  // (Backend emits to both conversation room and user room, causing duplicates)
+  const processedMessageIds = useRef<Set<string>>(new Set());
+
   // Get auth token - must match key used by AuthContext
   const getToken = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -273,9 +277,21 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     });
 
     // Handle incoming DM (backend emits 'dm:receive')
+    // NOTE: Backend emits to both conversation room AND user room, so we may receive duplicates
     newSocket.on('dm:receive', (message: Message) => {
       console.log('[DMContext] Received new message:', message._id);
       const messageConversationId = (message as any).conversationId;
+
+      // Check if we've already processed this message (prevents duplicate notifications)
+      const alreadyProcessed = processedMessageIds.current.has(message._id);
+      if (!alreadyProcessed) {
+        processedMessageIds.current.add(message._id);
+        // Limit set size to prevent memory leak (keep last 1000 message IDs)
+        if (processedMessageIds.current.size > 1000) {
+          const iterator = processedMessageIds.current.values();
+          processedMessageIds.current.delete(iterator.next().value);
+        }
+      }
 
       setMessages((prev) => {
         // Check if message already exists (by _id or tempId)
@@ -285,13 +301,18 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       });
 
       // Update conversation's last message
-      // Only increment unread count if the chat window for this conversation is NOT currently open
+      // Only increment unread count if:
+      // 1. This is the first time processing this message (not a duplicate)
+      // 2. The chat window for this conversation is NOT currently open
       setConversations((prev) =>
         prev.map((conv) => {
           if (conv._id === messageConversationId) {
             // Check if this conversation is currently selected (chat window open)
             // If so, don't increment unread - user is already viewing this chat
             const isCurrentlyViewing = selectedConversation?._id === messageConversationId;
+
+            // Only increment unread if: not a duplicate AND not currently viewing
+            const shouldIncrementUnread = !alreadyProcessed && !isCurrentlyViewing;
 
             return {
               ...conv,
@@ -302,8 +323,8 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
                 sentAt: message.createdAt,
                 isRead: isCurrentlyViewing, // Mark as read if viewing
               },
-              // Don't increment unread if user is currently viewing this conversation
-              unreadCount: isCurrentlyViewing ? conv.unreadCount : conv.unreadCount + 1,
+              // Don't increment unread if duplicate or user is currently viewing
+              unreadCount: shouldIncrementUnread ? conv.unreadCount + 1 : conv.unreadCount,
               updatedAt: message.createdAt,
             };
           }
