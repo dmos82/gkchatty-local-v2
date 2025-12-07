@@ -116,6 +116,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  // Debug: log if attachment is available
+  console.log('[MessageInput] Render - onUploadAttachment:', !!onUploadAttachment, 'disabled:', disabled, 'isUploading:', isUploading);
+
   return (
     <form onSubmit={handleSubmit} className="border-t border-gray-200 dark:border-gray-700 p-4">
       {/* Pending attachments preview */}
