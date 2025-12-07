@@ -24,6 +24,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     loadMoreMessages,
     typingUsers,
     sendTyping,
+    uploadAttachment,
   } = useDM();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -262,6 +263,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
       <MessageInput
         onSendMessage={sendMessage}
         onTyping={sendTyping}
+        onUploadAttachment={uploadAttachment}
         placeholder={`Message ${conversation.otherParticipant.username}...`}
       />
     </div>
