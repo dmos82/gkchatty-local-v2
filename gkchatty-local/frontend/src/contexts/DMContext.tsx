@@ -110,6 +110,9 @@ interface DMContextType {
   // Unread count
   totalUnreadCount: number;
   markConversationAsRead: (conversationId: string) => Promise<void>;
+
+  // IM Window Tracking (for notification suppression)
+  setOpenConversationIds: (ids: string[]) => void;
 }
 
 const DMContext = createContext<DMContextType | undefined>(undefined);
@@ -159,10 +162,18 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
   // Ref to track current selected conversation (for use in socket handlers to avoid stale closures)
   const selectedConversationRef = useRef<Conversation | null>(null);
 
+  // Track open conversation IDs (from IM windows) - set by IMProvider bridge
+  const openConversationIdsRef = useRef<Set<string>>(new Set());
+
   // Keep ref in sync with state
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
   }, [selectedConversation]);
+
+  // Function to update open conversation IDs (called by IM system)
+  const setOpenConversationIds = useCallback((ids: string[]) => {
+    openConversationIdsRef.current = new Set(ids);
+  }, []);
 
   // Get auth token - must match key used by AuthContext
   const getToken = useCallback(() => {
@@ -315,12 +326,14 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       setConversations((prev) =>
         prev.map((conv) => {
           if (conv._id === messageConversationId) {
-            // Check if this conversation is currently selected (chat window open)
+            // Check if this conversation is currently open (either selected in DM view OR in an IM window)
             // If so, don't increment unread - user is already viewing this chat
-            // Use ref to get current value (avoids stale closure from when socket handler was created)
-            const isCurrentlyViewing = selectedConversationRef.current?._id === messageConversationId;
+            // Use refs to get current values (avoids stale closure from when socket handler was created)
+            const isSelectedInDM = selectedConversationRef.current?._id === messageConversationId;
+            const isOpenInIMWindow = openConversationIdsRef.current.has(messageConversationId);
+            const isCurrentlyViewing = isSelectedInDM || isOpenInIMWindow;
 
-            // Only increment unread if: not a duplicate AND not currently viewing
+            // Only increment unread if: not a duplicate AND not currently viewing in any window
             const shouldIncrementUnread = !alreadyProcessed && !isCurrentlyViewing;
 
             return {
@@ -760,6 +773,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     updatePresence,
     totalUnreadCount,
     markConversationAsRead,
+    setOpenConversationIds,
   };
 
   return <DMContext.Provider value={value}>{children}</DMContext.Provider>;
