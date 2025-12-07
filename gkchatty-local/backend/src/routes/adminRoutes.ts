@@ -55,6 +55,31 @@ import {
 // import { GIT_COMMIT_SHA } from '../config/version'; // Import build identifier - Temporarily removed
 import { KNOWLEDGE_BASE_S3_PREFIX } from '../config/storageConfig';
 import { getLogger } from '../utils/logger';
+// Import Audit and Feature Toggle Services
+import {
+  getAuditLogs,
+  getAuditStats,
+  exportAuditLogs,
+  AuditLogFilters,
+} from '../services/auditService';
+import {
+  getAllFeatureToggles,
+  setFeatureToggle,
+  initializeFeatureToggles,
+} from '../services/featureToggleService';
+import { FeatureName } from '../models/FeatureToggleModel';
+import { AuditAction, AuditResource } from '../models/AuditLogModel';
+import { auditFeatureToggle, auditAdminAction } from '../middleware/auditMiddleware';
+// Import Knowledge Gap Service
+import {
+  getKnowledgeGaps,
+  getNewGapCount,
+  getTopKnowledgeGaps,
+  updateGapStatus,
+  getGapStats,
+  deleteGap,
+} from '../services/knowledgeGapService';
+import { GapStatus } from '../models/KnowledgeGapModel';
 
 const router: Router = express.Router();
 const logger = getLogger('adminRoutes');
@@ -1307,6 +1332,528 @@ router.get(
       res.status(500).json({
         success: false,
         message: 'Failed to fetch server info',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+// ================================================
+//          AUDIT LOG ROUTES
+// ================================================
+
+/**
+ * @route   GET /api/admin/audit-logs
+ * @desc    Get audit logs with filters and pagination
+ * @access  Private (Admin only)
+ */
+router.get(
+  '/audit-logs',
+  asyncHandler(async (req: Request, res: Response) => {
+    logger.info({ adminUserId: req.user?._id }, 'Request for audit logs');
+
+    try {
+      // Parse query parameters
+      const filters: AuditLogFilters = {};
+
+      if (req.query.userId) filters.userId = req.query.userId as string;
+      if (req.query.username) filters.username = req.query.username as string;
+      if (req.query.action) filters.action = req.query.action as AuditAction;
+      if (req.query.resource) filters.resource = req.query.resource as AuditResource;
+      if (req.query.success !== undefined) filters.success = req.query.success === 'true';
+      if (req.query.correlationId) filters.correlationId = req.query.correlationId as string;
+      if (req.query.ipAddress) filters.ipAddress = req.query.ipAddress as string;
+      if (req.query.startDate) filters.startDate = new Date(req.query.startDate as string);
+      if (req.query.endDate) filters.endDate = new Date(req.query.endDate as string);
+
+      const pagination = {
+        page: parseInt(req.query.page as string) || 1,
+        limit: Math.min(parseInt(req.query.limit as string) || 50, 100),
+        sortBy: (req.query.sortBy as string) || 'timestamp',
+        sortOrder: (req.query.sortOrder as 'asc' | 'desc') || 'desc',
+      };
+
+      const result = await getAuditLogs(filters, pagination);
+
+      logger.info({ count: result.logs.length, total: result.total }, 'Returning audit logs');
+      return res.status(200).json({
+        success: true,
+        ...result,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error fetching audit logs');
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching audit logs',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   GET /api/admin/audit-logs/stats
+ * @desc    Get aggregated audit statistics
+ * @access  Private (Admin only)
+ */
+router.get(
+  '/audit-logs/stats',
+  asyncHandler(async (req: Request, res: Response) => {
+    logger.info({ adminUserId: req.user?._id }, 'Request for audit stats');
+
+    try {
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+
+      const stats = await getAuditStats(startDate, endDate);
+
+      logger.info({ totalEvents: stats.totalEvents }, 'Returning audit stats');
+      return res.status(200).json({
+        success: true,
+        stats,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error fetching audit stats');
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching audit statistics',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   GET /api/admin/audit-logs/export
+ * @desc    Export audit logs to JSON or CSV
+ * @access  Private (Admin only)
+ */
+router.get(
+  '/audit-logs/export',
+  asyncHandler(async (req: Request, res: Response) => {
+    logger.info({ adminUserId: req.user?._id }, 'Request to export audit logs');
+
+    try {
+      const filters: AuditLogFilters = {};
+
+      if (req.query.userId) filters.userId = req.query.userId as string;
+      if (req.query.action) filters.action = req.query.action as AuditAction;
+      if (req.query.resource) filters.resource = req.query.resource as AuditResource;
+      if (req.query.startDate) filters.startDate = new Date(req.query.startDate as string);
+      if (req.query.endDate) filters.endDate = new Date(req.query.endDate as string);
+
+      const format = (req.query.format as 'json' | 'csv') || 'json';
+      const exportData = await exportAuditLogs(filters, format);
+
+      if (format === 'csv') {
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=audit-logs.csv');
+      } else {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename=audit-logs.json');
+      }
+
+      logger.info({ format }, 'Exporting audit logs');
+      return res.send(exportData);
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error exporting audit logs');
+      return res.status(500).json({
+        success: false,
+        message: 'Error exporting audit logs',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+// ================================================
+//          FEATURE TOGGLE ROUTES
+// ================================================
+
+/**
+ * @route   GET /api/admin/features
+ * @desc    Get all feature toggles
+ * @access  Private (Admin only)
+ */
+router.get(
+  '/features',
+  asyncHandler(async (req: Request, res: Response) => {
+    logger.info({ adminUserId: req.user?._id }, 'Request for feature toggles');
+
+    try {
+      const features = await getAllFeatureToggles();
+
+      logger.info({ count: features.length }, 'Returning feature toggles');
+      return res.status(200).json({
+        success: true,
+        features,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error fetching feature toggles');
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching feature toggles',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   PUT /api/admin/features/:feature
+ * @desc    Update a feature toggle
+ * @access  Private (Admin only)
+ */
+router.put(
+  '/features/:feature',
+  auditFeatureToggle,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { feature } = req.params;
+    const { enabled, config } = req.body;
+    const adminUserId = req.user?._id;
+
+    logger.info({ feature, enabled, adminUserId }, 'Request to update feature toggle');
+
+    // Validate feature name
+    const validFeatures: FeatureName[] = [
+      'audit_logs',
+      'session_management',
+      'budget_enforcement',
+      'pii_detection',
+      'ip_whitelist',
+      'realtime_dashboard',
+    ];
+
+    if (!validFeatures.includes(feature as FeatureName)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid feature name. Valid features: ${validFeatures.join(', ')}`,
+      });
+    }
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'enabled must be a boolean',
+      });
+    }
+
+    try {
+      const updatedToggle = await setFeatureToggle(
+        feature as FeatureName,
+        enabled,
+        adminUserId,
+        config
+      );
+
+      if (!updatedToggle) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to update feature toggle',
+        });
+      }
+
+      logger.info({ feature, enabled }, 'Feature toggle updated');
+      return res.status(200).json({
+        success: true,
+        message: `Feature '${feature}' ${enabled ? 'enabled' : 'disabled'}`,
+        feature: updatedToggle,
+      });
+    } catch (error: unknown) {
+      logger.error({ error, feature }, 'Error updating feature toggle');
+      return res.status(500).json({
+        success: false,
+        message: 'Error updating feature toggle',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   POST /api/admin/features/initialize
+ * @desc    Initialize all feature toggles with defaults
+ * @access  Private (Admin only)
+ */
+router.post(
+  '/features/initialize',
+  asyncHandler(async (req: Request, res: Response) => {
+    const adminUserId = req.user?._id;
+
+    logger.info({ adminUserId }, 'Request to initialize feature toggles');
+
+    try {
+      await initializeFeatureToggles(adminUserId);
+      const features = await getAllFeatureToggles();
+
+      logger.info({ count: features.length }, 'Feature toggles initialized');
+      return res.status(200).json({
+        success: true,
+        message: 'Feature toggles initialized',
+        features,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error initializing feature toggles');
+      return res.status(500).json({
+        success: false,
+        message: 'Error initializing feature toggles',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+// =====================================================
+// Knowledge Gap Management Endpoints
+// =====================================================
+
+/**
+ * @route   GET /api/admin/knowledge-gaps
+ * @desc    Get all knowledge gaps with filtering and pagination
+ * @access  Private (Admin only)
+ */
+router.get(
+  '/knowledge-gaps',
+  asyncHandler(async (req: Request, res: Response) => {
+    const {
+      status,
+      minOccurrences,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+    } = req.query;
+
+    logger.info({ query: req.query }, 'Request to get knowledge gaps');
+
+    try {
+      // Parse status - can be single value or comma-separated list
+      let statusFilter: GapStatus | GapStatus[] | undefined;
+      if (status) {
+        const statusStr = status as string;
+        if (statusStr.includes(',')) {
+          statusFilter = statusStr.split(',') as GapStatus[];
+        } else {
+          statusFilter = statusStr as GapStatus;
+        }
+      }
+
+      const result = await getKnowledgeGaps({
+        status: statusFilter,
+        minOccurrences: minOccurrences ? parseInt(minOccurrences as string) : undefined,
+        page: page ? parseInt(page as string) : undefined,
+        limit: limit ? parseInt(limit as string) : undefined,
+        sortBy: sortBy as 'occurrenceCount' | 'lastAskedAt' | 'firstAskedAt' | undefined,
+        sortOrder: sortOrder as 'asc' | 'desc' | undefined,
+      });
+
+      return res.status(200).json({
+        success: true,
+        ...result,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error fetching knowledge gaps');
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching knowledge gaps',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   GET /api/admin/knowledge-gaps/count
+ * @desc    Get count of new (unreviewed) knowledge gaps for notification badge
+ * @access  Private (Admin only)
+ */
+router.get(
+  '/knowledge-gaps/count',
+  asyncHandler(async (req: Request, res: Response) => {
+    logger.debug('Request to get new knowledge gap count');
+
+    try {
+      const count = await getNewGapCount();
+
+      return res.status(200).json({
+        success: true,
+        count,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error fetching knowledge gap count');
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching knowledge gap count',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   GET /api/admin/knowledge-gaps/top
+ * @desc    Get top knowledge gaps (most frequently asked unanswered questions)
+ * @access  Private (Admin only)
+ */
+router.get(
+  '/knowledge-gaps/top',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { limit } = req.query;
+
+    logger.info({ limit }, 'Request to get top knowledge gaps');
+
+    try {
+      const gaps = await getTopKnowledgeGaps(limit ? parseInt(limit as string) : 10);
+
+      return res.status(200).json({
+        success: true,
+        gaps,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error fetching top knowledge gaps');
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching top knowledge gaps',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   GET /api/admin/knowledge-gaps/stats
+ * @desc    Get knowledge gap statistics
+ * @access  Private (Admin only)
+ */
+router.get(
+  '/knowledge-gaps/stats',
+  asyncHandler(async (req: Request, res: Response) => {
+    logger.info('Request to get knowledge gap stats');
+
+    try {
+      const stats = await getGapStats();
+
+      return res.status(200).json({
+        success: true,
+        stats,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error fetching knowledge gap stats');
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching knowledge gap stats',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   PUT /api/admin/knowledge-gaps/:gapId
+ * @desc    Update a knowledge gap status
+ * @access  Private (Admin only)
+ */
+router.put(
+  '/knowledge-gaps/:gapId',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { gapId } = req.params;
+    const { status, notes, suggestedDocTitle } = req.body;
+    const adminUserId = req.user?._id;
+
+    logger.info({ gapId, status, adminUserId }, 'Request to update knowledge gap');
+
+    if (!gapId || !mongoose.Types.ObjectId.isValid(gapId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gap ID',
+      });
+    }
+
+    if (!status || !['new', 'reviewed', 'addressed', 'dismissed'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be one of: new, reviewed, addressed, dismissed',
+      });
+    }
+
+    if (!adminUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Admin user ID required',
+      });
+    }
+
+    try {
+      const gap = await updateGapStatus(
+        gapId,
+        status as GapStatus,
+        adminUserId.toString(),
+        notes,
+        suggestedDocTitle
+      );
+
+      if (!gap) {
+        return res.status(404).json({
+          success: false,
+          message: 'Knowledge gap not found',
+        });
+      }
+
+      logger.info({ gapId, status }, 'Knowledge gap updated');
+      return res.status(200).json({
+        success: true,
+        gap,
+      });
+    } catch (error: unknown) {
+      logger.error({ error, gapId }, 'Error updating knowledge gap');
+      return res.status(500).json({
+        success: false,
+        message: 'Error updating knowledge gap',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   DELETE /api/admin/knowledge-gaps/:gapId
+ * @desc    Delete a knowledge gap
+ * @access  Private (Admin only)
+ */
+router.delete(
+  '/knowledge-gaps/:gapId',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { gapId } = req.params;
+
+    logger.info({ gapId }, 'Request to delete knowledge gap');
+
+    if (!gapId || !mongoose.Types.ObjectId.isValid(gapId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gap ID',
+      });
+    }
+
+    try {
+      const deleted = await deleteGap(gapId);
+
+      if (!deleted) {
+        return res.status(404).json({
+          success: false,
+          message: 'Knowledge gap not found',
+        });
+      }
+
+      logger.info({ gapId }, 'Knowledge gap deleted');
+      return res.status(200).json({
+        success: true,
+        message: 'Knowledge gap deleted',
+      });
+    } catch (error: unknown) {
+      logger.error({ error, gapId }, 'Error deleting knowledge gap');
+      return res.status(500).json({
+        success: false,
+        message: 'Error deleting knowledge gap',
         error: error instanceof Error ? error.message : String(error),
       });
     }

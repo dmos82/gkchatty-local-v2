@@ -52,6 +52,8 @@ import UserList from '@/components/admin/UserList';
 import SystemKBManager from '@/components/admin/SystemKBManager';
 import SettingsManager from '@/components/admin/SettingsManager';
 import ServerInfo from '@/components/admin/ServerInfo';
+import AuditLogViewer from '@/components/admin/AuditLogViewer';
+import KnowledgeGapsPanel from '@/components/admin/KnowledgeGapsPanel';
 import {
   Select,
   SelectContent,
@@ -427,6 +429,36 @@ export default function AdminPage() {
   // --- START: State for Role Change Loading ---
   const [isUpdatingRole, setIsUpdatingRole] = useState<string | null>(null); // Store user ID being updated
   // --- END ---
+
+  // --- START: State for Knowledge Gap Notification Badge ---
+  const [knowledgeGapCount, setKnowledgeGapCount] = useState<number>(0);
+  // --- END ---
+
+  // --- Fetch knowledge gap count for notification badge ---
+  const fetchKnowledgeGapCount = useCallback(async () => {
+    if (!user || user.role !== 'admin') return;
+
+    try {
+      const response = await fetchWithAuth('/api/admin/knowledge-gaps/count', {
+        method: 'GET',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setKnowledgeGapCount(data.count || 0);
+        }
+      }
+    } catch (error) {
+      console.error('[AdminPage] Error fetching knowledge gap count:', error);
+    }
+  }, [user]);
+
+  // Fetch knowledge gap count on initial load
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && user?.role === 'admin') {
+      fetchKnowledgeGapCount();
+    }
+  }, [fetchKnowledgeGapCount, isLoading, isAuthenticated, user]);
 
   // --- Document Fetching Logic (Refactored to standalone function) ---
   const fetchDocuments = useCallback(async () => {
@@ -1422,6 +1454,15 @@ export default function AdminPage() {
                 <TabsTrigger value="system-kb">System KB</TabsTrigger>
                 <TabsTrigger value="users">Users</TabsTrigger>
                 <TabsTrigger value="usage">Usage</TabsTrigger>
+                <TabsTrigger value="audit-logs">Audit Logs</TabsTrigger>
+                <TabsTrigger value="knowledge-gaps" className="relative">
+                  Knowledge Gaps
+                  {knowledgeGapCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                      {knowledgeGapCount > 99 ? '99+' : knowledgeGapCount}
+                    </span>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="feedback">Feedback</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
@@ -1726,6 +1767,14 @@ export default function AdminPage() {
                       )}
                     </div>
                   </div>
+                </TabsContent>
+
+                <TabsContent value="audit-logs" className="mt-0">
+                  <AuditLogViewer />
+                </TabsContent>
+
+                <TabsContent value="knowledge-gaps" className="mt-0">
+                  <KnowledgeGapsPanel onNewGapCountChange={setKnowledgeGapCount} />
                 </TabsContent>
 
                 <TabsContent value="feedback" className="mt-0">

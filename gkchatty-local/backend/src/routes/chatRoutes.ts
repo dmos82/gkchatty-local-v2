@@ -13,6 +13,8 @@ import { getLogger } from '../utils/logger';
 import UserSettings, { IUserSettings } from '../models/UserSettings';
 import { aiLimiter } from '../middleware/rateLimiter';
 import { getContext } from '../services/ragService';
+import { auditChatQuery } from '../middleware/auditMiddleware';
+import { recordKnowledgeGap } from '../services/knowledgeGapService';
 
 // Type for chat response object
 interface ChatResponseObject {
@@ -70,7 +72,7 @@ function safeStringify(obj: unknown): string {
 }
 
 // POST /api/chats - Handle chat queries and persist history
-router.post('/', async (req: Request, res: Response): Promise<void | Response> => {
+router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<void | Response> => {
   // Diagnostic log for Render preview (PR31)
   log.debug(
     { path: req.path, method: req.method },
@@ -261,12 +263,25 @@ router.post('/', async (req: Request, res: Response): Promise<void | Response> =
       '[Chat Route] Sources returned from RAG service'
     );
 
+    // Track knowledge gaps: Calculate best score and record if below threshold
+    const bestSourceScore = finalSourcesForLlm.length > 0
+      ? Math.max(...finalSourcesForLlm.map(s => s.score ?? 0))
+      : 0;
+
+    // Record knowledge gap asynchronously (don't block response)
+    // The service will only record if bestScore < 0.5
+    recordKnowledgeGap(sanitizedQuery, bestSourceScore, userId?.toString() || null).catch(err => {
+      log.error({ error: err }, '[Knowledge Gap] Failed to record potential gap');
+    });
+
     // CRITICAL FIX: Check if we have any sources before proceeding
     if (finalSourcesForLlm.length === 0) {
       log.info(
         { knowledgeBaseTarget, query: sanitizedQuery.substring(0, 50) },
         '[Chat Route] No sources found for query - preventing hallucination'
       );
+
+      // Note: Knowledge gap already tracked above (bestSourceScore = 0)
 
       // Return a specific message based on the search mode
       let noSourcesMessage = '';

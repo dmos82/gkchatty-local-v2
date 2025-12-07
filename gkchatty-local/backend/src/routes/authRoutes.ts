@@ -8,6 +8,7 @@ import { getUserProfile } from '../controllers/userController'; // Import the ne
 import { authLimiter } from '../middleware/rateLimiter'; // Import auth rate limiter
 import { AUTH_COOKIE_TEST_MAX_AGE_MS } from '../config/constants';
 import { getLogger } from '../utils/logger';
+import { logAuditEvent } from '../services/auditService';
 // HIGH-002: Import password validation middleware for when registration is re-enabled
 // import { validatePasswordMiddleware } from '../middleware/passwordValidation';
 // HIGH-004: Import centralized bcrypt work factor for when registration is re-enabled
@@ -213,6 +214,19 @@ router.post(
           },
           'Security Event: Failed login attempt - user not found'
         );
+
+        // Log audit event for failed login
+        await logAuditEvent({
+          username,
+          action: 'LOGIN_FAILED',
+          resource: 'USER',
+          details: { reason: 'USER_NOT_FOUND' },
+          ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
+          userAgent: req.get('user-agent'),
+          success: false,
+          errorMessage: 'User not found',
+        });
+
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
@@ -260,6 +274,20 @@ router.post(
           },
           'Security Event: Failed login attempt - invalid password'
         );
+
+        // Log audit event for failed login (invalid password)
+        await logAuditEvent({
+          userId: user._id,
+          username: user.username,
+          action: 'LOGIN_FAILED',
+          resource: 'USER',
+          details: { reason: 'INVALID_PASSWORD' },
+          ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
+          userAgent: req.get('user-agent'),
+          success: false,
+          errorMessage: 'Invalid password',
+        });
+
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
@@ -358,6 +386,20 @@ router.post(
         },
         'Security Event: Successful user login'
       );
+
+      // Log audit event for successful login
+      await logAuditEvent({
+        userId: user._id,
+        username: user.username,
+        action: 'LOGIN',
+        resource: 'USER',
+        details: { sessionId: newSessionId },
+        ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
+        userAgent: req.get('user-agent'),
+        sessionId: newSessionId,
+        success: true,
+      });
+
       res.status(200).json({
         success: true,
         user: {
@@ -446,6 +488,18 @@ router.post('/logout', protect, async (req: RequestWithUser, res: Response) => {
       },
       'Security Event: User session invalidated (logout)'
     );
+
+    // Log audit event for logout
+    await logAuditEvent({
+      userId: user._id,
+      username: user.username,
+      action: 'LOGOUT',
+      resource: 'USER',
+      details: { remainingSessions: user.activeSessionIds?.length || 0 },
+      ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
+      userAgent: req.get('user-agent'),
+      success: true,
+    });
 
     // Clear the HttpOnly cookie with matching secure attributes
     const isProductionLike =
