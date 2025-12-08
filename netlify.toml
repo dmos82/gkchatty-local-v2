@@ -5,7 +5,7 @@
   base = "gkchatty-local/frontend"
 
   # Build command - include dev deps for build tools (tailwindcss, etc)
-  command = "npm ci --legacy-peer-deps --include=dev && npm run build"
+  command = "npm install --legacy-peer-deps && npm run build"
 
   # Directory to publish (Next.js output)
   publish = ".next"
@@ -23,7 +23,7 @@
 # Production deployment from local-ollama-dev branch
 [context.production]
   # Use --include=dev to ensure build tools (tailwindcss, etc) are installed
-  command = "npm ci --legacy-peer-deps --include=dev && npm run build"
+  command = "npm install --legacy-peer-deps && npm run build"
 
 [context.production.environment]
   # NODE_ENV is set automatically by Next.js during build
