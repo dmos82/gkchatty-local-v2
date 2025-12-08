@@ -59,8 +59,21 @@ router.use(protect, checkSession);
 // Apply AI rate limiter to all chat routes
 router.use(aiLimiter);
 
-// New Stricter System Prompt (Task 69) - Kept for fallback
+// New Stricter System Prompt (Task 69) - Used for KB/system mode (strict RAG)
 const STRICT_SYSTEM_PROMPT = `You are an AI assistant for Gold Key Insurance. Your ONLY task is to answer the user's question based STRICTLY and SOLELY on the provided context snippets below. Do NOT use any external knowledge or make assumptions. If the answer is explicitly found in the context, provide it concisely. If the answer is NOT explicitly found within the provided snippets, you MUST respond with the exact phrase: 'The provided documents do not contain specific information to answer that question.' Do not add any pleasantries or extra information to this specific phrase.`;
+
+// Default User Docs Prompt - Used for My Docs mode (more helpful, summarization-friendly)
+const DEFAULT_USER_DOCS_PROMPT = `You are an AI assistant helping users explore and understand their personal documents.
+
+Your task is to answer questions using the provided document context. Be helpful and informative:
+
+1. **Summarize and synthesize** information from the documents when relevant
+2. **Extract key points** even if they don't directly answer the question
+3. **Provide context** about what the documents contain
+4. **Make reasonable inferences** from the document content
+5. If the documents don't contain relevant information, say so clearly but also describe what IS in the documents that might be helpful
+
+Focus on being genuinely helpful rather than overly restrictive. The user uploaded these documents because they want to work with them.`;
 
 // Utility: safely stringify objects that may contain circular references
 function safeStringify(obj: unknown): string {
@@ -435,21 +448,41 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
           'Using user custom prompt (no persona ID)'
         );
       } else {
-        log.debug('No persona ID and user custom prompt unavailable - checking system default');
-        // Fallback to general system prompt from Settings or strict default
-        const systemPromptSetting = await Setting.findOne({ key: 'systemPrompt' });
-        if (systemPromptSetting && systemPromptSetting.value) {
-          effectiveSystemPrompt = systemPromptSetting.value;
-          promptSource = 'System Default from Settings (No Persona ID, User custom N/A)';
-          log.info(
-            { promptPreview: effectiveSystemPrompt.substring(0, 150) },
-            'Using general system default prompt from settings'
-          );
+        log.debug('No persona ID and user custom prompt unavailable - checking mode-specific default');
+
+        // FIX: Use different prompts based on knowledgeBaseTarget
+        // "user" mode = My Docs (more helpful, summarization-friendly)
+        // "kb"/"system"/"unified" mode = System KB (strict RAG)
+        if (knowledgeBaseTarget === 'user') {
+          // My Docs mode - use user-friendly prompt that encourages summarization
+          const userDocsPromptSetting = await Setting.findOne({ key: 'userDocsPrompt' });
+          if (userDocsPromptSetting && userDocsPromptSetting.value) {
+            effectiveSystemPrompt = userDocsPromptSetting.value;
+            promptSource = 'User Docs Prompt from Settings (My Docs Mode)';
+            log.info(
+              { promptPreview: effectiveSystemPrompt.substring(0, 150) },
+              'Using user docs prompt from settings for My Docs mode'
+            );
+          } else {
+            effectiveSystemPrompt = DEFAULT_USER_DOCS_PROMPT;
+            promptSource = 'Default User Docs Prompt (My Docs Mode, Setting N/A)';
+            log.info('Using default user docs prompt for My Docs mode');
+          }
         } else {
-          effectiveSystemPrompt = STRICT_SYSTEM_PROMPT;
-          promptSource =
-            'Strict Default Fallback (No Persona ID, User custom N/A, System Default N/A)';
-          log.info('No system default in settings - using hardcoded strict system prompt');
+          // KB/System/Unified mode - use strict prompt
+          const systemPromptSetting = await Setting.findOne({ key: 'systemPrompt' });
+          if (systemPromptSetting && systemPromptSetting.value) {
+            effectiveSystemPrompt = systemPromptSetting.value;
+            promptSource = 'System Default from Settings (KB/System Mode)';
+            log.info(
+              { promptPreview: effectiveSystemPrompt.substring(0, 150) },
+              'Using general system default prompt from settings'
+            );
+          } else {
+            effectiveSystemPrompt = STRICT_SYSTEM_PROMPT;
+            promptSource = 'Strict Default Fallback (KB/System Mode)';
+            log.info('No system default in settings - using hardcoded strict system prompt');
+          }
         }
       }
     }
