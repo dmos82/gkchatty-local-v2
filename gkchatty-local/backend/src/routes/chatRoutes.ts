@@ -372,7 +372,10 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
       return res.status(200).json(responseObject);
     }
 
-    const context = finalSourcesForLlm.map(s => s.text).join('\n\n---\n\n');
+    // Include file names in context so LLM knows what document each chunk is from
+    const context = finalSourcesForLlm.map(s =>
+      `[Source: ${s.fileName || 'Unknown Document'}]\n${s.text}`
+    ).join('\n\n---\n\n');
 
     // --- START: Revised Logic for Persona and System Prompt Determination (Supercoder Input) ---
     let effectiveSystemPrompt = STRICT_SYSTEM_PROMPT; // Default fallback
