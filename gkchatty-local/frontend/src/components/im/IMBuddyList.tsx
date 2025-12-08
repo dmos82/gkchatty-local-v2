@@ -199,7 +199,7 @@ export const IMBuddyList: React.FC<IMBuddyListProps> = ({ onClose }) => {
     // in the conversation object from the API, but we have it stored when created
     // For now, just show the group name and use what we have
     openGroupChatWindow(conv._id, conv.groupName || 'Group Chat', []);
-    handleAnimatedClose();
+    // Don't close buddy list - let user close it manually
   };
 
   // Handle delete group conversation
@@ -383,33 +383,16 @@ export const IMBuddyList: React.FC<IMBuddyListProps> = ({ onClose }) => {
 
           {/* Unread badge */}
           {conv.unreadCount > 0 && (
-            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center mr-7">
               {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
             </span>
           )}
-
-          {/* Chat icon on hover (when no unread and not hovering delete) */}
-          {conv.unreadCount === 0 && (
-            <svg
-              className="w-4 h-4 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
-          )}
         </button>
 
-        {/* Delete button - appears on hover */}
+        {/* Delete button - always visible on right side */}
         <button
           onClick={(e) => openDeleteConfirm(conv, e)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 opacity-60 hover:opacity-100 transition-all"
           title="Delete group"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

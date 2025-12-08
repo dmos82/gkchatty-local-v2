@@ -49,3 +49,6 @@ packages/backend/uploads/
 # Lock files (keep pnpm-lock.yaml, ignore others)
 package-lock.json
 yarn.lock
+
+# Local Netlify folder
+.netlify

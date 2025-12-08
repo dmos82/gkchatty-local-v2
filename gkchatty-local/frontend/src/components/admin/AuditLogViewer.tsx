@@ -20,6 +20,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import {
   Loader2,
@@ -32,6 +43,7 @@ import {
   CheckCircle,
   XCircle,
   BarChart3,
+  Trash2,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
@@ -146,6 +158,9 @@ const AuditLogViewer: React.FC = () => {
 
   // Export state
   const [isExporting, setIsExporting] = useState(false);
+
+  // Delete all state
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   // Show stats panel
   const [showStats, setShowStats] = useState(false);
@@ -331,6 +346,41 @@ const AuditLogViewer: React.FC = () => {
     setCorrelationIdFilter('');
     setStartDate('');
     setEndDate('');
+  };
+
+  // Delete all audit logs
+  const handleDeleteAllLogs = async () => {
+    setIsDeletingAll(true);
+    try {
+      const response = await fetchWithAuth('/api/admin/audit-logs/all', {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to delete all audit logs');
+      }
+
+      const data = await response.json();
+
+      toast({
+        title: 'All Audit Logs Deleted',
+        description: `${data.deletedCount} audit log entries have been permanently removed.`,
+      });
+
+      // Refresh data
+      fetchLogs(1);
+      fetchStats();
+    } catch (err: unknown) {
+      console.error('[AuditLogViewer] Error deleting all logs:', err);
+      toast({
+        title: 'Error Deleting All Logs',
+        description: err instanceof Error ? err.message : 'Could not delete. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeletingAll(false);
+    }
   };
 
   // Initial load
@@ -698,6 +748,58 @@ const AuditLogViewer: React.FC = () => {
               <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* Danger Zone */}
+      {pagination.total > 0 && (
+        <div className="mt-8 border border-red-200 dark:border-red-900 rounded-lg p-4 bg-red-50 dark:bg-red-950/20">
+          <h4 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2 flex items-center gap-2">
+            <XCircle className="h-5 w-5" />
+            Danger Zone
+          </h4>
+          <p className="text-sm text-muted-foreground mb-4">
+            Permanently delete all {pagination.total.toLocaleString()} audit log entries. This action cannot be undone.
+          </p>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={isDeletingAll}
+              >
+                {isDeletingAll ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete All Audit Logs
+                  </>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-red-600">Delete All Audit Logs?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete all <strong>{pagination.total.toLocaleString()}</strong> audit log entries.
+                  This action cannot be undone and all historical audit data will be lost.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeleteAllLogs}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  Yes, Delete All
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       )}
     </div>

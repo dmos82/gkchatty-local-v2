@@ -208,7 +208,8 @@ class SocketService {
         console.log(`[Socket DISCONNECT] Remaining sockets for ${authSocket.username}: ${remainingSockets?.size || 0}`);
         if (!remainingSockets || remainingSockets.size === 0) {
           console.log(`[Socket DISCONNECT] No remaining sockets, setting ${authSocket.username} to OFFLINE`);
-          await this.updatePresence(authSocket, 'offline', socket.id, true);
+          // Force offline status and clear all socketIds to handle any race conditions
+          await this.forceUserOffline(authSocket);
         }
       });
     });
@@ -346,7 +347,33 @@ class SocketService {
         if (!participantId.equals(socket.userObjectId)) {
           // Emit to user:${participantId} room (they always join this on connect)
           this.io?.to(`user:${participantId.toString()}`).emit('dm:receive', messageData);
-          console.log(`[Socket DM] Also emitted to user:${participantId} room for new conversation support`);
+
+          // Also emit conversation:new so recipients can add new conversations to their list
+          // This ensures User B sees the chat when User A messages them for the first time
+          const conversationData = {
+            _id: conversation._id.toString(),
+            otherParticipant: {
+              _id: socket.userId,
+              username: socket.username,
+              status: 'online' as const, // Sender is obviously online
+            },
+            lastMessage: {
+              content: message.content.substring(0, 100),
+              senderId: socket.userId,
+              senderUsername: socket.username,
+              sentAt: message.createdAt,
+              isRead: false,
+            },
+            unreadCount: 1,
+            isArchived: false,
+            isMuted: false,
+            isGroup: conversation.isGroup,
+            groupName: conversation.groupName,
+            updatedAt: conversation.updatedAt,
+            createdAt: conversation.createdAt,
+          };
+          this.io?.to(`user:${participantId.toString()}`).emit('conversation:new', conversationData);
+          console.log(`[Socket DM] Emitted conversation:new to user:${participantId} for chat visibility`);
         }
       }
 
@@ -520,6 +547,40 @@ class SocketService {
       );
     } catch (error: any) {
       console.error('[Socket] Error joining conversation rooms:', error.message);
+    }
+  }
+
+  /**
+   * Force a user offline - clears all sockets and sets status to offline
+   * Used when the last socket disconnects to handle race conditions
+   */
+  private async forceUserOffline(socket: AuthenticatedSocket): Promise<void> {
+    try {
+      const presence = await UserPresence.findOne({ userId: socket.userObjectId });
+
+      if (presence) {
+        // Force clear all socket data and set offline
+        presence.socketIds = [];
+        presence.activeDevices = [];
+        presence.status = 'offline';
+        presence.lastSeenAt = new Date();
+        await presence.save();
+
+        console.log(`[Socket FORCE OFFLINE] ${socket.username} forced offline, socketIds cleared`);
+      }
+
+      // Always broadcast the offline status
+      this.io?.emit('presence:changed', {
+        userId: socket.userId,
+        username: socket.username,
+        status: 'offline',
+        customStatus: presence?.customStatus,
+        lastSeenAt: new Date(),
+      });
+
+      console.log(`[Socket FORCE OFFLINE] Broadcasted offline status for ${socket.username}`);
+    } catch (error: any) {
+      console.error('[Socket FORCE OFFLINE] Error:', error.message);
     }
   }
 

@@ -266,7 +266,7 @@ const UserList: React.FC = () => {
           No users found. Create your first user to get started.
         </div>
       ) : (
-        <div className="border rounded-lg">
+        <div className="border rounded-lg max-h-[calc(100vh-20rem)] overflow-y-auto">
           <Table>
             <TableHeader>
               <TableRow>

@@ -81,6 +81,9 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState<string | null>(null); // 'se', 'e', 's', 'sw', 'ne', 'nw', 'n', 'w'
+  const [windowSize, setWindowSize] = useState({ width: 320, height: 420 });
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 });
   const [currentUserIconUrl, setCurrentUserIconUrl] = useState<string | null>(null);
   const [currentUserIconError, setCurrentUserIconError] = useState(false);
   const [recipientIconError, setRecipientIconError] = useState(false);
@@ -355,22 +358,38 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
   };
 
   // Local upload function that uses conversationId prop directly
+  // Creates conversation if needed (same pattern as handleSend)
   const uploadFileToConversation = useCallback(
     async (file: File): Promise<Attachment | null> => {
       const token = localStorage.getItem('accessToken');
-      if (!token || !conversationId) {
-        console.error('[IMChatWindow] Cannot upload: no token or conversationId');
+      if (!token) {
+        console.error('[IMChatWindow] Cannot upload: no token');
         return null;
+      }
+
+      // If no conversation exists yet, create one first
+      let activeConversationId = conversationId;
+      if (!activeConversationId) {
+        console.log('[IMChatWindow] No conversation exists, creating one first...');
+        try {
+          const newConv = await createConversation(recipientId, recipientUsername);
+          activeConversationId = newConv._id;
+          setConversationId(windowId, newConv._id);
+          console.log('[IMChatWindow] Created conversation:', activeConversationId);
+        } catch (error) {
+          console.error('[IMChatWindow] Error creating conversation for upload:', error);
+          return null;
+        }
       }
 
       const formData = new FormData();
       formData.append('file', file);
 
       try {
-        console.log('[IMChatWindow] Uploading attachment:', file.name, 'to conversation:', conversationId);
+        console.log('[IMChatWindow] Uploading attachment:', file.name, 'to conversation:', activeConversationId);
         const API_URL = getApiBaseUrl();
         const response = await fetch(
-          `${API_URL}/api/conversations/${conversationId}/attachments`,
+          `${API_URL}/api/conversations/${activeConversationId}/attachments`,
           {
             method: 'POST',
             headers: {
@@ -393,7 +412,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
         return null;
       }
     },
-    [conversationId]
+    [conversationId, createConversation, recipientId, recipientUsername, setConversationId, windowId]
   );
 
   // Handle file selection
@@ -685,7 +704,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const newX = Math.max(0, Math.min(e.clientX - dragOffset.x, window.innerWidth - 320));
+      const newX = Math.max(0, Math.min(e.clientX - dragOffset.x, window.innerWidth - windowSize.width));
       const newY = Math.max(0, Math.min(e.clientY - dragOffset.y, window.innerHeight - 50));
       updateWindowPosition(windowId, { x: newX, y: newY });
     };
@@ -701,7 +720,87 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, dragOffset, windowId, updateWindowPosition]);
+  }, [isDragging, dragOffset, windowId, updateWindowPosition, windowSize.width]);
+
+  // Resize handlers
+  const MIN_WIDTH = 280;
+  const MIN_HEIGHT = 300;
+  const MAX_WIDTH = 600;
+  const MAX_HEIGHT = 800;
+
+  const handleResizeStart = (direction: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(direction);
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: windowSize.width,
+      height: windowSize.height,
+      posX: position.x,
+      posY: position.y,
+    });
+    bringToFront(windowId);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleResizeMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - resizeStart.x;
+      const deltaY = e.clientY - resizeStart.y;
+
+      let newWidth = resizeStart.width;
+      let newHeight = resizeStart.height;
+      let newX = resizeStart.posX;
+      let newY = resizeStart.posY;
+
+      // Handle horizontal resize
+      if (isResizing.includes('e')) {
+        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, resizeStart.width + deltaX));
+      }
+      if (isResizing.includes('w')) {
+        const potentialWidth = resizeStart.width - deltaX;
+        if (potentialWidth >= MIN_WIDTH && potentialWidth <= MAX_WIDTH) {
+          newWidth = potentialWidth;
+          newX = resizeStart.posX + deltaX;
+        }
+      }
+
+      // Handle vertical resize
+      if (isResizing.includes('s')) {
+        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, resizeStart.height + deltaY));
+      }
+      if (isResizing.includes('n')) {
+        const potentialHeight = resizeStart.height - deltaY;
+        if (potentialHeight >= MIN_HEIGHT && potentialHeight <= MAX_HEIGHT) {
+          newHeight = potentialHeight;
+          newY = resizeStart.posY + deltaY;
+        }
+      }
+
+      // Keep window in viewport
+      newX = Math.max(0, Math.min(newX, window.innerWidth - newWidth));
+      newY = Math.max(0, Math.min(newY, window.innerHeight - 50));
+
+      setWindowSize({ width: newWidth, height: newHeight });
+      if (newX !== resizeStart.posX || newY !== resizeStart.posY) {
+        updateWindowPosition(windowId, { x: newX, y: newY });
+      }
+    };
+
+    const handleResizeEnd = () => {
+      setIsResizing(null);
+    };
+
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+    };
+  }, [isResizing, resizeStart, windowId, updateWindowPosition]);
 
   // Get current user ID from useAuth context (not localStorage, which doesn't store userId)
   const currentUserId = user?._id || null;
@@ -865,8 +964,8 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
       style={{
         left: position.x,
         top: position.y,
-        width: 320,
-        height: 420,
+        width: windowSize.width,
+        height: windowSize.height,
         zIndex,
       }}
       onClick={() => bringToFront(windowId)}
@@ -1498,6 +1597,48 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
           onClick={() => setShowGroupMenu(false)}
         />
       )}
+
+      {/* Resize handles */}
+      {/* Right edge */}
+      <div
+        onMouseDown={handleResizeStart('e')}
+        className="absolute top-0 right-0 w-1 h-full cursor-ew-resize hover:bg-yellow-500/30 transition-colors"
+      />
+      {/* Bottom edge */}
+      <div
+        onMouseDown={handleResizeStart('s')}
+        className="absolute bottom-0 left-0 w-full h-1 cursor-ns-resize hover:bg-yellow-500/30 transition-colors"
+      />
+      {/* Left edge */}
+      <div
+        onMouseDown={handleResizeStart('w')}
+        className="absolute top-0 left-0 w-1 h-full cursor-ew-resize hover:bg-yellow-500/30 transition-colors"
+      />
+      {/* Top edge */}
+      <div
+        onMouseDown={handleResizeStart('n')}
+        className="absolute top-0 left-0 w-full h-1 cursor-ns-resize hover:bg-yellow-500/30 transition-colors"
+      />
+      {/* Bottom-right corner */}
+      <div
+        onMouseDown={handleResizeStart('se')}
+        className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize hover:bg-yellow-500/50 transition-colors rounded-tl"
+      />
+      {/* Bottom-left corner */}
+      <div
+        onMouseDown={handleResizeStart('sw')}
+        className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize hover:bg-yellow-500/50 transition-colors rounded-tr"
+      />
+      {/* Top-right corner */}
+      <div
+        onMouseDown={handleResizeStart('ne')}
+        className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize hover:bg-yellow-500/50 transition-colors rounded-bl"
+      />
+      {/* Top-left corner */}
+      <div
+        onMouseDown={handleResizeStart('nw')}
+        className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize hover:bg-yellow-500/50 transition-colors rounded-br"
+      />
     </div>
   );
 };

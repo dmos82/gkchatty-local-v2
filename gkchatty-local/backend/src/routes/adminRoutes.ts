@@ -1466,6 +1466,40 @@ router.get(
   })
 );
 
+/**
+ * @route   DELETE /api/admin/audit-logs/all
+ * @desc    Delete all audit logs (DANGER ZONE)
+ * @access  Private (Admin only)
+ */
+router.delete(
+  '/audit-logs/all',
+  auditAdminAction,
+  asyncHandler(async (req: Request, res: Response) => {
+    const adminUserId = req.user?._id;
+
+    logger.warn({ adminUserId }, 'DANGER ZONE: Request to delete ALL audit logs');
+
+    try {
+      const AuditLog = (await import('../models/AuditLogModel')).default;
+      const result = await AuditLog.deleteMany({});
+
+      logger.warn({ deletedCount: result.deletedCount, adminUserId }, 'All audit logs deleted');
+      return res.status(200).json({
+        success: true,
+        message: `Deleted ${result.deletedCount} audit logs`,
+        deletedCount: result.deletedCount,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error deleting all audit logs');
+      return res.status(500).json({
+        success: false,
+        message: 'Error deleting all audit logs',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
 // ================================================
 //          FEATURE TOGGLE ROUTES
 // ================================================
@@ -1809,6 +1843,40 @@ router.put(
       return res.status(500).json({
         success: false,
         message: 'Error updating knowledge gap',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })
+);
+
+/**
+ * @route   DELETE /api/admin/knowledge-gaps/all
+ * @desc    Delete all knowledge gaps (DANGER ZONE)
+ * @access  Private (Admin only)
+ */
+router.delete(
+  '/knowledge-gaps/all',
+  auditAdminAction,
+  asyncHandler(async (req: Request, res: Response) => {
+    const adminUserId = req.user?._id;
+
+    logger.warn({ adminUserId }, 'DANGER ZONE: Request to delete ALL knowledge gaps');
+
+    try {
+      const KnowledgeGap = (await import('../models/KnowledgeGapModel')).default;
+      const result = await KnowledgeGap.deleteMany({});
+
+      logger.warn({ deletedCount: result.deletedCount, adminUserId }, 'All knowledge gaps deleted');
+      return res.status(200).json({
+        success: true,
+        message: `Deleted ${result.deletedCount} knowledge gaps`,
+        deletedCount: result.deletedCount,
+      });
+    } catch (error: unknown) {
+      logger.error({ error }, 'Error deleting all knowledge gaps');
+      return res.status(500).json({
+        success: false,
+        message: 'Error deleting all knowledge gaps',
         error: error instanceof Error ? error.message : String(error),
       });
     }

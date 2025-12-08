@@ -406,57 +406,51 @@ const useFileTreeStore = create<FileTreeState>((set, get) => ({
         // Return the result so caller can show appropriate message
         return uploadResult;
       } else {
-        // User documents upload (use existing user upload flow)
-        for (const file of Array.from(files)) {
-          // Step 1: Get presigned URL
-          const presignedResponse = await fetchWithAuth('/api/documents/get-presigned-url', {
-            method: 'POST',
-            body: JSON.stringify({
-              fileName: file.name,
-              fileType: file.type,
-              fileSize: file.size,
-            }),
-          });
+        // User documents upload - use server-side upload to avoid S3 CORS issues
+        // Similar to system KB upload, but uses /api/documents/upload endpoint
+        const formData = new FormData();
+        const filesArray = Array.from(files);
 
-          if (!presignedResponse.ok) {
-            throw new Error(`Failed to get upload URL: ${presignedResponse.status}`);
-          }
+        console.log('[FileTreeStore] USER MODE UPLOAD - Total files:', filesArray.length);
+        filesArray.forEach((file, index) => {
+          console.log(`[FileTreeStore] Adding file ${index + 1}/${filesArray.length}: ${file.name} (${file.size} bytes)`);
+          formData.append('files', file);
+        });
 
-          const { presignedUrl, s3Key } = await presignedResponse.json();
-
-          // Step 2: Upload to S3
-          const uploadUrl = presignedUrl.startsWith('/') ? `${getApiBaseUrl()}${presignedUrl}` : presignedUrl;
-          const s3Response = await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': file.type || 'application/octet-stream' },
-            body: file,
-            mode: 'cors',
-            credentials: uploadUrl.includes('localhost') ? 'include' : 'omit',
-          });
-
-          if (!s3Response.ok) {
-            throw new Error(`S3 upload failed: ${s3Response.status}`);
-          }
-
-          // Step 3: Notify backend with folderId
-          const processResponse = await fetchWithAuth('/api/documents/process-uploaded-file', {
-            method: 'POST',
-            body: JSON.stringify({
-              s3Key,
-              originalFileName: file.name,
-              fileSize: file.size,
-              fileType: file.type,
-              folderId: folderId || null, // Include folderId for user uploads
-            }),
-          });
-
-          if (!processResponse.ok) {
-            throw new Error(`Failed to process file: ${processResponse.status}`);
-          }
+        if (folderId) {
+          console.log('[FileTreeStore] Appending folderId to formData:', folderId);
+          formData.append('folderId', folderId);
+        } else {
+          console.log('[FileTreeStore] No folderId provided, uploading to root');
         }
 
-        // Return success for user mode
-        return { success: true, uploadedDocuments: Array.from(files).map(f => ({ filename: f.name })) };
+        console.log('[FileTreeStore] Uploading files to: /api/documents/upload');
+        // For FormData, we need special handling - don't set Content-Type
+        const apiUrl = getApiBaseUrl();
+        const token = localStorage.getItem('accessToken');
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(`${apiUrl}/api/documents/upload`, {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[FileTreeStore] Upload failed:', response.status, errorText);
+          throw new Error(`Failed to upload files: ${response.statusText}`);
+        }
+
+        const uploadResult = await response.json();
+        console.log('[FileTreeStore] Upload result:', uploadResult);
+
+        // Return the result so caller can show appropriate message
+        return uploadResult;
       }
 
       // Wait a bit for backend processing then refresh

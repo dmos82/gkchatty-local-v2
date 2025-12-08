@@ -1,12 +1,11 @@
 # Netlify Configuration for GKChatty Frontend
 
 [build]
-  # Base directory where the frontend code lives
+  # Base directory - frontend folder
   base = "gkchatty-local/frontend"
 
-  # Build command (install dependencies + build)
-  # Force install devDeps even in production (needed for cssnano)
-  command = "NODE_ENV=development npm install --legacy-peer-deps && npm run build"
+  # Build command - include dev deps for build tools (tailwindcss, etc)
+  command = "npm ci --legacy-peer-deps --include=dev && npm run build"
 
   # Directory to publish (Next.js output)
   publish = ".next"
@@ -23,21 +22,19 @@
 
 # Production deployment from local-ollama-dev branch
 [context.production]
-  command = "NODE_ENV=development npm install --legacy-peer-deps && npm run build"
+  # Use --include=dev to ensure build tools (tailwindcss, etc) are installed
+  command = "npm ci --legacy-peer-deps --include=dev && npm run build"
 
 [context.production.environment]
-  NODE_ENV = "production"
+  # NODE_ENV is set automatically by Next.js during build
+  # Don't set it here or npm ci will skip devDependencies (build tools)
 
 # Branch-specific settings
 [context.local-ollama-dev]
   command = "npm run build"
 
-# Redirect rules (if needed)
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-  force = false
+# Next.js handles all routing - no SPA redirect needed
+# The @netlify/plugin-nextjs plugin handles all routes automatically
 
 # Headers for security
 [[headers]]

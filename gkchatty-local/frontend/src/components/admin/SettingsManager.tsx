@@ -97,7 +97,7 @@ const SettingsManager: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
       <div>
         <h2 className="text-2xl font-semibold mb-4">Settings</h2>
         

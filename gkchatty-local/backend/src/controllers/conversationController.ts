@@ -6,6 +6,7 @@ import UserPresence from '../models/UserPresenceModel';
 import User from '../models/UserModel';
 import UserSettings from '../models/UserSettings';
 import { RequestWithUser } from '../middleware/authMiddleware';
+import socketService from '../services/socketService';
 
 /**
  * Get all conversations for the authenticated user
@@ -768,15 +769,6 @@ export const leaveGroup = async (
       return;
     }
 
-    // Check if user is the only member left
-    if (conversation.participants.length <= 2) {
-      res.status(400).json({
-        success: false,
-        message: 'Cannot leave group with 2 or fewer members. Delete the group instead.',
-      });
-      return;
-    }
-
     // Remove user from participants and participantUsernames
     const userIndex = conversation.participants.findIndex((p) => p.equals(userId));
     if (userIndex !== -1) {
@@ -787,6 +779,43 @@ export const leaveGroup = async (
     // Remove from participantMeta
     conversation.participantMeta.delete(userId.toString());
 
+    // Get the IO instance for socket events
+    const io = socketService.getIO();
+
+    // If only 1 person left (or 0), delete the group entirely
+    if (conversation.participants.length <= 1) {
+      // Notify remaining participant (if any) that group is deleted
+      if (conversation.participants.length === 1) {
+        const remainingParticipant = conversation.participants[0];
+        io?.to(`user:${remainingParticipant.toString()}`).emit('group:deleted', {
+          conversationId: id,
+          groupName: conversation.groupName,
+          deletedBy: username,
+          reason: 'last_member_left',
+        });
+      }
+
+      // Notify the leaving user to remove from their UI
+      io?.to(`user:${userId.toString()}`).emit('group:deleted', {
+        conversationId: id,
+        groupName: conversation.groupName,
+        deletedBy: username,
+        reason: 'you_left',
+      });
+
+      // Delete all messages in the conversation
+      await DirectMessage.deleteMany({ conversationId: conversation._id });
+      // Delete the conversation
+      await Conversation.deleteOne({ _id: id });
+
+      res.json({
+        success: true,
+        message: 'Successfully left the group. Group was deleted as you were the last member.',
+        groupDeleted: true,
+      });
+      return;
+    }
+
     // If user was the creator, transfer ownership to next participant
     if (conversation.createdBy?.equals(userId)) {
       conversation.createdBy = conversation.participants[0];
@@ -794,9 +823,28 @@ export const leaveGroup = async (
 
     await conversation.save();
 
+    // Notify the user who left so they can remove it from their UI
+    io?.to(`user:${userId.toString()}`).emit('group:deleted', {
+      conversationId: id,
+      groupName: conversation.groupName,
+      deletedBy: username,
+      reason: 'you_left',
+    });
+
+    // Notify remaining participants that someone left
+    for (const participantId of conversation.participants) {
+      io?.to(`user:${participantId.toString()}`).emit('group:member_left', {
+        conversationId: id,
+        groupName: conversation.groupName,
+        leftUser: { _id: userId.toString(), username },
+        remainingParticipants: conversation.participantUsernames,
+      });
+    }
+
     res.json({
       success: true,
       message: 'Successfully left the group',
+      groupDeleted: false,
     });
   } catch (error) {
     next(error);
@@ -844,6 +892,22 @@ export const deleteGroupConversation = async (
         message: 'Only the group creator can delete this group',
       });
       return;
+    }
+
+    // Get the IO instance for socket events before deletion
+    const io = socketService.getIO();
+    const deletedByUsername = (req.user as any)?.username;
+
+    // Notify all other participants that the group has been deleted
+    for (const participantId of conversation.participants) {
+      if (!participantId.equals(userId)) {
+        io?.to(`user:${participantId.toString()}`).emit('group:deleted', {
+          conversationId: id,
+          groupName: conversation.groupName,
+          deletedBy: deletedByUsername,
+          reason: 'creator_deleted',
+        });
+      }
     }
 
     // Delete all messages in the conversation

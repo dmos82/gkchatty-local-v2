@@ -10,7 +10,7 @@ const SystemKBManager: React.FC = () => {
   const [showDebug, setShowDebug] = useState(false);
 
   return (
-    <div className="h-[calc(100vh-200px)]">
+    <div className="h-[calc(100vh-200px)] flex flex-col overflow-hidden">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-semibold">Content Management</h2>
         <Button 

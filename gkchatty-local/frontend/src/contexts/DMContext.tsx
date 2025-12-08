@@ -191,8 +191,9 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       if (socket?.connected) {
         console.log('[DMContext] Emitting presence:update offline via auth:logout handler. Socket ID:', socket.id);
         socket.emit('presence:update', { status: 'offline' });
-        // Wait briefly for server to process the presence update before disconnecting
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait for server to process the presence update before disconnecting
+        // 300ms gives server time to save to DB and broadcast
+        await new Promise(resolve => setTimeout(resolve, 300));
         socket.disconnect();
         console.log('[DMContext] Socket disconnected via auth:logout handler');
       }
@@ -425,6 +426,44 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
           })
         );
       }
+    });
+
+    // Handle new conversation notification (when someone messages us for the first time)
+    newSocket.on('conversation:new', (newConversation: Conversation) => {
+      console.log('[DMContext] Received conversation:new:', newConversation._id);
+      setConversations((prev) => {
+        // Only add if conversation doesn't already exist
+        const exists = prev.some((c) => c._id === newConversation._id);
+        if (exists) {
+          // Update existing conversation instead
+          return prev.map((c) =>
+            c._id === newConversation._id
+              ? { ...c, lastMessage: newConversation.lastMessage, unreadCount: c.unreadCount + 1, updatedAt: newConversation.updatedAt }
+              : c
+          );
+        }
+        // Add new conversation at the top
+        console.log('[DMContext] Adding new conversation to list:', newConversation._id);
+        return [newConversation, ...prev];
+      });
+    });
+
+    // Handle group deleted notification
+    newSocket.on('group:deleted', ({ conversationId, groupName, deletedBy, reason }) => {
+      console.log(`[DMContext] Group deleted: ${groupName} by ${deletedBy} (${reason})`);
+      setConversations((prev) => prev.filter((c) => c._id !== conversationId));
+      // Clear messages if we were viewing this conversation
+      if (selectedConversationRef.current?._id === conversationId) {
+        setSelectedConversation(null);
+        setMessages([]);
+      }
+    });
+
+    // Handle member left notification
+    newSocket.on('group:member_left', ({ conversationId, groupName, leftUser, remainingParticipants }) => {
+      console.log(`[DMContext] ${leftUser.username} left group: ${groupName}`);
+      // Update the conversation's participant list if needed
+      // For now, just log - could show a toast notification
     });
 
     setSocket(newSocket);

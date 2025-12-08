@@ -203,9 +203,11 @@ export default function DocumentList({ onOpenFile }: DocumentListProps) {
   }
 
   return (
-    <div className="p-4 border rounded-md shadow-sm bg-white">
+    <div className="p-4 border rounded-md shadow-sm bg-white flex flex-col max-h-[calc(100vh-16rem)]">
       <h2 className="text-lg font-semibold text-gray-900 mb-3 px-4 pt-4">Uploaded Documents</h2>
-      {content}
+      <div className="flex-1 overflow-y-auto">
+        {content}
+      </div>
     </div>
   );
 }
