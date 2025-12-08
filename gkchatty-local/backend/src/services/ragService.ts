@@ -9,6 +9,18 @@ import { getAccessibleFolderIds } from '../utils/folderPermissionHelper';
 
 const log = getLogger('ragService');
 
+/**
+ * Get legacy namespace for backward compatibility.
+ * Documents indexed before environment prefixing was added are in these namespaces.
+ */
+function getLegacySystemKbNamespace(): string {
+  return 'system-kb';
+}
+
+function getLegacyUserNamespace(userId: string): string {
+  return `user-${userId}`;
+}
+
 const KEYWORD_SEARCH_LIMIT = 5;
 const SEMANTIC_SEARCH_TOP_K = 8;
 const MIN_CONFIDENCE_SCORE = 0.3; // Lowered from 0.5 to capture more potentially relevant results
@@ -140,23 +152,38 @@ async function getContext(
 
     // Determine the correct Pinecone namespace based on environment and index
     const searchNamespace = getSystemKbNamespace();
+    const legacySystemNamespace = getLegacySystemKbNamespace();
 
     log.debug(
       {
         searchNamespace,
+        legacySystemNamespace,
         indexName: process.env.PINECONE_INDEX_NAME,
         envNamespace: process.env.PINECONE_NAMESPACE,
       },
-      '[RAG Service] Using namespace for system KB search'
+      '[RAG Service] Using namespaces for system KB search (with legacy fallback)'
     );
 
-    // Prepare promise for Pinecone query (execute later if we also need user query)
+    // Query BOTH current prefixed namespace AND legacy namespace for system KB
+    // This ensures we find documents indexed before environment prefixing was added
     const systemQueryPromise = queryVectors(
       queryEmbedding[0],
       SEMANTIC_SEARCH_TOP_K,
       systemFilter,
       searchNamespace
     );
+
+    // Query legacy namespace only if it's different from the current namespace
+    if (legacySystemNamespace !== searchNamespace) {
+      const legacySystemQueryPromise = queryVectors(
+        queryEmbedding[0],
+        SEMANTIC_SEARCH_TOP_K,
+        systemFilter,
+        legacySystemNamespace
+      );
+      promises.push(legacySystemQueryPromise.then(r => ({ type: 'system', data: r })));
+      log.debug(`[RAG Service] Also querying legacy system namespace: ${legacySystemNamespace}`);
+    }
 
     // Store promise so we can await with others
     promises.push(systemQueryPromise.then(r => ({ type: 'system', data: r })));
@@ -183,12 +210,16 @@ async function getContext(
     }
 
     const userNamespace = getUserNamespace(userId);
+    const legacyUserNamespace = getLegacyUserNamespace(userId);
+
     // CRITICAL: In 'user' mode, we must ONLY search for user documents
     const userFilter = {
       userId,
       sourceType: 'user', // STRICT: Only user documents
     };
 
+    // Query BOTH current prefixed namespace AND legacy namespace for user docs
+    // This ensures we find documents indexed before environment prefixing was added
     const userQueryPromise = queryVectors(
       queryEmbedding[0],
       SEMANTIC_SEARCH_TOP_K,
@@ -196,9 +227,21 @@ async function getContext(
       userNamespace
     );
 
+    // Query legacy namespace only if it's different from the current namespace
+    if (legacyUserNamespace !== userNamespace) {
+      const legacyUserQueryPromise = queryVectors(
+        queryEmbedding[0],
+        SEMANTIC_SEARCH_TOP_K,
+        userFilter,
+        legacyUserNamespace
+      );
+      promises.push(legacyUserQueryPromise.then(r => ({ type: 'user', data: r })));
+      log.debug(`[RAG Service] Also querying legacy user namespace: ${legacyUserNamespace}`);
+    }
+
     log.debug(
-      { userNamespace, userId, filter: JSON.stringify(userFilter), mode: knowledgeBaseTarget },
-      '[RAG Service] Using namespace for user document search'
+      { userNamespace, legacyUserNamespace, userId, filter: JSON.stringify(userFilter), mode: knowledgeBaseTarget },
+      '[RAG Service] Using namespaces for user document search (with legacy fallback)'
     );
 
     promises.push(userQueryPromise.then(r => ({ type: 'user', data: r })));
@@ -207,11 +250,49 @@ async function getContext(
   // --- Await any queued vector queries (allows concurrent execution) ---
   const resolvedResults = promises.length ? await Promise.all(promises) : [];
 
-  // Assign to systemResults / userResults based on resolution
+  // Merge results from multiple namespace queries (current + legacy namespaces)
+  // Instead of overwriting, combine matches from all queries of the same type
   resolvedResults.forEach(item => {
-    if (item.type === 'system') systemResults = item.data;
-    else if (item.type === 'user') userResults = item.data;
+    if (item.type === 'system') {
+      // Merge system results
+      const newMatches = item.data?.matches || [];
+      const existingMatches = systemResults?.matches || [];
+      systemResults = {
+        ...item.data,
+        matches: [...existingMatches, ...newMatches],
+      };
+    } else if (item.type === 'user') {
+      // Merge user results
+      const newMatches = item.data?.matches || [];
+      const existingMatches = userResults?.matches || [];
+      userResults = {
+        ...item.data,
+        matches: [...existingMatches, ...newMatches],
+      };
+    }
   });
+
+  // Deduplicate by vector ID (same document chunk may exist in both namespaces)
+  const dedupeMatches = (results: any) => {
+    if (!results?.matches) return results;
+    const seenIds = new Set<string>();
+    results.matches = results.matches.filter((match: any) => {
+      if (seenIds.has(match.id)) return false;
+      seenIds.add(match.id);
+      return true;
+    });
+    return results;
+  };
+  systemResults = dedupeMatches(systemResults);
+  userResults = dedupeMatches(userResults);
+
+  log.debug(
+    {
+      systemMatchCount: systemResults?.matches?.length || 0,
+      userMatchCount: userResults?.matches?.length || 0,
+    },
+    '[RAG Service] Merged and deduplicated results from all namespace queries'
+  );
 
   // This log should capture the raw results from Pinecone BEFORE score filtering
   log.debug(`[DIAGNOSTIC] Raw matches from Pinecone: ${JSON.stringify(resolvedResults, null, 2)}`);
