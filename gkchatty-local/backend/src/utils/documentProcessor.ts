@@ -3,6 +3,7 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'; // Import S3 cl
 import { UserDocument, IUserDocument } from '../models/UserDocument'; // Import UserDocument model and interface
 import { SystemKbDocument, ISystemKbDocument } from '../models/SystemKbDocument'; // ADDED: Import SystemKbDocument and interface
 import pdf from 'pdf-parse';
+import mammoth from 'mammoth'; // Import mammoth for DOCX parsing
 import { extractTextFromExcel } from './excelProcessor'; // Import Excel processor
 import { processImageWithText, isSupportedImageType } from './imageProcessor'; // Import image processor
 import { processAudioFile, isSupportedAudioType } from './audioProcessor'; // Import audio processor
@@ -161,8 +162,12 @@ export const processAndEmbedDocument = async (
     const isMarkdownExt = fileExt === '.md' || fileExt === '.markdown';
     const isTextExt = fileExt === '.txt';
     const isPdfExt = fileExt === '.pdf';
+    const isDocxExt = fileExt === '.docx';
+    const isDocExt = fileExt === '.doc';
 
     const isPdf = effectiveMimeType === 'application/pdf' || isPdfExt;
+    const isDocx = effectiveMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || isDocxExt;
+    const isDoc = effectiveMimeType === 'application/msword' || isDocExt;
     const isText = effectiveMimeType === 'text/plain' || effectiveMimeType === 'text/markdown' || isTextExt || isMarkdownExt;
     const isExcel =
       effectiveMimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
@@ -185,6 +190,27 @@ export const processAndEmbedDocument = async (
         errorCode = IngestionErrorCode.PDF_PARSE_FAILED;
         throw new Error(`Failed to parse PDF: ${pdfError.message}`);
       }
+    } else if (isDocx) {
+      log.info(`[DocProcessor - ${correlationId}] Starting DOCX parsing for ${originalFileName}`);
+      try {
+        const result = await mammoth.extractRawText({ buffer: fileBuffer });
+        fullText = result.value?.trim() || '';
+        log.info(
+          `[DocProcessor - ${correlationId}] DOCX parsing successful. Text length: ${fullText.length} characters`
+        );
+        if (result.messages && result.messages.length > 0) {
+          log.warn(`[DocProcessor - ${correlationId}] DOCX warnings:`, result.messages);
+        }
+      } catch (docxError: any) {
+        log.error(`[DocProcessor - ${correlationId}] DOCX parsing FAILED:`, docxError);
+        errorCode = IngestionErrorCode.UNKNOWN_PROCESSING_ERROR;
+        throw new Error(`Failed to parse DOCX: ${docxError.message}`);
+      }
+    } else if (isDoc) {
+      // .doc files (older Word format) - mammoth doesn't support them natively
+      log.error(`[DocProcessor - ${correlationId}] DOC format (legacy Word) is not supported. Please convert to DOCX.`);
+      errorCode = IngestionErrorCode.UNSUPPORTED_FILE_TYPE;
+      throw new Error('DOC format (legacy Word) is not supported. Please convert to DOCX format.');
     } else if (isText) {
       log.info(`[DocProcessor - ${correlationId}] Extracting text from TXT/MD buffer`);
       fullText = fileBuffer.toString('utf-8');

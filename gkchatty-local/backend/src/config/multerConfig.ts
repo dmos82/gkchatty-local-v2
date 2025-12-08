@@ -32,8 +32,15 @@ const storage = multer.diskStorage({
 
 // File filter function with extension fallback for markdown files
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedMimes = ['application/pdf', 'text/plain', 'text/markdown'];
-  const allowedExtensions = ['.pdf', '.txt', '.md', '.markdown'];
+  const allowedMimes = [
+    'application/pdf',
+    'text/plain',
+    'text/markdown',
+    // Word documents
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+    'application/msword', // .doc
+  ];
+  const allowedExtensions = ['.pdf', '.txt', '.md', '.markdown', '.docx', '.doc'];
 
   const fileExtension = path.extname(file.originalname).toLowerCase();
 
@@ -43,7 +50,7 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
     cb(null, true);
   } else {
     console.log(`[Multer] Blocked file: ${file.originalname} (mime: ${file.mimetype}, ext: ${fileExtension})`);
-    cb(new Error('Invalid file type. Only PDF, TXT, and Markdown files are allowed.'));
+    cb(new Error('Invalid file type. Only PDF, TXT, Markdown, and Word documents are allowed.'));
   }
 };
 
@@ -92,16 +99,22 @@ const dmAttachmentFilter = (
     'image/jpeg', 'image/png', 'image/gif', 'image/webp',
     // Documents
     'application/pdf', 'text/plain', 'text/markdown',
+    // Word documents
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+    'application/msword', // .doc
     // Common files
     'application/zip', 'application/x-zip-compressed',
   ];
+  const allowedExtensions = ['.docx', '.doc']; // Extension fallback for Word docs
 
-  if (allowedMimes.includes(file.mimetype)) {
+  const fileExtension = path.extname(file.originalname).toLowerCase();
+
+  if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
     console.log(`[Multer] Allowed DM attachment: ${file.originalname} (mime: ${file.mimetype})`);
     cb(null, true);
   } else {
     console.log(`[Multer] Blocked DM attachment: ${file.originalname} (mime: ${file.mimetype})`);
-    cb(new Error('Invalid file type. Only images, PDFs, text files, and ZIP archives are allowed.'));
+    cb(new Error('Invalid file type. Only images, PDFs, text files, Word documents, and ZIP archives are allowed.'));
   }
 };
 

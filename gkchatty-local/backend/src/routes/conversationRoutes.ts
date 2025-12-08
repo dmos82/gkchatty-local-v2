@@ -17,6 +17,7 @@ import { dmAttachmentUpload } from '../config/multerConfig';
 import { uploadFile, getPresignedUrlForView, getFileStream } from '../utils/s3Helper';
 import { getLogger } from '../utils/logger';
 import { UserDocument } from '../models/UserDocument';
+import { processUserDocument } from '../services/userDocumentProcessor';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
 import path from 'path';
@@ -326,7 +327,8 @@ router.post('/:id/attachments/copy-to-docs', async (req: Request, res: Response)
     // Get bucket name from environment
     const s3Bucket = process.env.AWS_BUCKET_NAME || 'local';
 
-    // Create UserDocument record
+    // Create UserDocument record with 'processing' status
+    // Document needs to be indexed into Pinecone for RAG queries
     const userDocument = new UserDocument({
       userId: userId,
       sourceType: 'user',
@@ -337,12 +339,25 @@ router.post('/:id/attachments/copy-to-docs', async (req: Request, res: Response)
       fileSize: size,
       mimeType: mimeType,
       uploadTimestamp: new Date(),
-      status: 'completed', // Already processed - it's just a copy
+      status: 'processing', // Will be updated to 'completed' after indexing
     });
 
     await userDocument.save();
 
     log.debug(`[Copy to MyDocs] Successfully copied ${filename} to MyDocs as document ${userDocument._id}`);
+
+    // Trigger document processing (text extraction, chunking, embedding, Pinecone indexing)
+    // Run in background - don't await so response returns immediately
+    processUserDocument(
+      userDocument._id.toString(),
+      s3Bucket,
+      newS3Key,
+      userId.toString()
+    ).then(() => {
+      log.debug(`[Copy to MyDocs] Document ${userDocument._id} indexed successfully`);
+    }).catch((processingError) => {
+      log.error(`[Copy to MyDocs] Failed to index document ${userDocument._id}:`, processingError);
+    });
 
     return res.status(200).json({
       success: true,
