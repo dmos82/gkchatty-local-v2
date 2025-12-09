@@ -193,6 +193,10 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
   // (Backend emits to both conversation room and user room, causing duplicates)
   const processedMessageIds = useRef<Set<string>>(new Set());
 
+  // Track conversations recently marked as read (to preserve optimistic updates during refresh)
+  // Stores { conversationId: timestamp } - entries expire after 10 seconds
+  const recentlyMarkedAsRead = useRef<Map<string, number>>(new Map());
+
   // Ref to track current selected conversation (for use in socket handlers to avoid stale closures)
   const selectedConversationRef = useRef<Conversation | null>(null);
 
@@ -599,7 +603,32 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       if (!response.ok) throw new Error('Failed to fetch conversations');
 
       const data = await response.json();
-      setConversations(data.conversations || []);
+      const fetchedConversations = data.conversations || [];
+
+      // IMPORTANT: Preserve optimistic unreadCount=0 for recently marked conversations
+      // This prevents the badge from reappearing when backend hasn't synced yet
+      const now = Date.now();
+      const EXPIRY_MS = 10000; // 10 seconds
+
+      // Clean up expired entries
+      for (const [convId, timestamp] of recentlyMarkedAsRead.current.entries()) {
+        if (now - timestamp > EXPIRY_MS) {
+          recentlyMarkedAsRead.current.delete(convId);
+        }
+      }
+
+      // Merge: keep unreadCount=0 for recently marked conversations
+      const mergedConversations = fetchedConversations.map((conv: Conversation) => {
+        const markedAt = recentlyMarkedAsRead.current.get(conv._id);
+        if (markedAt && now - markedAt < EXPIRY_MS) {
+          // Preserve optimistic update - user just marked this as read
+          console.log('[DMContext] Preserving optimistic unreadCount=0 for:', conv._id);
+          return { ...conv, unreadCount: 0 };
+        }
+        return conv;
+      });
+
+      setConversations(mergedConversations);
     } catch (error) {
       console.error('[DMContext] Error fetching conversations:', error);
     } finally {
@@ -985,6 +1014,11 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     async (conversationId: string) => {
       const token = getToken();
       if (!token) return;
+
+      // Record this conversation as recently marked as read
+      // This prevents refreshConversations() from overwriting with stale backend data
+      recentlyMarkedAsRead.current.set(conversationId, Date.now());
+      console.log('[DMContext] Marking conversation as read:', conversationId);
 
       // OPTIMISTIC UPDATE: Clear badge immediately for instant UI response
       // This fixes Chromium-specific badge persistence issues
