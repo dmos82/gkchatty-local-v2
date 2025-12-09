@@ -102,11 +102,11 @@ module.exports = {
         scaleOut: {
           '0%': {
             opacity: '1',
-            transform: 'scale(1)',
+            transform: 'scale(1) translateY(0)',
           },
           '100%': {
             opacity: '0',
-            transform: 'scale(0.9)',
+            transform: 'scale(0.95) translateY(10px)',
           },
         },
         slideInFromBottom: {
@@ -143,7 +143,7 @@ module.exports = {
       animation: {
         fadeInUp: 'fadeInUp 0.3s ease-out',
         scaleIn: 'scaleIn 0.2s ease-out',
-        scaleOut: 'scaleOut 0.2s ease-out',
+        scaleOut: 'scaleOut 0.15s cubic-bezier(0.4, 0, 1, 1) forwards',
         slideInFromBottom: 'slideInFromBottom 0.25s ease-out',
         minimizeToButton: 'minimizeToButton 0.2s ease-in forwards',
         expandFromButton: 'expandFromButton 0.25s ease-out',

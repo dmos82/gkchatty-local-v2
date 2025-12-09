@@ -25,7 +25,7 @@ const StatusBadge: React.FC<{ status: PresenceStatus }> = ({ status }) => {
 };
 
 export const IMBuddyList: React.FC<IMBuddyListProps> = ({ onClose }) => {
-  const { onlineUsers, isLoadingUsers, refreshOnlineUsers, conversations, refreshConversations, updatePresence, myDndEnabled, myDndUntil, myDndMessage, setDND } = useDM();
+  const { onlineUsers, isLoadingUsers, refreshOnlineUsers, conversations, refreshConversations, updatePresence, myDndEnabled, myDndUntil, myDndMessage, setDND, markConversationAsRead } = useDM();
   const { openChatWindow, openGroupChatWindow } = useIM();
   const containerRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -196,12 +196,23 @@ export const IMBuddyList: React.FC<IMBuddyListProps> = ({ onClose }) => {
       (c) => c.otherParticipant._id === user._id
     );
 
+    // Immediately mark conversation as read (optimistic UI update)
+    // This clears the red badge instantly before API call completes
+    if (existingConv && existingConv.unreadCount > 0) {
+      markConversationAsRead(existingConv._id);
+    }
+
     // Open the inline chat window (draggable within the page)
     openChatWindow(user, existingConv?._id || null);
   };
 
   // Handle clicking on existing group conversation
   const handleGroupClick = (conv: typeof conversations[0]) => {
+    // Immediately mark conversation as read (optimistic UI update)
+    if (conv.unreadCount > 0) {
+      markConversationAsRead(conv._id);
+    }
+
     // Open the inline group chat window (draggable within the page)
     openGroupChatWindow(
       conv._id,
@@ -262,6 +273,7 @@ export const IMBuddyList: React.FC<IMBuddyListProps> = ({ onClose }) => {
   const UserItem: React.FC<{ user: UserPresence }> = ({ user }) => {
     const unreadCount = getUnreadCount(user._id);
     const isSelected = selectedUsers.has(user._id);
+    const hasUnread = unreadCount > 0;
 
     return (
       <button
@@ -269,6 +281,8 @@ export const IMBuddyList: React.FC<IMBuddyListProps> = ({ onClose }) => {
         className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-left group ${
           isSelected
             ? 'bg-yellow-100 dark:bg-yellow-900/30 ring-1 ring-yellow-400'
+            : hasUnread
+            ? 'bg-yellow-50 dark:bg-yellow-900/20 ring-1 ring-yellow-300/50 dark:ring-yellow-500/30'
             : 'hover:bg-slate-100 dark:hover:bg-[#2a2a2a]'
         }`}
       >
@@ -314,7 +328,7 @@ export const IMBuddyList: React.FC<IMBuddyListProps> = ({ onClose }) => {
         {/* Username and custom status */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+            <span className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-900 dark:text-white' : 'font-medium text-slate-700 dark:text-slate-200'}`}>
               {user.username}
             </span>
             {/* DND badge */}
@@ -663,224 +677,16 @@ export const IMBuddyList: React.FC<IMBuddyListProps> = ({ onClose }) => {
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
-            {/* DND Toggle */}
-            <div className="relative">
-              <button
-                onClick={() => setIsDndMenuOpen(!isDndMenuOpen)}
-                className={`w-full flex items-center gap-2 px-3 py-2 border rounded-lg transition-colors ${
-                  myDndEnabled
-                    ? 'bg-purple-50 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700'
-                    : 'bg-white dark:bg-[#2a2a2a] border-slate-300 dark:border-[#404040] hover:bg-slate-50 dark:hover:bg-[#333]'
-                }`}
-              >
-                <svg className={`w-4 h-4 ${myDndEnabled ? 'text-purple-500' : 'text-slate-400'}`} fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                </svg>
-                <span className={`flex-1 text-left text-sm ${myDndEnabled ? 'text-purple-700 dark:text-purple-300 font-medium' : 'text-slate-700 dark:text-slate-200'}`}>
-                  {myDndEnabled ? (
-                    <>
-                      Do Not Disturb
-                      {myDndUntil && (
-                        <span className="text-xs ml-1 opacity-75">
-                          (until {new Date(myDndUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    'Do Not Disturb'
-                  )}
-                </span>
-                {myDndEnabled ? (
-                  <span className="text-xs px-1.5 py-0.5 bg-purple-500 text-white rounded">ON</span>
-                ) : (
-                  <svg className={`w-4 h-4 text-slate-400 transition-transform ${isDndMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                )}
-              </button>
-
-              {/* DND dropdown */}
-              {isDndMenuOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-[#2a2a2a] border border-slate-200 dark:border-[#404040] rounded-lg shadow-lg overflow-hidden z-10">
-                  {/* Disable DND option (only show if DND is enabled) */}
-                  {myDndEnabled && (
-                    <button
-                      onClick={() => {
-                        setDND(false);
-                        setIsDndMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors text-green-600 dark:text-green-400"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                      </svg>
-                      <span className="text-sm font-medium">Turn Off DND</span>
-                    </button>
-                  )}
-
-                  {/* DND duration options */}
-                  {!myDndEnabled && (
-                    <>
-                      <button
-                        onClick={() => {
-                          const until = new Date();
-                          until.setHours(until.getHours() + 1);
-                          setDND(true, until, 'Back in 1 hour');
-                          setIsDndMenuOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors"
-                      >
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="text-sm text-slate-700 dark:text-slate-200">For 1 hour</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          const until = new Date();
-                          until.setHours(until.getHours() + 2);
-                          setDND(true, until, 'Back in 2 hours');
-                          setIsDndMenuOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors"
-                      >
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="text-sm text-slate-700 dark:text-slate-200">For 2 hours</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          const until = new Date();
-                          until.setHours(23, 59, 59, 999);
-                          setDND(true, until, 'Back tomorrow');
-                          setIsDndMenuOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors"
-                      >
-                        <svg className="w-4 h-4 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                        </svg>
-                        <span className="text-sm text-slate-700 dark:text-slate-200">Until tomorrow</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setDND(true, null, null);
-                          setIsDndMenuOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors border-t border-slate-200 dark:border-[#404040]"
-                      >
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                        </svg>
-                        <span className="text-sm text-slate-700 dark:text-slate-200">Until I turn it off</span>
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Status selector */}
-            <div className="relative">
-              <button
-                onClick={() => setIsStatusMenuOpen(!isStatusMenuOpen)}
-                className="w-full flex items-center gap-2 px-3 py-2 bg-white dark:bg-[#2a2a2a] border border-slate-300 dark:border-[#404040] rounded-lg hover:bg-slate-50 dark:hover:bg-[#333] transition-colors"
-              >
-                <StatusBadge status={myStatus} />
-                <span className="flex-1 text-left text-sm text-slate-700 dark:text-slate-200">
-                  {myStatus.charAt(0).toUpperCase() + myStatus.slice(1)}
-                  {myCustomStatus && (
-                    <span className="text-slate-500 dark:text-slate-400 ml-1">- {myCustomStatus}</span>
-                  )}
-                </span>
-                <svg className={`w-4 h-4 text-slate-400 transition-transform ${isStatusMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {/* Status dropdown */}
-              {isStatusMenuOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-[#2a2a2a] border border-slate-200 dark:border-[#404040] rounded-lg shadow-lg overflow-hidden z-10">
-                  {/* Status options */}
-                  {(['online', 'away', 'busy'] as PresenceStatus[]).map((status) => (
-                    <button
-                      key={status}
-                      onClick={() => {
-                        setMyStatus(status);
-                        updatePresence(status, myCustomStatus || undefined);
-                        setIsStatusMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors ${
-                        myStatus === status ? 'bg-slate-50 dark:bg-[#333]' : ''
-                      }`}
-                    >
-                      <StatusBadge status={status} />
-                      <span className="text-sm text-slate-700 dark:text-slate-200">
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                      </span>
-                      {myStatus === status && (
-                        <svg className="w-4 h-4 text-green-500 ml-auto" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </button>
-                  ))}
-
-                  {/* Custom status input */}
-                  <div className="border-t border-slate-200 dark:border-[#404040] p-2">
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={customStatusInput}
-                        onChange={(e) => setCustomStatusInput(e.target.value.slice(0, 100))}
-                        placeholder="What's happening?"
-                        className="flex-1 px-2 py-1.5 text-sm bg-slate-100 dark:bg-[#1a1a1a] border-0 rounded focus:ring-1 focus:ring-yellow-500 text-slate-700 dark:text-slate-200 placeholder-slate-400"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            setMyCustomStatus(customStatusInput);
-                            updatePresence(myStatus, customStatusInput || undefined);
-                            setIsStatusMenuOpen(false);
-                          }
-                        }}
-                      />
-                      <button
-                        onClick={() => {
-                          setMyCustomStatus(customStatusInput);
-                          updatePresence(myStatus, customStatusInput || undefined);
-                          setIsStatusMenuOpen(false);
-                        }}
-                        className="px-2 py-1.5 text-xs font-medium bg-yellow-500 hover:bg-yellow-600 text-white rounded transition-colors"
-                      >
-                        Set
-                      </button>
-                    </div>
-                    {myCustomStatus && (
-                      <button
-                        onClick={() => {
-                          setMyCustomStatus('');
-                          setCustomStatusInput('');
-                          updatePresence(myStatus, '');
-                          setIsStatusMenuOpen(false);
-                        }}
-                        className="mt-2 text-xs text-red-500 hover:text-red-600"
-                      >
-                        Clear custom status
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Refresh button */}
+          <div className="flex items-center justify-center">
+            {/* Refresh button - simplified footer */}
             <button
               onClick={() => refreshOnlineUsers()}
-              className="text-xs text-slate-500 dark:text-slate-400 hover:text-yellow-600 dark:hover:text-yellow-500 transition-colors"
+              className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-yellow-600 dark:hover:text-yellow-500 transition-colors"
             >
-              Refresh list
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
             </button>
           </div>
         )}

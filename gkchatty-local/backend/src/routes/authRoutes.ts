@@ -336,12 +336,12 @@ router.post(
       logger.info({ username, sessionId: newSessionId }, 'Generating JWT');
 
       // Generate JWT with the new session ID as jwtid, using the directly read secret
-      // MEDIUM-002: Reduced token expiration from 1h to 30m for security
+      // Extended token expiration to 8h for better UX - enterprise apps need longer sessions
       const token = jwt.sign(
         payload,
         signingSecret, // Use the directly read variable
         {
-          expiresIn: '30m', // Reduced session window to mitigate hijacking risk
+          expiresIn: '8h', // 8 hours - reasonable for active work sessions
           jwtid: newSessionId, // Use the new session ID as the JWT ID (jti)
         }
       );
@@ -359,7 +359,7 @@ router.post(
         // Use 'none' for cross-origin requests in HTTPS environments
         // In development, don't set sameSite to allow cookies across different ports (mobile testing)
         ...(isProductionLike ? { sameSite: 'none' as 'none' } : {}),
-        maxAge: 1800000, // MEDIUM-002: 30 minutes in milliseconds (matches JWT expiration)
+        maxAge: 28800000, // 8 hours in milliseconds (matches JWT expiration)
         path: '/',
         // Removed explicit domain to let the browser use the current domain
       };
