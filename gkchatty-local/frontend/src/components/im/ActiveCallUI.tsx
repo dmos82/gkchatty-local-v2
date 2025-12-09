@@ -100,9 +100,45 @@ export const ActiveCallUI: React.FC = () => {
   }, [isDragging]);
 
   // Attach local stream to video element
+  // Use multiple approaches to ensure the stream gets attached
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
+    const attachStream = () => {
+      const videoEl = localVideoRef.current;
+      if (videoEl && localStream) {
+        // Only set if not already set or different stream
+        if (videoEl.srcObject !== localStream) {
+          console.log('[ActiveCallUI] Attaching local stream to video element');
+          videoEl.srcObject = localStream;
+        }
+        // Always try to play
+        if (videoEl.paused) {
+          videoEl.play().catch((err) => {
+            console.log('[ActiveCallUI] Local video autoplay blocked:', err);
+          });
+        }
+        return true; // Successfully attached
+      }
+      return false;
+    };
+
+    // Try immediately
+    if (!attachStream()) {
+      // If failed, retry after a short delay (ref might not be ready)
+      const retryTimeout = setTimeout(attachStream, 100);
+      return () => clearTimeout(retryTimeout);
+    }
+  }, [localStream, activeCall]);
+
+  // Fallback: Also attach via ref callback when video element mounts
+  const handleLocalVideoRef = useCallback((el: HTMLVideoElement | null) => {
+    // Store ref using Object.assign to workaround readonly
+    (localVideoRef as React.MutableRefObject<HTMLVideoElement | null>).current = el;
+    if (el && localStream && el.srcObject !== localStream) {
+      console.log('[ActiveCallUI] Attaching local stream via ref callback');
+      el.srcObject = localStream;
+      el.play().catch((err) => {
+        console.log('[ActiveCallUI] Local video play failed:', err);
+      });
     }
   }, [localStream]);
 
@@ -220,10 +256,10 @@ export const ActiveCallUI: React.FC = () => {
               className="w-full h-full object-cover"
             />
 
-            {/* Local video (picture-in-picture) */}
-            <div className="absolute bottom-4 right-4 w-32 h-24 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 shadow-lg">
+            {/* Local video (picture-in-picture) - z-10 to stay above waiting overlay */}
+            <div className="absolute bottom-4 right-4 w-32 h-24 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 shadow-lg z-10">
               <video
-                ref={localVideoRef}
+                ref={handleLocalVideoRef}
                 autoPlay
                 playsInline
                 muted
