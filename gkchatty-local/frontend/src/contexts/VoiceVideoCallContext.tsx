@@ -588,7 +588,27 @@ export const VoiceVideoCallProvider: React.FC<VoiceVideoCallProviderProps> = ({ 
     // Call rejected
     const handleCallRejected = (data: { callId: string; reason?: string }) => {
       console.log('[VoiceVideoCall] Call rejected:', data);
-      setCallError(data.reason === 'busy' ? 'User is busy' : 'Call was rejected');
+      const currentCall = activeCallRef.current;
+      const peerName = currentCall?.peer?.username || 'User';
+
+      // Map reasons to user-friendly messages
+      let errorMessage: string;
+      switch (data.reason) {
+        case 'busy':
+          errorMessage = `${peerName} is on another call`;
+          break;
+        case 'offline':
+          errorMessage = `${peerName} is offline`;
+          break;
+        case 'Call declined':
+        case 'declined':
+          errorMessage = `${peerName} declined the call`;
+          break;
+        default:
+          errorMessage = `${peerName} declined the call`;
+      }
+
+      setCallError(errorMessage);
       cleanup();
     };
 
@@ -601,7 +621,9 @@ export const VoiceVideoCallProvider: React.FC<VoiceVideoCallProviderProps> = ({ 
     // Call timeout
     const handleCallTimeout = (data: { callId: string }) => {
       console.log('[VoiceVideoCall] Call timeout:', data);
-      setCallError('Call was not answered');
+      const currentCall = activeCallRef.current;
+      const peerName = currentCall?.peer?.username || 'User';
+      setCallError(`${peerName} didn't answer`);
       cleanup();
     };
 
@@ -659,6 +681,72 @@ export const VoiceVideoCallProvider: React.FC<VoiceVideoCallProviderProps> = ({ 
       cleanup();
     };
   }, [cleanup]);
+
+  // Handle browser navigation (back button, page close, etc.)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // End the call on server before page unloads
+      const currentCall = activeCallRef.current;
+      if (currentCall && socket) {
+        console.log('[VoiceVideoCall] Page unloading, ending call');
+        socket.emit('call:end', { callId: currentCall.callId });
+      }
+      cleanup();
+    };
+
+    const handleVisibilityChange = () => {
+      // When user navigates away (hidden), end the call
+      if (document.visibilityState === 'hidden') {
+        const currentCall = activeCallRef.current;
+        if (currentCall && socket) {
+          console.log('[VoiceVideoCall] Page hidden (navigated away), ending call');
+          socket.emit('call:end', { callId: currentCall.callId });
+          cleanup();
+        }
+      }
+    };
+
+    const handlePopState = () => {
+      // Handle browser back/forward navigation
+      const currentCall = activeCallRef.current;
+      if (currentCall && socket) {
+        console.log('[VoiceVideoCall] Browser navigation detected, ending call');
+        socket.emit('call:end', { callId: currentCall.callId });
+        cleanup();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [socket, cleanup]);
+
+  // Clear any stale call state when socket reconnects
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleConnect = () => {
+      console.log('[VoiceVideoCall] Socket connected/reconnected, clearing any stale call state');
+      // Clear local call state on reconnection since backend may have different state
+      const currentCall = activeCallRef.current;
+      if (currentCall) {
+        console.log('[VoiceVideoCall] Had active call during reconnect, cleaning up');
+        cleanup();
+      }
+    };
+
+    socket.on('connect', handleConnect);
+
+    return () => {
+      socket.off('connect', handleConnect);
+    };
+  }, [socket, cleanup]);
 
   const value: VoiceVideoCallContextType = {
     activeCall,

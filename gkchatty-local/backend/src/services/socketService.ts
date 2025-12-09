@@ -324,6 +324,9 @@ class SocketService {
         console.log(`[Socket DISCONNECT] User: ${authSocket.username}, Socket: ${socket.id}, Reason: ${reason}`);
         this.removeUserSocket(authSocket.userId, socket.id);
 
+        // Clean up any active calls for this user
+        await this.cleanupUserCalls(authSocket);
+
         // Update presence - only go offline if no more sockets
         const remainingSockets = this.userSocketMap.get(authSocket.userId);
         console.log(`[Socket DISCONNECT] Remaining sockets for ${authSocket.username}: ${remainingSockets?.size || 0}`);
@@ -1485,6 +1488,60 @@ class SocketService {
   // ==========================================
 
   /**
+   * Clean up any active calls when a user disconnects
+   * This handles cases like browser navigation, page refresh, or network disconnect
+   */
+  private async cleanupUserCalls(socket: AuthenticatedSocket): Promise<void> {
+    try {
+      // Find all calls involving this user
+      const callsToEnd: string[] = [];
+
+      for (const [callId, call] of this.activeCalls.entries()) {
+        if (call.callerId === socket.userId || call.targetId === socket.userId) {
+          callsToEnd.push(callId);
+        }
+      }
+
+      // End each call and notify the other party
+      for (const callId of callsToEnd) {
+        const call = this.activeCalls.get(callId);
+        if (!call) continue;
+
+        const otherUserId = call.callerId === socket.userId ? call.targetId : call.callerId;
+
+        // Calculate duration if call was connected
+        const duration = call.connectedAt
+          ? Math.floor((Date.now() - call.connectedAt.getTime()) / 1000)
+          : 0;
+
+        // Broadcast that both users are no longer in a call
+        if (call.status === 'connected') {
+          this.io?.emit('call:status_changed', { userId: call.callerId, username: call.callerUsername, inCall: false });
+          this.io?.emit('call:status_changed', { userId: call.targetId, username: call.targetUsername, inCall: false });
+        }
+
+        // Remove call from active calls
+        this.activeCalls.delete(callId);
+
+        // Notify the other party that the call ended
+        this.io?.to(`user:${otherUserId}`).emit('call:ended', {
+          callId,
+          duration,
+          reason: 'disconnected',
+        });
+
+        console.log(`[Socket Call Cleanup] Ended call ${callId} due to ${socket.username} disconnect, notified ${otherUserId}`);
+      }
+
+      if (callsToEnd.length > 0) {
+        console.log(`[Socket Call Cleanup] Cleaned up ${callsToEnd.length} call(s) for ${socket.username}`);
+      }
+    } catch (error: any) {
+      console.error('[Socket Call Cleanup] Error:', error.message);
+    }
+  }
+
+  /**
    * Generate unique call ID
    */
   private generateCallId(): string {
@@ -1560,11 +1617,22 @@ class SocketService {
         callType,
       });
 
-      // Notify target user of incoming call
+      // Check if target user is online before proceeding
       const targetRoom = `user:${targetUserId}`;
       const roomSockets = this.io?.sockets.adapter.rooms.get(targetRoom);
       const roomSize = roomSockets ? roomSockets.size : 0;
 
+      console.log(`[Socket Call] Target user ${targetUser.username} room ${targetRoom} has ${roomSize} sockets`);
+
+      // If target user is offline, reject immediately instead of waiting for timeout
+      if (roomSize === 0) {
+        console.log(`[Socket Call] Target user ${targetUser.username} is offline, rejecting call`);
+        this.activeCalls.delete(callId);
+        socket.emit('call:rejected', { callId, reason: 'offline' });
+        return;
+      }
+
+      // Notify target user of incoming call
       console.log(`[Socket Call] Sending call:incoming to room ${targetRoom} (${roomSize} sockets in room)`);
 
       this.io?.to(targetRoom).emit('call:incoming', {
@@ -1627,6 +1695,19 @@ class SocketService {
       socket.emit('call:accepted', { callId });
       this.io?.to(`user:${call.callerId}`).emit('call:accepted', { callId });
 
+      // Broadcast that both users are now in a call (for buddy list status)
+      this.io?.emit('call:status_changed', {
+        userId: call.callerId,
+        username: call.callerUsername,
+        inCall: true,
+      });
+      this.io?.emit('call:status_changed', {
+        userId: call.targetId,
+        username: call.targetUsername,
+        inCall: true,
+      });
+      console.log(`[Socket Call] Broadcast call:status_changed for ${call.callerUsername} and ${call.targetUsername} (inCall: true)`);
+
       console.log(`[Socket Call] ${socket.username} accepted call ${callId}`);
     } catch (error: any) {
       console.error('[Socket Call] Error accepting call:', error.message);
@@ -1662,6 +1743,12 @@ class SocketService {
       const otherUserId = call.callerId === socket.userId ? call.targetId : call.callerId;
       socket.emit('call:rejected', { callId, reason: reason || 'Call declined' });
       this.io?.to(`user:${otherUserId}`).emit('call:rejected', { callId, reason: reason || 'Call declined' });
+
+      // If call was connected, broadcast that both users are no longer in a call
+      if (call.status === 'connected') {
+        this.io?.emit('call:status_changed', { userId: call.callerId, username: call.callerUsername, inCall: false });
+        this.io?.emit('call:status_changed', { userId: call.targetId, username: call.targetUsername, inCall: false });
+      }
 
       console.log(`[Socket Call] Call ${callId} rejected by ${socket.username}`);
     } catch (error: any) {
@@ -1775,6 +1862,13 @@ class SocketService {
       const duration = call.connectedAt
         ? Math.floor((Date.now() - call.connectedAt.getTime()) / 1000)
         : 0;
+
+      // Broadcast that both users are no longer in a call (for buddy list status)
+      if (call.status === 'connected') {
+        this.io?.emit('call:status_changed', { userId: call.callerId, username: call.callerUsername, inCall: false });
+        this.io?.emit('call:status_changed', { userId: call.targetId, username: call.targetUsername, inCall: false });
+        console.log(`[Socket Call] Broadcast call:status_changed for ${call.callerUsername} and ${call.targetUsername} (inCall: false)`);
+      }
 
       // Remove call
       this.activeCalls.delete(callId);
