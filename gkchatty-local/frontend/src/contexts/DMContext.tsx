@@ -155,6 +155,9 @@ interface DMContextType {
   myDndMessage: string | null;
   setDND: (enabled: boolean, dndUntil?: Date | null, dndMessage?: string | null) => void;
 
+  // Call Status (for buddy list)
+  usersInCall: Set<string>;
+
   // Unread count
   totalUnreadCount: number;
   markConversationAsRead: (conversationId: string) => Promise<void>;
@@ -212,6 +215,9 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
   const [myDndEnabled, setMyDndEnabled] = useState(false);
   const [myDndUntil, setMyDndUntil] = useState<Date | null>(null);
   const [myDndMessage, setMyDndMessage] = useState<string | null>(null);
+
+  // Call status tracking (for buddy list "In a call" indicator)
+  const [usersInCall, setUsersInCall] = useState<Set<string>>(new Set());
 
   // Track processed message IDs to prevent duplicate notification increments
   // (Backend emits to both conversation room and user room, causing duplicates)
@@ -598,6 +604,24 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       setMyDndEnabled(dndEnabled);
       setMyDndUntil(dndUntil ? new Date(dndUntil) : null);
       setMyDndMessage(dndMessage || null);
+    });
+
+    // Handle call status changes (for "In a call" badge in buddy list)
+    newSocket.on('call:status_changed', ({ userId, username, inCall }: {
+      userId: string;
+      username: string;
+      inCall: boolean;
+    }) => {
+      console.log('[DMContext] Call status changed:', username, inCall ? 'in call' : 'not in call');
+      setUsersInCall(prev => {
+        const newSet = new Set(prev);
+        if (inCall) {
+          newSet.add(userId);
+        } else {
+          newSet.delete(userId);
+        }
+        return newSet;
+      });
     });
 
     // Handle collaborative document available notification (global listener)
@@ -1150,6 +1174,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     myDndUntil,
     myDndMessage,
     setDND,
+    usersInCall,
     totalUnreadCount,
     markConversationAsRead,
     setOpenConversationIds,

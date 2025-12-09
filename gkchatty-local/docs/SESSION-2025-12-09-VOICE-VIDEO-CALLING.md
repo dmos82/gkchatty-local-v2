@@ -1,187 +1,104 @@
-# Voice/Video Calling Feature - Session Summary
+# Voice/Video Calling Feature - Session 2025-12-09
 
-**Date:** 2025-12-09
-**Status:** Complete and Ready for Production
+## Status: Working
 
-## Overview
+Voice and video calling is now functional in production.
 
-Implemented real-time voice and video calling between GKChatty IM users using WebRTC for peer-to-peer media streaming with Socket.IO signaling.
+## Architecture Overview
 
-## Features Implemented
+### Backend (socketService.ts)
+- **Call initiation:** `call:initiate` socket event
+- **Call signaling:** WebRTC offer/answer/ICE candidate exchange via socket
+- **Room-based delivery:** Users join personal `user:{userId}` room on connection
+- **Call timeout:** 30-second auto-timeout if not answered
 
-### 1. Voice Calls
-- One-on-one voice calls between users
-- Mute/unmute audio toggle
-- Call duration timer (mm:ss format)
-- Clean call termination
+### Frontend (VoiceVideoCallContext.tsx)
+- **WebRTC peer connection:** Handles media streams and ICE candidates
+- **STUN/TURN servers:** Uses Google STUN + OpenRelay TURN for NAT traversal
+- **Call states:** ringing, connecting, connected, ended
 
-### 2. Video Calls
-- One-on-one video calls with live video
-- Picture-in-picture local video preview
-- Camera on/off toggle
-- Remote video display
-- Fallback avatar when video is off
+### UI Components
+- **IncomingCallModal.tsx:** Shows incoming call with accept/reject buttons + ringtone
+- **ActiveCallUI.tsx:** Draggable call window with video/audio, mute/camera controls
+- **IMChatWindow.tsx:** Phone/video icons in chat header to initiate calls
 
-### 3. Incoming Call Modal
-- Visual caller identification with avatar
-- Audio ringtone (Web Audio API sine wave)
-- Accept/Decline buttons
-- Call type indicator (voice vs video)
+## Issues Resolved
 
-### 4. Active Call UI
-- **Draggable window** - Can be positioned anywhere on screen
-- Fullscreen toggle with maximize/minimize buttons
-- Call controls: mute, video toggle, end call
-- Call status display (Ringing, Connecting, Connected, timer)
-- Constrained to viewport bounds
+### Production Call Failure (Dec 9, 2025)
+**Symptom:** Calls worked locally but not in production. Caller saw "Ringing..." then "Call was not answered", receiver never saw incoming call modal.
 
-### 5. Call States
-- `idle` - No active call
-- `ringing` - Outgoing call waiting for answer
-- `connecting` - WebRTC peer connection establishing
-- `connected` - Call active, media flowing
-- `ended` - Call terminated
+**Root Cause:** Socket room membership issue - receiver's socket wasn't in their personal `user:{userId}` room when call was initiated.
 
-## Technical Implementation
+**Fix:** Added debug logging to track room socket count to diagnose the issue.
 
-### Backend (WebRTC Signaling)
+### WebRTC NAT Traversal (Dec 9, 2025)
+**Symptom:** Calls connected locally but not across different networks.
 
-**File:** `backend/src/services/socketService.ts`
+**Fix:** Added TURN servers for relay when direct peer connection fails.
 
-Added socket events:
-- `call:initiate` - Start a call to another user
-- `call:incoming` - Notify recipient of incoming call
-- `call:accept` - Accept an incoming call
-- `call:reject` - Decline an incoming call
-- `call:end` - Terminate active call
-- `call:offer` - SDP offer exchange
-- `call:answer` - SDP answer exchange
-- `call:ice-candidate` - ICE candidate exchange
+### Local Video Preview Black (Dec 9, 2025)
+**Symptom:** Caller cannot see themselves during video call - their local video preview (PIP) shows black, but they can see the remote user.
 
-### Frontend Components
+**Root Cause:** Race condition between when `localStream` state is set and when `ActiveCallUI` renders. The `useEffect` that attaches the stream to the video element only had `[localStream]` as dependency, which could miss the initial render timing.
 
-**VoiceVideoCallContext.tsx** - Core call management:
-- RTCPeerConnection setup and cleanup
-- Local/remote MediaStream management
-- Socket event handlers for signaling
-- Call state machine with refs (avoids stale closures)
-- Audio/video mute toggling
+**Fix (Enhanced):**
+1. Added `activeCall` to the useEffect dependency array to ensure the effect re-runs when the call UI first appears
+2. Added explicit `play()` call on the video element as a fallback for browsers that require it
+3. Added `z-10` to the local video PIP container to ensure it stays above the "waiting for remote" overlay during ringing/connecting phase
+4. **Added retry logic (100ms)** - If initial stream attachment fails (ref not ready), retry after short delay
+5. **Added ref callback `handleLocalVideoRef`** - Attaches stream immediately when video element mounts, providing another attachment opportunity
 
-**ActiveCallUI.tsx** - Call interface:
-- Draggable window implementation
-- Video elements for local/remote streams
-- Call controls (mute, video, end)
-- Duration timer with mm:ss format
-- Fullscreen toggle
+## Current Feature Set
 
-**IncomingCallModal.tsx** - Incoming call prompt:
-- Web Audio API ringtone
-- Accept/Decline buttons
-- Caller info display
+### Working Features
+- 1:1 voice calls
+- 1:1 video calls
+- Mute/unmute microphone
+- Turn camera on/off
+- Draggable call window
+- Fullscreen mode
+- Call duration timer
+- Ringtone for incoming calls
+- Auto-reject when already in call
 
-**IMContainer.tsx** - Provider integration:
-- Wraps IM components with VoiceVideoCallProvider
-- Renders IncomingCallModal and ActiveCallUI globally
+### Call Flow
+1. User A clicks phone/video icon in chat header
+2. Backend creates call record, emits `call:incoming` to User B
+3. User B sees IncomingCallModal with caller info
+4. User B accepts -> both sides exchange WebRTC offer/answer
+5. ICE candidates exchanged -> media streams connected
+6. ActiveCallUI shows for both users
 
-**IMChatWindow.tsx** - Call buttons:
-- Phone and Video icons in chat header
-- Initiates calls via context
+---
 
-### Dependencies Added
+## Quality-of-Life Improvements (Implemented Dec 9, 2025)
 
-**Backend:**
-- No new dependencies (Socket.IO already present)
+### Phase 1: Busy Status & Better Feedback ✅
+1. **"In Call" status indicator** ✅ - Green pulsing phone icon in buddy list when user is on a call
+2. **Busy rejection message** ✅ - "{Username} is on another call" when calling someone busy
+3. **Better caller feedback** ✅ - Personalized messages with username:
+   - Busy: "{User} is on another call"
+   - Declined: "{User} declined the call"
+   - Offline: "{User} is offline" (immediate feedback)
+   - Timeout: "{User} didn't answer"
 
-**Frontend:**
-- No new dependencies (WebRTC is native browser API)
+### Phase 2: Notifications & History
+4. **Browser notifications** - Notify when tab not focused
+5. **Call history** - Log calls with duration, timestamp
 
-## Files Changed
+### Phase 3: Group Calls (Future)
+6. **Group video/voice calls** - SFU architecture for multi-party calls
 
-### New Files
-```
-frontend/src/contexts/VoiceVideoCallContext.tsx
-frontend/src/components/im/ActiveCallUI.tsx
-frontend/src/components/im/IncomingCallModal.tsx
-```
+---
 
-### Modified Files
-```
-backend/src/services/socketService.ts  (+805 lines WebRTC signaling)
-frontend/src/components/im/IMContainer.tsx
-frontend/src/components/im/IMChatWindow.tsx
-frontend/src/contexts/DMContext.tsx
-backend/package.json
-frontend/package.json
-frontend/next.config.mjs
-```
+## Files Modified
 
-## Bug Fixes Applied
+### Backend
+- `backend/src/services/socketService.ts` - Call signaling + debug logging
 
-### 1. Timer Showing NaN:NaN / 00:00
-**Problem:** Call duration timer showed "NaN:NaN" for one party or stuck at "00:00"
-**Cause:** `connectedAt` timestamp was not being set when call status transitioned to 'connected'
-**Fix:** Added `connectedAt: new Date()` in both:
-- `handleOffer` (line 508) - receiver side
-- `handleAnswer` (line 532) - caller side
-
-### 2. Stale Closures in Event Handlers
-**Problem:** Socket event handlers referenced stale state values
-**Cause:** React closure captures old state in callbacks
-**Fix:** Used refs (`activeCallRef`, `peerConnectionRef`, etc.) alongside state
-
-### 3. Calls Not Working After Code Changes
-**Problem:** Calls stopped working despite code being correct
-**Cause:** Multiple stale processes running on ports 4001/4003
-**Fix:** Kill all processes, fresh restart of both servers
-
-## Usage
-
-### Making a Call
-1. Open chat window with a user
-2. Click phone icon (voice) or video icon (video) in header
-3. Wait for recipient to answer
-4. Call UI appears with controls
-
-### Receiving a Call
-1. Incoming call modal appears
-2. Click green button to accept, red to decline
-3. If accepted, call UI appears
-
-### During a Call
-- Click mic button to mute/unmute
-- Click camera button to toggle video (video calls only)
-- Click red phone button to end call
-- Drag header to reposition window
-- Click maximize/minimize for fullscreen
-
-## Testing Notes
-
-- Tested between two browser tabs (same machine)
-- Tested between two different machines
-- Both voice and video calls verified working
-- Timer displays correctly on both sides
-- Draggable window constrained to viewport
-
-## Known Limitations
-
-1. **No Group Calls** - Currently 1-on-1 only
-2. **No Screen Sharing** - Could be added later
-3. **No Call Recording** - Privacy consideration
-4. **No TURN Server** - May have issues with strict NATs (STUN only currently)
-
-## Future Enhancements
-
-- Add TURN server for NAT traversal reliability
-- Group video calls
-- Screen sharing
-- Call recording (with consent)
-- Call quality indicators
-- Bandwidth adaptation
-
-## Deployment Notes
-
-No environment variables required. Uses browser's native WebRTC APIs with Google's public STUN servers for NAT traversal.
-
-STUN servers used:
-- stun:stun.l.google.com:19302
-- stun:stun1.l.google.com:19302
+### Frontend
+- `frontend/src/contexts/VoiceVideoCallContext.tsx` - WebRTC + call state management
+- `frontend/src/components/im/IncomingCallModal.tsx` - Incoming call UI
+- `frontend/src/components/im/ActiveCallUI.tsx` - Active call UI
+- `frontend/src/components/im/IMChatWindow.tsx` - Call buttons in chat
+- `frontend/src/components/im/IMContainer.tsx` - Provider hierarchy

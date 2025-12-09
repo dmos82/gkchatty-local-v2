@@ -30,27 +30,69 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter function with extension fallback for markdown files
+// File filter function with extension fallback for all supported file types
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const allowedMimes = [
+    // Documents
     'application/pdf',
     'text/plain',
     'text/markdown',
     // Word documents
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
     'application/msword', // .doc
+    // Excel
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-excel', // .xls
+    // Images
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/bmp',
+    'image/webp',
+    'image/tiff',
+    // Audio
+    'audio/mpeg', // .mp3
+    'audio/wav',
+    'audio/x-wav',
+    'audio/mp4',
+    'audio/x-m4a',
+    'audio/aac',
+    'audio/ogg',
+    'audio/flac',
+    'audio/webm',
+    // Video
+    'video/mp4',
+    'video/quicktime', // .mov
+    'video/x-msvideo', // .avi
+    'video/x-matroska', // .mkv
+    'video/x-m4v',
+    'video/x-flv',
+    'video/x-ms-wmv',
+    'video/mpeg',
+    'video/webm',
   ];
-  const allowedExtensions = ['.pdf', '.txt', '.md', '.markdown', '.docx', '.doc'];
+  const allowedExtensions = [
+    // Documents
+    '.pdf', '.txt', '.md', '.markdown', '.docx', '.doc',
+    // Excel
+    '.xlsx', '.xls',
+    // Images
+    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif',
+    // Audio
+    '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm',
+    // Video
+    '.mp4', '.mov', '.avi', '.mkv', '.m4v', '.flv', '.wmv', '.mpeg', '.mpg',
+  ];
 
   const fileExtension = path.extname(file.originalname).toLowerCase();
 
-  // Accept if MIME type matches OR if extension is allowed (for .md files with incorrect MIME)
+  // Accept if MIME type matches OR if extension is allowed (for files with incorrect MIME)
   if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
     console.log(`[Multer] Allowed file: ${file.originalname} (mime: ${file.mimetype}, ext: ${fileExtension})`);
     cb(null, true);
   } else {
     console.log(`[Multer] Blocked file: ${file.originalname} (mime: ${file.mimetype}, ext: ${fileExtension})`);
-    cb(new Error('Invalid file type. Only PDF, TXT, Markdown, and Word documents are allowed.'));
+    cb(new Error('Invalid file type. Allowed: PDF, TXT, Word, Excel, images, audio, and video files.'));
   }
 };
 
@@ -75,7 +117,7 @@ const userUpload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 22.5 * 1024 * 1024, // 22.5 MB limit (50% increase from 15MB)
+    fileSize: 100 * 1024 * 1024, // 100 MB limit to support video files
   },
 });
 

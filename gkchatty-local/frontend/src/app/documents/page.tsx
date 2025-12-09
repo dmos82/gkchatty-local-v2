@@ -274,6 +274,7 @@ export default function DocumentManagerPage() {
     const allowedExtensions = [
       '.pdf',
       '.txt',
+      '.docx',
       '.xlsx',
       '.xls',
       '.jpg',
@@ -291,6 +292,16 @@ export default function DocumentManagerPage() {
       '.ogg',
       '.flac',
       '.webm',
+      // Video extensions
+      '.mp4',
+      '.mov',
+      '.avi',
+      '.mkv',
+      '.m4v',
+      '.flv',
+      '.wmv',
+      '.mpeg',
+      '.mpg',
     ];
 
     for (let i = 0; i < files.length; i++) {
@@ -299,7 +310,7 @@ export default function DocumentManagerPage() {
 
       if (!allowedTypes.includes(f.type) && !allowedExtensions.includes(fileExtension)) {
         setUploadError(
-          `Invalid file type: ${f.name}. PDF, TXT, Excel, image, and audio files (MP3, WAV, M4A, etc.) are allowed.`
+          `Invalid file type: ${f.name}. PDF, TXT, Excel, image, audio (MP3, WAV), and video (MP4, MOV) files are allowed.`
         );
         setSelectedFiles(null);
         if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
@@ -314,6 +325,8 @@ export default function DocumentManagerPage() {
         maxSize = 15 * 1024 * 1024; // 15MB for images
       } else if (f.type.startsWith('audio/')) {
         maxSize = 25 * 1024 * 1024; // 25MB for audio files (OpenAI Whisper limit)
+      } else if (f.type.startsWith('video/')) {
+        maxSize = 100 * 1024 * 1024; // 100MB for video files
       }
 
       if (f.size > maxSize) {
@@ -1156,8 +1169,8 @@ export default function DocumentManagerPage() {
               <h1 className="text-2xl font-bold dark:text-neutral-200">My Documents</h1>
             </div>
             <p className="text-muted-foreground mb-6 dark:text-neutral-400">
-              Manage your uploaded documents here. Upload PDF, TXT, Excel, image, or audio files
-              (MP3, WAV, etc.). Organize with folders and drag-and-drop.
+              Manage your uploaded documents here. Upload PDF, TXT, Excel, image, audio (MP3, WAV),
+              or video (MP4, MOV) files. Organize with folders and drag-and-drop.
             </p>
 
             {/* File Tree Manager - Same UI as System KB but for user documents */}

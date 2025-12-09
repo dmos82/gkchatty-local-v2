@@ -44,6 +44,16 @@ coverage/
 tmp/
 temp/
 
+# Scripts with potential credentials (use env vars instead)
+**/scripts/*-production*.js
+**/scripts/*-prod*.js
+**/scripts/verify-*.js
+**/scripts/copy-db*.js
+**/scripts/migrate-*.js
+**/fix-*.js
+**/test-*.js
+!**/scripts/*.example.js
+
 # Backup directories
 *-BACKUP-*/
 backup-*/
