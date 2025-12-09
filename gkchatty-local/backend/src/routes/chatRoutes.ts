@@ -948,8 +948,11 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
         const existingDocIds = new Set<string>();
 
         if (userDocIds.length > 0) {
+          // CRITICAL: Also filter by userId to ensure documents belong to THIS user
+          // Without userId filter, documents from other users would pass validation
           const existingUserDocs = await UserDocument.find({
             _id: { $in: userDocIds.map((id: string) => new Types.ObjectId(id)) },
+            userId: new Types.ObjectId(userId), // Only this user's documents
           }).select('_id').lean();
           existingUserDocs.forEach((doc: any) => existingDocIds.add(doc._id.toString()));
         }
@@ -968,8 +971,8 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
           const exists = existingDocIds.has(source.documentId);
           if (!exists) {
             log.warn(
-              { documentId: source.documentId, fileName: source.fileName, type: source.type },
-              '[Ghost Document] Filtering out source that exists in Pinecone but not in MongoDB'
+              { documentId: source.documentId, fileName: source.fileName, type: source.type, userId },
+              '[Ghost Document] Filtering out source that exists in Pinecone but not in MongoDB (or belongs to different user)'
             );
           }
           return exists;
