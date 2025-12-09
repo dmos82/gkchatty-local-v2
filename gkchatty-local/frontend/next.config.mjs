@@ -4,9 +4,21 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  
+
   // Enable standalone output for Docker builds
   output: 'standalone',
+
+  // Transpile TipTap and Yjs packages for proper bundling
+  transpilePackages: [
+    '@tiptap/react',
+    '@tiptap/starter-kit',
+    '@tiptap/extension-collaboration',
+    '@tiptap/extension-collaboration-cursor',
+    '@tiptap/pm',
+    'yjs',
+    'y-prosemirror',
+    'y-protocols',
+  ],
   
   // Preserve console.log statements for debugging
   compiler: {

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useDM, Message, PresenceStatus, Attachment, Reaction } from '@/contexts/DMContext';
 import { useIM } from '@/contexts/IMContext';
+import { useVoiceVideoCall } from '@/contexts/VoiceVideoCallContext';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';
 import BrandedPdfViewer from '@/components/BrandedPdfViewer';
@@ -80,6 +81,8 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
     updateWindowPosition,
     setConversationId,
   } = useIM();
+
+  const { initiateCall, activeCall } = useVoiceVideoCall();
 
   const [inputValue, setInputValue] = useState('');
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
@@ -1409,6 +1412,33 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
               )}
             </div>
           )}
+          {/* Voice/Video call buttons (1:1 chats only) */}
+          {!isGroup && (
+            <>
+              {/* Voice call button */}
+              <button
+                onClick={() => initiateCall(recipientId, recipientUsername, 'audio')}
+                className={`p-1.5 rounded hover:bg-[#404040] transition-colors ${activeCall ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title="Voice call"
+                disabled={!!activeCall}
+              >
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+              </button>
+              {/* Video call button */}
+              <button
+                onClick={() => initiateCall(recipientId, recipientUsername, 'video')}
+                className={`p-1.5 rounded hover:bg-[#404040] transition-colors ${activeCall ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title="Video call"
+                disabled={!!activeCall}
+              >
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            </>
+          )}
           {/* Search button */}
           <button
             onClick={() => setIsSearchOpen(!isSearchOpen)}
@@ -1929,7 +1959,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
             ref={fileInputRef}
             type="file"
             onChange={handleFileSelect}
-            accept="image/*,application/pdf,text/plain,text/markdown,application/zip"
+            accept="image/*,application/pdf,text/plain,text/markdown,application/zip,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
             className="hidden"
           />
 

@@ -2,10 +2,25 @@ import { Server as HTTPServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import * as jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
+import * as Y from 'yjs';
 import User from '../models/UserModel';
 import UserPresence, { IUserPresence, PresenceStatus } from '../models/UserPresenceModel';
 import Conversation from '../models/ConversationModel';
 import DirectMessage from '../models/DirectMessageModel';
+import CollaborativeDocument, { CollaborativeDocumentFileType } from '../models/CollaborativeDocumentModel';
+
+// WebRTC types (browser-specific, defined for Node.js server pass-through)
+interface RTCSessionDescriptionInit {
+  type?: 'offer' | 'answer' | 'pranswer' | 'rollback';
+  sdp?: string;
+}
+
+interface RTCIceCandidateInit {
+  candidate?: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
+}
 
 // Decoded JWT payload interface (matching authMiddleware)
 interface DecodedUserPayload extends jwt.JwtPayload {
@@ -88,10 +103,93 @@ interface ReactMessagePayload {
   emoji: string; // 👍, ❤️, 😂, 😮, 😢, 🎉
 }
 
+// Collaborative Document Event Payloads
+interface CollabCreatePayload {
+  conversationId: string;
+  title: string;
+  fileType: 'docx' | 'txt' | 'md' | 'rtf';
+}
+
+interface CollabJoinPayload {
+  documentId: string;
+}
+
+interface CollabLeavePayload {
+  documentId: string;
+}
+
+interface CollabSyncPayload {
+  documentId: string;
+  update: number[]; // Yjs update as byte array
+}
+
+interface CollabAwarenessPayload {
+  documentId: string;
+  awareness: {
+    cursor?: { index: number; length: number };
+    user: { id: string; name: string; color: string };
+  };
+}
+
+// WebRTC Voice/Video Call Event Payloads
+interface CallInitiatePayload {
+  targetUserId: string;
+  callType: 'audio' | 'video';
+}
+
+interface CallAcceptPayload {
+  callId: string;
+}
+
+interface CallRejectPayload {
+  callId: string;
+  reason?: string;
+}
+
+interface CallOfferPayload {
+  callId: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
+interface CallAnswerPayload {
+  callId: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
+interface CallIceCandidatePayload {
+  callId: string;
+  candidate: RTCIceCandidateInit;
+}
+
+interface CallEndPayload {
+  callId: string;
+}
+
+interface CallToggleMediaPayload {
+  callId: string;
+  mediaType: 'audio' | 'video';
+  enabled: boolean;
+}
+
+// Active call tracking
+interface ActiveCall {
+  callId: string;
+  callerId: string;
+  callerUsername: string;
+  targetId: string;
+  targetUsername: string;
+  callType: 'audio' | 'video';
+  status: 'ringing' | 'connected' | 'ended';
+  startedAt: Date;
+  connectedAt?: Date;
+}
+
 // Socket service singleton
 class SocketService {
   private io: Server | null = null;
   private userSocketMap: Map<string, Set<string>> = new Map(); // userId -> Set of socketIds
+  private activeDocuments: Map<string, Y.Doc> = new Map(); // documentId -> Yjs Doc (in-memory)
+  private activeCalls: Map<string, ActiveCall> = new Map(); // callId -> ActiveCall
 
   /**
    * Initialize Socket.IO server with JWT authentication
@@ -265,6 +363,49 @@ class SocketService {
     // Conversation Events
     socket.on('conversation:join', (conversationId: string) =>
       this.handleJoinConversation(socket, conversationId)
+    );
+
+    // Collaborative Document Events
+    socket.on('collab:create', (payload: CollabCreatePayload) =>
+      this.handleCollabCreate(socket, payload)
+    );
+    socket.on('collab:join', (payload: CollabJoinPayload) =>
+      this.handleCollabJoin(socket, payload)
+    );
+    socket.on('collab:leave', (payload: CollabLeavePayload) =>
+      this.handleCollabLeave(socket, payload)
+    );
+    socket.on('collab:sync', (payload: CollabSyncPayload) =>
+      this.handleCollabSync(socket, payload)
+    );
+    socket.on('collab:awareness', (payload: CollabAwarenessPayload) =>
+      this.handleCollabAwareness(socket, payload)
+    );
+
+    // Voice/Video Call Events
+    socket.on('call:initiate', (payload: CallInitiatePayload) =>
+      this.handleCallInitiate(socket, payload)
+    );
+    socket.on('call:accept', (payload: CallAcceptPayload) =>
+      this.handleCallAccept(socket, payload)
+    );
+    socket.on('call:reject', (payload: CallRejectPayload) =>
+      this.handleCallReject(socket, payload)
+    );
+    socket.on('call:offer', (payload: CallOfferPayload) =>
+      this.handleCallOffer(socket, payload)
+    );
+    socket.on('call:answer', (payload: CallAnswerPayload) =>
+      this.handleCallAnswer(socket, payload)
+    );
+    socket.on('call:ice_candidate', (payload: CallIceCandidatePayload) =>
+      this.handleCallIceCandidate(socket, payload)
+    );
+    socket.on('call:end', (payload: CallEndPayload) =>
+      this.handleCallEnd(socket, payload)
+    );
+    socket.on('call:toggle_media', (payload: CallToggleMediaPayload) =>
+      this.handleCallToggleMedia(socket, payload)
     );
   }
 
@@ -1007,6 +1148,670 @@ class SocketService {
       if (sockets.size === 0) {
         this.userSocketMap.delete(userId);
       }
+    }
+  }
+
+  // ==========================================
+  // COLLABORATIVE DOCUMENT HANDLERS
+  // ==========================================
+
+  /**
+   * Handle creating a new collaborative document
+   */
+  private async handleCollabCreate(
+    socket: AuthenticatedSocket,
+    payload: CollabCreatePayload
+  ): Promise<void> {
+    try {
+      const { conversationId, title, fileType } = payload;
+
+      if (!conversationId || !title) {
+        socket.emit('collab:error', { error: 'Invalid create payload' });
+        return;
+      }
+
+      // Verify user is participant in conversation
+      const conversation = await Conversation.findOne({
+        _id: conversationId,
+        participants: socket.userObjectId,
+      });
+
+      if (!conversation) {
+        socket.emit('collab:error', { error: 'Conversation not found' });
+        return;
+      }
+
+      // Create the document in MongoDB
+      const document = new CollaborativeDocument({
+        conversationId: new Types.ObjectId(conversationId),
+        title,
+        fileType: fileType || 'docx',
+        createdBy: socket.userObjectId,
+        createdByUsername: socket.username,
+        participants: [socket.userObjectId],
+        participantUsernames: [socket.username],
+      });
+
+      await document.save();
+
+      // Create Yjs document in memory
+      const ydoc = new Y.Doc();
+      this.activeDocuments.set(document._id.toString(), ydoc);
+
+      // Join the document room
+      const docRoom = `collab:${document._id.toString()}`;
+      socket.join(docRoom);
+
+      // Acknowledge document creation
+      socket.emit('collab:created', {
+        documentId: document._id.toString(),
+        conversationId,
+        title: document.title,
+        fileType: document.fileType,
+        createdBy: socket.userId,
+        createdByUsername: socket.username,
+        createdAt: document.createdAt,
+      });
+
+      // Notify other participants in the conversation about new document
+      // Emit directly to each participant's user room (they join user:{userId} on connect)
+      const collabNotification = {
+        documentId: document._id.toString(),
+        conversationId,
+        title: document.title,
+        fileType: document.fileType,
+        createdBy: socket.userId,
+        createdByUsername: socket.username,
+      };
+
+      for (const participantId of conversation.participants) {
+        // Don't notify the creator
+        if (participantId.toString() !== socket.userId) {
+          this.io.to(`user:${participantId.toString()}`).emit('collab:document_available', collabNotification);
+          console.log(`[Socket Collab] Notified user:${participantId.toString()} about new document`);
+        }
+      }
+
+      console.log(
+        `[Socket Collab] Document "${title}" created by ${socket.username} in conversation ${conversationId}`
+      );
+    } catch (error: any) {
+      console.error('[Socket Collab] Error creating document:', error.message);
+      socket.emit('collab:error', { error: 'Failed to create document' });
+    }
+  }
+
+  /**
+   * Handle joining an existing collaborative document
+   */
+  private async handleCollabJoin(
+    socket: AuthenticatedSocket,
+    payload: CollabJoinPayload
+  ): Promise<void> {
+    try {
+      const { documentId } = payload;
+
+      if (!documentId) {
+        socket.emit('collab:error', { error: 'Invalid join payload' });
+        return;
+      }
+
+      // Find the document
+      const document = await CollaborativeDocument.findById(documentId);
+      if (!document || !document.isActive) {
+        socket.emit('collab:error', { error: 'Document not found' });
+        return;
+      }
+
+      // Verify user is participant in the conversation
+      const conversation = await Conversation.findOne({
+        _id: document.conversationId,
+        participants: socket.userObjectId,
+      });
+
+      if (!conversation) {
+        socket.emit('collab:error', { error: 'Not authorized to access document' });
+        return;
+      }
+
+      // Add user to participants if not already
+      if (!document.participants.some(p => p.equals(socket.userObjectId))) {
+        document.participants.push(socket.userObjectId);
+        document.participantUsernames.push(socket.username);
+        await document.save();
+      }
+
+      // Get or create Yjs document in memory
+      let ydoc = this.activeDocuments.get(documentId);
+      if (!ydoc) {
+        ydoc = new Y.Doc();
+        // Load saved state from MongoDB if exists
+        if (document.yjsState) {
+          Y.applyUpdate(ydoc, new Uint8Array(document.yjsState));
+        }
+        this.activeDocuments.set(documentId, ydoc);
+      }
+
+      // Join the document room
+      const docRoom = `collab:${documentId}`;
+      socket.join(docRoom);
+
+      // Send current state to joining user
+      const state = Y.encodeStateAsUpdate(ydoc);
+      socket.emit('collab:joined', {
+        documentId,
+        title: document.title,
+        fileType: document.fileType,
+        state: Array.from(state), // Convert to regular array for JSON
+        participants: document.participantUsernames,
+      });
+
+      // Notify others in document that user joined
+      socket.to(docRoom).emit('collab:user_joined', {
+        documentId,
+        userId: socket.userId,
+        username: socket.username,
+      });
+
+      console.log(`[Socket Collab] ${socket.username} joined document ${documentId}`);
+    } catch (error: any) {
+      console.error('[Socket Collab] Error joining document:', error.message);
+      socket.emit('collab:error', { error: 'Failed to join document' });
+    }
+  }
+
+  /**
+   * Handle leaving a collaborative document
+   */
+  private async handleCollabLeave(
+    socket: AuthenticatedSocket,
+    payload: CollabLeavePayload
+  ): Promise<void> {
+    try {
+      const { documentId } = payload;
+
+      if (!documentId) return;
+
+      const docRoom = `collab:${documentId}`;
+      socket.leave(docRoom);
+
+      // Notify others
+      socket.to(docRoom).emit('collab:user_left', {
+        documentId,
+        userId: socket.userId,
+        username: socket.username,
+      });
+
+      // Persist current state to MongoDB
+      await this.persistDocumentState(documentId, socket);
+
+      console.log(`[Socket Collab] ${socket.username} left document ${documentId}`);
+    } catch (error: any) {
+      console.error('[Socket Collab] Error leaving document:', error.message);
+    }
+  }
+
+  /**
+   * Handle Yjs sync updates
+   */
+  private async handleCollabSync(
+    socket: AuthenticatedSocket,
+    payload: CollabSyncPayload
+  ): Promise<void> {
+    try {
+      const { documentId, update } = payload;
+
+      if (!documentId || !update) {
+        return;
+      }
+
+      // Get the Yjs document
+      const ydoc = this.activeDocuments.get(documentId);
+      if (!ydoc) {
+        socket.emit('collab:error', { error: 'Document not in memory' });
+        return;
+      }
+
+      // Apply the update
+      const updateArray = new Uint8Array(update);
+      Y.applyUpdate(ydoc, updateArray);
+
+      // Broadcast to other users in the document room (exclude sender)
+      socket.to(`collab:${documentId}`).emit('collab:sync', {
+        documentId,
+        update,
+      });
+
+      // Debounced persistence (save every 5 seconds of activity)
+      this.debouncedPersist(documentId, socket);
+
+    } catch (error: any) {
+      console.error('[Socket Collab] Error syncing document:', error.message);
+    }
+  }
+
+  /**
+   * Handle awareness updates (cursor positions, user presence)
+   */
+  private async handleCollabAwareness(
+    socket: AuthenticatedSocket,
+    payload: CollabAwarenessPayload
+  ): Promise<void> {
+    try {
+      const { documentId, awareness } = payload;
+
+      if (!documentId || !awareness) return;
+
+      // Broadcast awareness to other users in document
+      socket.to(`collab:${documentId}`).emit('collab:awareness', {
+        documentId,
+        awareness: {
+          ...awareness,
+          user: {
+            id: socket.userId,
+            name: socket.username,
+            color: this.getUserColor(socket.userId),
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error('[Socket Collab] Error broadcasting awareness:', error.message);
+    }
+  }
+
+  /**
+   * Persist document state to MongoDB
+   */
+  private async persistDocumentState(
+    documentId: string,
+    socket: AuthenticatedSocket
+  ): Promise<void> {
+    try {
+      const ydoc = this.activeDocuments.get(documentId);
+      if (!ydoc) return;
+
+      const state = Y.encodeStateAsUpdate(ydoc);
+
+      await CollaborativeDocument.findByIdAndUpdate(documentId, {
+        yjsState: Buffer.from(state),
+        lastModifiedBy: socket.userObjectId,
+        lastModifiedByUsername: socket.username,
+      });
+
+      console.log(`[Socket Collab] Document ${documentId} state persisted`);
+    } catch (error: any) {
+      console.error('[Socket Collab] Error persisting document:', error.message);
+    }
+  }
+
+  // Debounce map for document persistence
+  private persistTimeouts: Map<string, NodeJS.Timeout> = new Map();
+
+  /**
+   * Debounced persistence to avoid excessive writes
+   */
+  private debouncedPersist(documentId: string, socket: AuthenticatedSocket): void {
+    // Clear existing timeout
+    const existingTimeout = this.persistTimeouts.get(documentId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+
+    // Set new timeout (save after 5 seconds of no activity)
+    const timeout = setTimeout(() => {
+      this.persistDocumentState(documentId, socket);
+      this.persistTimeouts.delete(documentId);
+    }, 5000);
+
+    this.persistTimeouts.set(documentId, timeout);
+  }
+
+  /**
+   * Generate consistent color for user based on their ID
+   */
+  private getUserColor(userId: string): string {
+    const colors = [
+      '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
+      '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
+      '#BB8FCE', '#85C1E9', '#F8B500', '#00CED1',
+    ];
+    // Simple hash based on first characters of ID
+    const hash = userId.charCodeAt(0) + userId.charCodeAt(userId.length - 1);
+    return colors[hash % colors.length];
+  }
+
+  // ==========================================
+  // VOICE/VIDEO CALL HANDLERS
+  // ==========================================
+
+  /**
+   * Generate unique call ID
+   */
+  private generateCallId(): string {
+    return `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Handle initiating a voice/video call
+   */
+  private async handleCallInitiate(
+    socket: AuthenticatedSocket,
+    payload: CallInitiatePayload
+  ): Promise<void> {
+    try {
+      const { targetUserId, callType } = payload;
+
+      if (!targetUserId || !callType) {
+        socket.emit('call:error', { error: 'Invalid call payload' });
+        return;
+      }
+
+      // Check if target user is online
+      if (!this.isUserOnline(targetUserId)) {
+        socket.emit('call:error', { error: 'User is not online' });
+        return;
+      }
+
+      // Check if caller already has an active call
+      for (const call of this.activeCalls.values()) {
+        if ((call.callerId === socket.userId || call.targetId === socket.userId)
+            && call.status !== 'ended') {
+          socket.emit('call:error', { error: 'You already have an active call' });
+          return;
+        }
+      }
+
+      // Check if target user already has an active call
+      for (const call of this.activeCalls.values()) {
+        if ((call.callerId === targetUserId || call.targetId === targetUserId)
+            && call.status !== 'ended') {
+          socket.emit('call:error', { error: 'User is busy on another call' });
+          return;
+        }
+      }
+
+      // Get target user info
+      const targetUser = await User.findById(targetUserId).select('username');
+      if (!targetUser) {
+        socket.emit('call:error', { error: 'User not found' });
+        return;
+      }
+
+      // Create call record
+      const callId = this.generateCallId();
+      const call: ActiveCall = {
+        callId,
+        callerId: socket.userId,
+        callerUsername: socket.username,
+        targetId: targetUserId,
+        targetUsername: targetUser.username,
+        callType,
+        status: 'ringing',
+        startedAt: new Date(),
+      };
+
+      this.activeCalls.set(callId, call);
+
+      // Notify caller that call is initiated
+      socket.emit('call:initiated', {
+        callId,
+        targetUserId,
+        targetUsername: targetUser.username,
+        callType,
+      });
+
+      // Notify target user of incoming call
+      this.io?.to(`user:${targetUserId}`).emit('call:incoming', {
+        callId,
+        callerId: socket.userId,
+        callerUsername: socket.username,
+        callType,
+      });
+
+      console.log(`[Socket Call] ${socket.username} initiated ${callType} call to ${targetUser.username} (${callId})`);
+
+      // Set timeout to auto-reject if not answered in 30 seconds
+      setTimeout(() => {
+        const currentCall = this.activeCalls.get(callId);
+        if (currentCall && currentCall.status === 'ringing') {
+          this.activeCalls.delete(callId);
+          socket.emit('call:timeout', { callId });
+          this.io?.to(`user:${targetUserId}`).emit('call:timeout', { callId });
+          console.log(`[Socket Call] Call ${callId} timed out`);
+        }
+      }, 30000);
+
+    } catch (error: any) {
+      console.error('[Socket Call] Error initiating call:', error.message);
+      socket.emit('call:error', { error: 'Failed to initiate call' });
+    }
+  }
+
+  /**
+   * Handle accepting a call
+   */
+  private async handleCallAccept(
+    socket: AuthenticatedSocket,
+    payload: CallAcceptPayload
+  ): Promise<void> {
+    try {
+      const { callId } = payload;
+      const call = this.activeCalls.get(callId);
+
+      if (!call) {
+        socket.emit('call:error', { error: 'Call not found' });
+        return;
+      }
+
+      if (call.targetId !== socket.userId) {
+        socket.emit('call:error', { error: 'Not authorized to accept this call' });
+        return;
+      }
+
+      if (call.status !== 'ringing') {
+        socket.emit('call:error', { error: 'Call is no longer available' });
+        return;
+      }
+
+      // Update call status
+      call.status = 'connected';
+      call.connectedAt = new Date();
+
+      // Notify both parties
+      socket.emit('call:accepted', { callId });
+      this.io?.to(`user:${call.callerId}`).emit('call:accepted', { callId });
+
+      console.log(`[Socket Call] ${socket.username} accepted call ${callId}`);
+    } catch (error: any) {
+      console.error('[Socket Call] Error accepting call:', error.message);
+      socket.emit('call:error', { error: 'Failed to accept call' });
+    }
+  }
+
+  /**
+   * Handle rejecting a call
+   */
+  private async handleCallReject(
+    socket: AuthenticatedSocket,
+    payload: CallRejectPayload
+  ): Promise<void> {
+    try {
+      const { callId, reason } = payload;
+      const call = this.activeCalls.get(callId);
+
+      if (!call) {
+        socket.emit('call:error', { error: 'Call not found' });
+        return;
+      }
+
+      if (call.targetId !== socket.userId && call.callerId !== socket.userId) {
+        socket.emit('call:error', { error: 'Not authorized' });
+        return;
+      }
+
+      // Remove call
+      this.activeCalls.delete(callId);
+
+      // Notify both parties
+      const otherUserId = call.callerId === socket.userId ? call.targetId : call.callerId;
+      socket.emit('call:rejected', { callId, reason: reason || 'Call declined' });
+      this.io?.to(`user:${otherUserId}`).emit('call:rejected', { callId, reason: reason || 'Call declined' });
+
+      console.log(`[Socket Call] Call ${callId} rejected by ${socket.username}`);
+    } catch (error: any) {
+      console.error('[Socket Call] Error rejecting call:', error.message);
+      socket.emit('call:error', { error: 'Failed to reject call' });
+    }
+  }
+
+  /**
+   * Handle WebRTC offer (SDP)
+   */
+  private async handleCallOffer(
+    socket: AuthenticatedSocket,
+    payload: CallOfferPayload
+  ): Promise<void> {
+    try {
+      const { callId, sdp } = payload;
+      const call = this.activeCalls.get(callId);
+
+      if (!call) {
+        socket.emit('call:error', { error: 'Call not found' });
+        return;
+      }
+
+      // Determine the other party
+      const otherUserId = call.callerId === socket.userId ? call.targetId : call.callerId;
+
+      // Forward offer to the other party
+      this.io?.to(`user:${otherUserId}`).emit('call:offer', { callId, sdp });
+
+      console.log(`[Socket Call] Offer forwarded for call ${callId}`);
+    } catch (error: any) {
+      console.error('[Socket Call] Error handling offer:', error.message);
+      socket.emit('call:error', { error: 'Failed to send offer' });
+    }
+  }
+
+  /**
+   * Handle WebRTC answer (SDP)
+   */
+  private async handleCallAnswer(
+    socket: AuthenticatedSocket,
+    payload: CallAnswerPayload
+  ): Promise<void> {
+    try {
+      const { callId, sdp } = payload;
+      const call = this.activeCalls.get(callId);
+
+      if (!call) {
+        socket.emit('call:error', { error: 'Call not found' });
+        return;
+      }
+
+      // Determine the other party
+      const otherUserId = call.callerId === socket.userId ? call.targetId : call.callerId;
+
+      // Forward answer to the other party
+      this.io?.to(`user:${otherUserId}`).emit('call:answer', { callId, sdp });
+
+      console.log(`[Socket Call] Answer forwarded for call ${callId}`);
+    } catch (error: any) {
+      console.error('[Socket Call] Error handling answer:', error.message);
+      socket.emit('call:error', { error: 'Failed to send answer' });
+    }
+  }
+
+  /**
+   * Handle ICE candidate exchange
+   */
+  private async handleCallIceCandidate(
+    socket: AuthenticatedSocket,
+    payload: CallIceCandidatePayload
+  ): Promise<void> {
+    try {
+      const { callId, candidate } = payload;
+      const call = this.activeCalls.get(callId);
+
+      if (!call) {
+        return; // Silently ignore - call may have ended
+      }
+
+      // Determine the other party
+      const otherUserId = call.callerId === socket.userId ? call.targetId : call.callerId;
+
+      // Forward ICE candidate to the other party
+      this.io?.to(`user:${otherUserId}`).emit('call:ice_candidate', { callId, candidate });
+    } catch (error: any) {
+      console.error('[Socket Call] Error handling ICE candidate:', error.message);
+    }
+  }
+
+  /**
+   * Handle ending a call
+   */
+  private async handleCallEnd(
+    socket: AuthenticatedSocket,
+    payload: CallEndPayload
+  ): Promise<void> {
+    try {
+      const { callId } = payload;
+      const call = this.activeCalls.get(callId);
+
+      if (!call) {
+        return; // Already ended
+      }
+
+      // Determine the other party
+      const otherUserId = call.callerId === socket.userId ? call.targetId : call.callerId;
+
+      // Calculate call duration if it was connected
+      const duration = call.connectedAt
+        ? Math.floor((Date.now() - call.connectedAt.getTime()) / 1000)
+        : 0;
+
+      // Remove call
+      this.activeCalls.delete(callId);
+
+      // Notify both parties
+      socket.emit('call:ended', { callId, duration });
+      this.io?.to(`user:${otherUserId}`).emit('call:ended', { callId, duration });
+
+      console.log(`[Socket Call] Call ${callId} ended by ${socket.username}, duration: ${duration}s`);
+    } catch (error: any) {
+      console.error('[Socket Call] Error ending call:', error.message);
+    }
+  }
+
+  /**
+   * Handle toggling audio/video during call
+   */
+  private async handleCallToggleMedia(
+    socket: AuthenticatedSocket,
+    payload: CallToggleMediaPayload
+  ): Promise<void> {
+    try {
+      const { callId, mediaType, enabled } = payload;
+      const call = this.activeCalls.get(callId);
+
+      if (!call) {
+        return;
+      }
+
+      // Determine the other party
+      const otherUserId = call.callerId === socket.userId ? call.targetId : call.callerId;
+
+      // Notify the other party about media toggle
+      this.io?.to(`user:${otherUserId}`).emit('call:media_toggled', {
+        callId,
+        userId: socket.userId,
+        mediaType,
+        enabled,
+      });
+
+      console.log(`[Socket Call] ${socket.username} ${enabled ? 'enabled' : 'disabled'} ${mediaType} in call ${callId}`);
+    } catch (error: any) {
+      console.error('[Socket Call] Error toggling media:', error.message);
     }
   }
 

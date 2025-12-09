@@ -3,9 +3,12 @@
 import React, { useEffect } from 'react';
 import { DMProvider, useDM } from '@/contexts/DMContext';
 import { IMProvider, useIM } from '@/contexts/IMContext';
+import { VoiceVideoCallProvider } from '@/contexts/VoiceVideoCallContext';
 import { IMBuddyList } from './IMBuddyList';
 import { IMChatWindow } from './IMChatWindow';
 import { IMToggle } from './IMToggle';
+import { IncomingCallModal } from './IncomingCallModal';
+import { ActiveCallUI } from './ActiveCallUI';
 
 const IMContainerInner: React.FC = () => {
   const { isBuddyListOpen, closeBuddyList, chatWindows } = useIM();
@@ -60,9 +63,14 @@ const IMContainerInner: React.FC = () => {
 export const IMContainer: React.FC = () => {
   return (
     <DMProvider>
-      <IMProvider>
-        <IMContainerInner />
-      </IMProvider>
+      <VoiceVideoCallProvider>
+        <IMProvider>
+          <IMContainerInner />
+          {/* Global call UI components */}
+          <IncomingCallModal />
+          <ActiveCallUI />
+        </IMProvider>
+      </VoiceVideoCallProvider>
     </DMProvider>
   );
 };

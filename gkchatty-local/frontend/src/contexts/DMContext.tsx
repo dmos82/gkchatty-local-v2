@@ -65,12 +65,19 @@ export interface Reaction {
   users: ReactionUser[];
 }
 
+// Collaborative document info embedded in messages
+export interface CollabDocumentInfo {
+  documentId: string;
+  title: string;
+  fileType: string;
+}
+
 export interface Message {
   _id: string;
   senderId: string;
   senderUsername: string;
   content: string;
-  messageType: 'text' | 'image' | 'file' | 'system';
+  messageType: 'text' | 'image' | 'file' | 'system' | 'collab_invite';
   status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   createdAt: Date;
   editedAt?: Date;
@@ -82,6 +89,8 @@ export interface Message {
   };
   attachments?: Attachment[];
   reactions?: Reaction[];
+  // Collaborative document info (for collab_invite messages)
+  collabDocument?: CollabDocumentInfo;
   // Local tracking
   tempId?: string;
 }
@@ -90,6 +99,16 @@ interface TypingUser {
   userId: string;
   username: string;
   timestamp: number;
+}
+
+// Pending collaborative document notifications
+export interface PendingCollabDocument {
+  documentId: string;
+  conversationId: string;
+  title: string;
+  fileType: string;
+  createdBy: string;
+  createdByUsername: string;
 }
 
 interface DMContextType {
@@ -142,6 +161,11 @@ interface DMContextType {
 
   // IM Window Tracking (for notification suppression)
   setOpenConversationIds: (ids: string[]) => void;
+
+  // Collaborative Documents
+  pendingCollabDocuments: Map<string, PendingCollabDocument>;
+  getPendingCollabDocument: (conversationId: string) => PendingCollabDocument | undefined;
+  clearPendingCollabDocument: (conversationId: string) => void;
 }
 
 const DMContext = createContext<DMContextType | undefined>(undefined);
@@ -202,6 +226,9 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
 
   // Track open conversation IDs (from IM windows) - set by IMProvider bridge
   const openConversationIdsRef = useRef<Set<string>>(new Set());
+
+  // Pending collaborative document notifications (for when chat window isn't open)
+  const [pendingCollabDocuments, setPendingCollabDocuments] = useState<Map<string, PendingCollabDocument>>(new Map());
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -571,6 +598,33 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       setMyDndEnabled(dndEnabled);
       setMyDndUntil(dndUntil ? new Date(dndUntil) : null);
       setMyDndMessage(dndMessage || null);
+    });
+
+    // Handle collaborative document available notification (global listener)
+    // This catches notifications even when the chat window isn't open
+    newSocket.on('collab:document_available', (data: {
+      documentId: string;
+      conversationId: string;
+      title: string;
+      fileType: string;
+      createdBy: string;
+      createdByUsername: string;
+    }) => {
+      console.log('[DMContext] Collab document available:', data.title, 'for conversation:', data.conversationId);
+
+      // Store the pending document notification for this conversation
+      setPendingCollabDocuments(prev => {
+        const newMap = new Map(prev);
+        newMap.set(data.conversationId, {
+          documentId: data.documentId,
+          conversationId: data.conversationId,
+          title: data.title,
+          fileType: data.fileType,
+          createdBy: data.createdBy,
+          createdByUsername: data.createdByUsername,
+        });
+        return newMap;
+      });
     });
 
     setSocket(newSocket);
@@ -1009,6 +1063,26 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     [socket]
   );
 
+  // Get pending collaborative document for a conversation
+  const getPendingCollabDocument = useCallback(
+    (conversationId: string): PendingCollabDocument | undefined => {
+      return pendingCollabDocuments.get(conversationId);
+    },
+    [pendingCollabDocuments]
+  );
+
+  // Clear pending collaborative document for a conversation
+  const clearPendingCollabDocument = useCallback(
+    (conversationId: string): void => {
+      setPendingCollabDocuments(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(conversationId);
+        return newMap;
+      });
+    },
+    []
+  );
+
   // Mark conversation as read
   const markConversationAsRead = useCallback(
     async (conversationId: string) => {
@@ -1079,6 +1153,10 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     totalUnreadCount,
     markConversationAsRead,
     setOpenConversationIds,
+    // Collaborative Documents
+    pendingCollabDocuments,
+    getPendingCollabDocument,
+    clearPendingCollabDocument,
   };
 
   return <DMContext.Provider value={value}>{children}</DMContext.Provider>;
