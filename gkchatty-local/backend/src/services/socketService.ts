@@ -1561,14 +1561,20 @@ class SocketService {
       });
 
       // Notify target user of incoming call
-      this.io?.to(`user:${targetUserId}`).emit('call:incoming', {
+      const targetRoom = `user:${targetUserId}`;
+      const roomSockets = this.io?.sockets.adapter.rooms.get(targetRoom);
+      const roomSize = roomSockets ? roomSockets.size : 0;
+
+      console.log(`[Socket Call] Sending call:incoming to room ${targetRoom} (${roomSize} sockets in room)`);
+
+      this.io?.to(targetRoom).emit('call:incoming', {
         callId,
         callerId: socket.userId,
         callerUsername: socket.username,
         callType,
       });
 
-      console.log(`[Socket Call] ${socket.username} initiated ${callType} call to ${targetUser.username} (${callId})`);
+      console.log(`[Socket Call] ${socket.username} initiated ${callType} call to ${targetUser.username} (${callId}), target room has ${roomSize} connected sockets`);
 
       // Set timeout to auto-reject if not answered in 30 seconds
       setTimeout(() => {
