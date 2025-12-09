@@ -100,8 +100,8 @@ interface VoiceVideoCallProviderProps {
 export const VoiceVideoCallProvider: React.FC<VoiceVideoCallProviderProps> = ({ children }) => {
   const { socket, isConnected } = useDM();
 
-  // Debug: Log socket state
-  console.log('[VoiceVideoCall] Provider render - socket:', !!socket, 'isConnected:', isConnected);
+  // Debug: Log socket state with more details
+  console.log('[VoiceVideoCall] Provider render - socket:', !!socket, 'isConnected:', isConnected, 'socketId:', socket?.id || 'none');
 
   // Call state
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
@@ -387,12 +387,12 @@ export const VoiceVideoCallProvider: React.FC<VoiceVideoCallProviderProps> = ({ 
 
   // Socket event handlers
   useEffect(() => {
-    console.log('[VoiceVideoCall] Socket event handlers useEffect - socket:', !!socket);
+    console.log('[VoiceVideoCall] Socket event handlers useEffect - socket:', !!socket, 'socketId:', socket?.id, 'connected:', socket?.connected);
     if (!socket) {
       console.log('[VoiceVideoCall] No socket, skipping event handler registration');
       return;
     }
-    console.log('[VoiceVideoCall] Registering socket event handlers...');
+    console.log('[VoiceVideoCall] Registering socket event handlers for socket:', socket.id);
 
     // Call initiated successfully (for caller)
     const handleCallInitiated = (data: {
