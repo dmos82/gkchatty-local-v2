@@ -16,6 +16,8 @@ import { getContext } from '../services/ragService';
 import { auditChatQuery } from '../middleware/auditMiddleware';
 import { recordKnowledgeGap } from '../services/knowledgeGapService';
 import { getPresignedUrlForView } from '../utils/s3Helper';
+import { UserDocument } from '../models/UserDocument';
+import { SystemKbDocument } from '../models/SystemKbDocument';
 
 /**
  * Helper function to generate a fresh URL from a stored icon key/URL
@@ -929,6 +931,65 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
       `[Chat Deduplicate] Reduced ${filteredSources.length} sources to ${uniqueFinalSources.length} unique sources.`
     );
 
+    // --- FIX: Validate sources exist in MongoDB to filter out ghost documents ---
+    // Ghost documents are ones that exist in Pinecone but have been deleted from MongoDB
+    let validatedSources = uniqueFinalSources;
+    if (uniqueFinalSources.length > 0) {
+      try {
+        // Separate sources by type
+        const userDocIds = uniqueFinalSources
+          .filter((s: any) => s.type === 'user' && s.documentId)
+          .map((s: any) => s.documentId);
+        const systemDocIds = uniqueFinalSources
+          .filter((s: any) => s.type === 'system' && s.documentId)
+          .map((s: any) => s.documentId);
+
+        // Query MongoDB to find which documents actually exist
+        const existingDocIds = new Set<string>();
+
+        if (userDocIds.length > 0) {
+          const existingUserDocs = await UserDocument.find({
+            _id: { $in: userDocIds.map((id: string) => new Types.ObjectId(id)) },
+          }).select('_id').lean();
+          existingUserDocs.forEach((doc: any) => existingDocIds.add(doc._id.toString()));
+        }
+
+        if (systemDocIds.length > 0) {
+          const existingSystemDocs = await SystemKbDocument.find({
+            _id: { $in: systemDocIds.map((id: string) => new Types.ObjectId(id)) },
+          }).select('_id').lean();
+          existingSystemDocs.forEach((doc: any) => existingDocIds.add(doc._id.toString()));
+        }
+
+        // Filter out ghost documents (those not found in MongoDB)
+        const beforeCount = uniqueFinalSources.length;
+        validatedSources = uniqueFinalSources.filter((source: any) => {
+          if (!source.documentId) return true; // Keep sources without documentId
+          const exists = existingDocIds.has(source.documentId);
+          if (!exists) {
+            log.warn(
+              { documentId: source.documentId, fileName: source.fileName, type: source.type },
+              '[Ghost Document] Filtering out source that exists in Pinecone but not in MongoDB'
+            );
+          }
+          return exists;
+        });
+
+        log.info(
+          {
+            beforeValidation: beforeCount,
+            afterValidation: validatedSources.length,
+            ghostDocsRemoved: beforeCount - validatedSources.length,
+          },
+          '[Chat] Validated sources against MongoDB - removed ghost documents'
+        );
+      } catch (validationError) {
+        log.error({ error: validationError }, '[Chat] Error validating sources against MongoDB - using unvalidated sources');
+        // Fall back to unvalidated sources if validation fails
+        validatedSources = uniqueFinalSources;
+      }
+    }
+
     const messageMetadata = tokenUsage
       ? { tokenUsage, cost: requestCost, ...(modelUsed && { modelUsed }) }
       : undefined;
@@ -962,7 +1023,8 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
 
     // FIX: Clear sources if LLM indicates the content wasn't helpful
     // This prevents showing irrelevant "ghost documents" to users
-    const sourcesToReturn = llmIndicatesNoMatch ? [] : uniqueFinalSources;
+    // Also use validatedSources (filtered against MongoDB) to remove ghost documents
+    const sourcesToReturn = llmIndicatesNoMatch ? [] : validatedSources;
 
     const responseObject: ChatResponseObject = {
       success: true,
