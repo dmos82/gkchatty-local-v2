@@ -704,6 +704,39 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
     // DEBUG: Log the entire completion object to see what OpenAI is returning
     log.debug('[Chat] Full completion object:', JSON.stringify(completion, null, 2));
 
+    // --- FIX: Detect when LLM indicates sources weren't helpful ---
+    // If the LLM response contains phrases indicating it couldn't find relevant info,
+    // we should NOT show sources to users (prevents showing irrelevant/ghost documents)
+    const NO_MATCH_INDICATORS = [
+      'the provided documents do not contain',
+      'no matching information found',
+      'i don\'t have information',
+      'i don\'t see information',
+      'i couldn\'t find',
+      'i could not find',
+      'not mentioned in the provided',
+      'not found in the provided',
+      'the documents don\'t contain',
+      'the documents do not contain',
+      'no relevant information',
+      'unable to find',
+      'there is no information',
+      'there\'s no information',
+    ];
+
+    const answerLower = answer.toLowerCase();
+    const llmIndicatesNoMatch = NO_MATCH_INDICATORS.some(indicator =>
+      answerLower.includes(indicator)
+    );
+
+    if (llmIndicatesNoMatch) {
+      log.info(
+        { answerPreview: answer.substring(0, 100) },
+        '[Chat Route] LLM response indicates sources were not helpful - clearing sources array'
+      );
+    }
+    // --- END FIX ---
+
     // Extract model used from completion response
     const modelUsed = completion?.model || undefined;
     log.debug(`[Chat] Extracted modelUsed: ${modelUsed}`);
@@ -927,10 +960,14 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
       log.error({ error: iconError, knowledgeBaseTarget }, '[Chat] Error determining icon:');
     }
 
+    // FIX: Clear sources if LLM indicates the content wasn't helpful
+    // This prevents showing irrelevant "ghost documents" to users
+    const sourcesToReturn = llmIndicatesNoMatch ? [] : uniqueFinalSources;
+
     const responseObject: ChatResponseObject = {
       success: true,
       answer,
-      sources: uniqueFinalSources,
+      sources: sourcesToReturn,
       metadata: messageMetadata,
       iconUrl,
       knowledgeBaseTarget, // Include the target in the response for the frontend
@@ -941,7 +978,9 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
     log.debug(
       {
         answerLength: answer.length,
-        sourcesCount: uniqueFinalSources.length,
+        sourcesCount: sourcesToReturn.length,
+        originalSourcesCount: uniqueFinalSources.length,
+        llmIndicatesNoMatch,
         metadataIncluded: !!messageMetadata,
         hasCustomIcon: !!iconUrl,
       },
@@ -950,8 +989,8 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
 
     // --- DEBUG: Log final sources being returned ---
     log.debug(
-      '[Chat Route Final Response] Sources being sent to frontend:',
-      JSON.stringify(uniqueFinalSources, null, 2)
+      `[Chat Route Final Response] Sources being sent to frontend (${llmIndicatesNoMatch ? 'CLEARED due to LLM no-match' : 'original'}):`,
+      JSON.stringify(sourcesToReturn, null, 2)
     );
 
     // --- Chat Persistence ---
@@ -974,7 +1013,7 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
         const assistantMessage: IChatMessage = {
           role: 'assistant',
           content: responseObject.answer,
-          sources: (uniqueFinalSources || []).map(s => {
+          sources: (sourcesToReturn || []).map(s => {
             return {
               documentId: s!.documentId!,
               fileName: s!.fileName!,
