@@ -127,5 +127,38 @@ const dmAttachmentUpload = multer({
   },
 });
 
-export { iconUpload, dmAttachmentUpload };
+// Voice message file filter
+const voiceFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const allowedMimes = [
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg',
+    'audio/mpeg',
+    'audio/wav',
+    'audio/x-m4a',
+  ];
+
+  if (allowedMimes.includes(file.mimetype)) {
+    console.log(`[Multer] Allowed voice message: ${file.originalname} (mime: ${file.mimetype})`);
+    cb(null, true);
+  } else {
+    console.log(`[Multer] Blocked voice message: ${file.originalname} (mime: ${file.mimetype})`);
+    cb(new Error('Invalid file type. Only audio files (WebM, MP4, OGG, MP3, WAV, M4A) are allowed.'));
+  }
+};
+
+// Configure multer instance for voice messages
+const dmVoiceUpload = multer({
+  storage: storage,
+  fileFilter: voiceFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5 MB limit for voice messages (2 min at reasonable quality)
+  },
+});
+
+export { iconUpload, dmAttachmentUpload, dmVoiceUpload };
 export default userUpload;

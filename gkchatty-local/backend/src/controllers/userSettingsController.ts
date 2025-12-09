@@ -3,12 +3,33 @@ import mongoose from 'mongoose';
 import UserSettings from '../models/UserSettings';
 import asyncHandler from 'express-async-handler';
 import { getLogger } from '../utils/logger';
-import { saveFile } from '../utils/s3Helper';
+import { uploadFile, getPresignedUrlForView } from '../utils/s3Helper';
 import path from 'path';
 import fs from 'fs';
 import User from '../models/UserModel';
 // Create logger but use it in future updates
 const log = getLogger('userSettingsController');
+
+/**
+ * Helper function to generate a fresh URL from a stored icon key/URL
+ * Handles both legacy URLs (already presigned) and new key-based storage
+ */
+const getIconUrl = async (storedIconValue: string | null | undefined): Promise<string | null> => {
+  if (!storedIconValue) return null;
+
+  // If it looks like a URL (starts with http), return as-is (legacy support)
+  if (storedIconValue.startsWith('http://') || storedIconValue.startsWith('https://')) {
+    return storedIconValue;
+  }
+
+  // It's an S3 key - generate a fresh presigned URL
+  try {
+    return await getPresignedUrlForView(storedIconValue);
+  } catch (error) {
+    log.error({ error, msg: 'Error generating presigned URL for icon' });
+    return null;
+  }
+};
 
 /**
  * @desc    Get settings for a specific user
@@ -248,10 +269,16 @@ const getOwnSettings: RequestHandler = asyncHandler(
       }
 
       log.info({ reqId, userId, msg: 'Successfully fetched user settings' });
+
+      // Generate fresh presigned URL for the icon if it exists
+      const settingsObj = userSettings.toObject();
+      const freshIconUrl = await getIconUrl(settingsObj.iconUrl);
+
       res.status(200).json({
         success: true,
         settings: {
-          ...userSettings.toObject(),
+          ...settingsObj,
+          iconUrl: freshIconUrl, // Use fresh presigned URL
           isPersonaEnabled: personaEnabled,
           canCustomizePersona: canCustomizePersona,
         },
@@ -357,22 +384,25 @@ const uploadOwnIcon: RequestHandler = asyncHandler(
     }
 
     try {
-      // Define file path for storage
+      // Define file path for storage - this will be the S3 key we store
       const userIdStr = userId.toString();
       const fileExtension = path.extname(req.file.originalname);
       const fileName = `user-icon-${Date.now()}${fileExtension}`;
-      const filePath = `user_icons/${userIdStr}/${fileName}`;
+      const iconKey = `user_icons/${userIdStr}/${fileName}`;
 
-      log.info({ reqId, userId, filePath, msg: 'Uploading user icon' });
+      log.info({ reqId, userId, iconKey, msg: 'Uploading user icon' });
 
-      // Use saveFile which returns the correct URL for both S3 and local storage
-      const iconUrl = await saveFile(
-        filePath,
+      // Upload the file (don't use saveFile which returns presigned URL)
+      await uploadFile(
         req.file.buffer || (await fs.promises.readFile(req.file.path)),
+        iconKey,
         req.file.mimetype
       );
 
-      log.info({ reqId, userId, iconUrl, msg: 'Icon saved successfully' });
+      log.info({ reqId, userId, iconKey, msg: 'Icon uploaded successfully' });
+
+      // Generate a fresh URL for the response (but store only the key)
+      const iconUrl = await getPresignedUrlForView(iconKey);
 
       // Clean up temp file created by multer
       if (req.file.path) {
@@ -384,10 +414,10 @@ const uploadOwnIcon: RequestHandler = asyncHandler(
         }
       }
 
-      // Update user settings with the icon URL
+      // Update user settings with the icon KEY (not URL - URLs expire!)
       const updatedUserSettings = await UserSettings.findOneAndUpdate(
         { userId },
-        { $set: { iconUrl } },
+        { $set: { iconUrl: iconKey } }, // Store the key, not the presigned URL
         {
           new: true,
           upsert: true,
@@ -398,16 +428,20 @@ const uploadOwnIcon: RequestHandler = asyncHandler(
       log.info({
         reqId,
         userId,
-        iconUrl,
+        iconKey,
         isNewDocument:
           updatedUserSettings.createdAt.getTime() === updatedUserSettings.updatedAt.getTime(),
         msg: 'Successfully updated user icon',
       });
 
+      // Return the fresh URL in the response, even though we stored the key
       res.status(200).json({
         success: true,
         message: 'Your icon was uploaded and set successfully',
-        settings: updatedUserSettings,
+        settings: {
+          ...updatedUserSettings.toObject(),
+          iconUrl, // Return the fresh presigned URL to the client
+        },
       });
     } catch (err) {
       log.error({ reqId, userId, err, msg: 'Error uploading user icon' });

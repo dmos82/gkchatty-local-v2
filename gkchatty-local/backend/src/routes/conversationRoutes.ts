@@ -7,13 +7,14 @@ import {
   getConversation,
   deleteConversation,
   getMessages,
+  searchMessages,
   markConversationRead,
   getOnlineUsers,
   addGroupMembers,
   leaveGroup,
   deleteGroupConversation,
 } from '../controllers/conversationController';
-import { dmAttachmentUpload } from '../config/multerConfig';
+import { dmAttachmentUpload, dmVoiceUpload } from '../config/multerConfig';
 import { uploadFile, getPresignedUrlForView, getFileStream } from '../utils/s3Helper';
 import { getLogger } from '../utils/logger';
 import { UserDocument } from '../models/UserDocument';
@@ -72,6 +73,14 @@ router.get('/:id', getConversation);
  * @access  Private
  */
 router.delete('/:id', deleteConversation);
+
+/**
+ * @route   GET /api/conversations/:id/messages/search
+ * @desc    Search messages in a conversation
+ * @access  Private
+ * @query   { q: string, limit?: number }
+ */
+router.get('/:id/messages/search', searchMessages);
 
 /**
  * @route   GET /api/conversations/:id/messages
@@ -372,5 +381,81 @@ router.post('/:id/attachments/copy-to-docs', async (req: Request, res: Response)
     });
   }
 });
+
+/**
+ * @route   POST /api/conversations/:id/voice
+ * @desc    Upload a voice message for a DM conversation
+ * @access  Private
+ * @body    { duration: number } (in form data)
+ * @returns { attachment: { type, url, filename, size, mimeType, duration } }
+ */
+router.post(
+  '/:id/voice',
+  dmVoiceUpload.single('voice'),
+  async (req: Request, res: Response) => {
+    try {
+      const conversationId = req.params.id;
+      const userId = req.user?._id?.toString();
+      const file = req.file;
+      const duration = parseFloat(req.body.duration) || 0;
+
+      if (!file) {
+        return res.status(400).json({ error: 'No voice file uploaded' });
+      }
+
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // Validate duration (max 2 minutes = 120 seconds)
+      if (duration > 120) {
+        return res.status(400).json({ error: 'Voice message exceeds 2 minute limit' });
+      }
+
+      log.debug(`[Voice Message] Uploading for conversation ${conversationId}: ${file.originalname}, duration: ${duration}s`);
+
+      // Read the file from disk
+      const fileBuffer = await fs.readFile(file.path);
+
+      // Generate unique S3 key: dm_voice/{conversationId}/{timestamp}.webm
+      const timestamp = Date.now();
+      const extension = file.originalname.split('.').pop() || 'webm';
+      const s3Key = `dm_voice/${conversationId}/${timestamp}.${extension}`;
+
+      // Upload to S3
+      await uploadFile(fileBuffer, s3Key, file.mimetype);
+
+      // Get URL for the file
+      const fileUrl = await getPresignedUrlForView(s3Key, 3600 * 24 * 7); // 7 days
+
+      // Clean up temp file
+      try {
+        await fs.unlink(file.path);
+      } catch (cleanupError) {
+        log.warn(`[Voice Message] Failed to clean up temp file: ${file.path}`);
+      }
+
+      const attachment = {
+        type: 'voice' as const,
+        url: fileUrl,
+        filename: `voice_${timestamp}.${extension}`,
+        size: file.size,
+        mimeType: file.mimetype,
+        s3Key: s3Key,
+        duration: duration,
+      };
+
+      log.debug(`[Voice Message] Successfully uploaded: ${s3Key}`);
+
+      return res.status(200).json({ attachment });
+    } catch (error) {
+      log.error('[Voice Message] Upload error:', error);
+      return res.status(500).json({
+        error: 'Failed to upload voice message',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+);
 
 export default router;

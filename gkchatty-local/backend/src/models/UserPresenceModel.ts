@@ -22,6 +22,10 @@ export interface IUserPresence extends Document {
   activeDevices: IActiveDevice[];
   autoAwayEnabled: boolean;
   autoAwayMinutes: number;
+  // Do Not Disturb fields
+  dndEnabled: boolean;
+  dndUntil?: Date;
+  dndMessage?: string;
   createdAt: Date;
   updatedAt: Date;
 
@@ -84,6 +88,10 @@ const UserPresenceSchema = new Schema<IUserPresence>(
     activeDevices: [ActiveDeviceSchema],
     autoAwayEnabled: { type: Boolean, default: true },
     autoAwayMinutes: { type: Number, default: 5 },
+    // Do Not Disturb fields
+    dndEnabled: { type: Boolean, default: false },
+    dndUntil: { type: Date },
+    dndMessage: { type: String, maxlength: 100 },
   },
   {
     timestamps: true,
@@ -217,18 +225,22 @@ UserPresenceSchema.statics.findOrCreatePresence = async function (
 // Static method to get presence for multiple users
 UserPresenceSchema.statics.getBulkPresence = async function (
   userIds: Types.ObjectId[]
-): Promise<Map<string, { status: PresenceStatus; lastSeenAt: Date }>> {
+): Promise<Map<string, { status: PresenceStatus; lastSeenAt: Date; customStatus?: string; dndEnabled?: boolean; dndUntil?: Date; dndMessage?: string }>> {
   const presences = await this.find({ userId: { $in: userIds } }).lean();
 
   const presenceMap = new Map<
     string,
-    { status: PresenceStatus; lastSeenAt: Date }
+    { status: PresenceStatus; lastSeenAt: Date; customStatus?: string; dndEnabled?: boolean; dndUntil?: Date; dndMessage?: string }
   >();
 
   presences.forEach((p) => {
     presenceMap.set(p.userId.toString(), {
       status: p.status,
       lastSeenAt: p.lastSeenAt,
+      customStatus: p.customStatus,
+      dndEnabled: p.dndEnabled,
+      dndUntil: p.dndUntil,
+      dndMessage: p.dndMessage,
     });
   });
 
@@ -238,6 +250,7 @@ UserPresenceSchema.statics.getBulkPresence = async function (
       presenceMap.set(id.toString(), {
         status: 'offline',
         lastSeenAt: new Date(),
+        dndEnabled: false,
       });
     }
   });
@@ -253,7 +266,7 @@ export interface IUserPresenceModel extends mongoose.Model<IUserPresence> {
   ): Promise<IUserPresence>;
   getBulkPresence(
     userIds: Types.ObjectId[]
-  ): Promise<Map<string, { status: PresenceStatus; lastSeenAt: Date }>>;
+  ): Promise<Map<string, { status: PresenceStatus; lastSeenAt: Date; customStatus?: string; dndEnabled?: boolean; dndUntil?: Date; dndMessage?: string }>>;
 }
 
 export default mongoose.model<IUserPresence, IUserPresenceModel>(

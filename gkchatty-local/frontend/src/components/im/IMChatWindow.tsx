@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useDM, Message, PresenceStatus, Attachment } from '@/contexts/DMContext';
+import { useDM, Message, PresenceStatus, Attachment, Reaction } from '@/contexts/DMContext';
 import { useIM } from '@/contexts/IMContext';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';
@@ -64,6 +64,10 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
     sendTyping,
     markConversationAsRead,
     onlineUsers,
+    editMessage,
+    deleteMessage,
+    reactToMessage,
+    uploadVoiceMessage,
   } = useDM();
 
   const { user } = useAuth();
@@ -105,6 +109,57 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
     filename: string;
   }>({ isOpen: false, url: null, filename: '' });
   const [isLoadingPdfUrl, setIsLoadingPdfUrl] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [likedMessages, setLikedMessages] = useState<Set<string>>(new Set());
+  const [animatingLikeId, setAnimatingLikeId] = useState<string | null>(null);
+
+  // Search state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Message[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
+  // Edit message state
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
+
+  // Reaction emoji constants
+  const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const mimeTypeRef = useRef<string>('audio/webm');
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingStartTimeRef = useRef<number>(0); // Track actual start time to calculate duration
+  const MAX_RECORDING_DURATION = 120; // 2 minutes in seconds
+
+  // Emoji categories for the picker
+  const emojiCategories = [
+    {
+      name: 'Smileys',
+      emojis: ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '😉', '😍', '🥰', '😘', '😋', '😜', '🤪', '😎', '🤩', '🥳'],
+    },
+    {
+      name: 'Gestures',
+      emojis: ['👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '👏', '🙌', '👐', '🤲', '🙏', '💪', '🤝', '👊', '✊', '🫶', '❤️', '🧡', '💛'],
+    },
+    {
+      name: 'Reactions',
+      emojis: ['🔥', '💯', '⭐', '✨', '💥', '💫', '🎉', '🎊', '🏆', '🥇', '👑', '💎', '🚀', '💡', '✅', '❌', '❓', '❗', '⚡', '🎯'],
+    },
+    {
+      name: 'Faces',
+      emojis: ['😢', '😭', '😤', '😠', '😡', '🤬', '😱', '😨', '😰', '😥', '🤔', '🤨', '🧐', '😐', '😑', '😶', '🙄', '😏', '😒', '🤐'],
+    },
+  ];
 
   // Group management state
   const [showGroupMenu, setShowGroupMenu] = useState(false);
@@ -227,6 +282,66 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
       setIsLoading(false);
     }
   };
+
+  // Search messages in conversation
+  const searchMessages = async (query: string) => {
+    if (!conversationId || !query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+
+    setIsSearching(true);
+    try {
+      const API_URL = getApiBaseUrl();
+      const response = await fetch(
+        `${API_URL}/api/conversations/${conversationId}/messages/search?q=${encodeURIComponent(query.trim())}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setSearchResults(data.messages || []);
+      }
+    } catch (error) {
+      console.error('[IMChatWindow] Error searching messages:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Handle jumping to a message in search results
+  const handleJumpToMessage = (messageId: string) => {
+    setHighlightedMessageId(messageId);
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+
+    // Scroll to the message
+    setTimeout(() => {
+      const element = document.getElementById(`message-${messageId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Remove highlight after animation
+        setTimeout(() => setHighlightedMessageId(null), 2000);
+      }
+    }, 100);
+  };
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.trim()) {
+        searchMessages(searchQuery);
+      } else {
+        setSearchResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, conversationId]);
 
   // Fetch current user's icon URL from settings
   useEffect(() => {
@@ -442,6 +557,201 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
   // Remove pending attachment
   const removePendingAttachment = (index: number) => {
     setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Helper function to get best supported audio mimeType
+  const getSupportedMimeType = (): string => {
+    const mimeTypes = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/wav',
+    ];
+
+    for (const mimeType of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(mimeType)) {
+        console.log('[IMChatWindow] Supported mimeType found:', mimeType);
+        return mimeType;
+      }
+    }
+
+    // Fallback - let the browser choose
+    console.log('[IMChatWindow] No preferred mimeType supported, using browser default');
+    return '';
+  };
+
+  // Voice recording handlers
+  const startRecording = async () => {
+    console.log('[IMChatWindow] startRecording called, isConnected:', isConnected, 'conversationId:', conversationId);
+
+    // Early return if button should be disabled
+    if (!isConnected) {
+      console.error('[IMChatWindow] Cannot record: not connected');
+      alert('Cannot record: Socket not connected. Please refresh the page.');
+      return;
+    }
+
+    try {
+      console.log('[IMChatWindow] Requesting microphone access...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('[IMChatWindow] Microphone access granted');
+
+      // Detect supported mimeType
+      const mimeType = getSupportedMimeType();
+      mimeTypeRef.current = mimeType || 'audio/webm';
+      console.log('[IMChatWindow] Using mimeType:', mimeTypeRef.current);
+
+      // Create MediaRecorder with or without mimeType option
+      let mediaRecorder: MediaRecorder;
+      try {
+        if (mimeType) {
+          mediaRecorder = new MediaRecorder(stream, { mimeType });
+        } else {
+          mediaRecorder = new MediaRecorder(stream);
+        }
+      } catch (recorderError) {
+        console.error('[IMChatWindow] MediaRecorder creation failed, trying without options:', recorderError);
+        mediaRecorder = new MediaRecorder(stream);
+        mimeTypeRef.current = mediaRecorder.mimeType || 'audio/webm';
+      }
+
+      console.log('[IMChatWindow] MediaRecorder created with mimeType:', mediaRecorder.mimeType);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        console.log('[IMChatWindow] mediaRecorder.onstop fired');
+        stream.getTracks().forEach((track) => track.stop());
+        // Use the detected mimeType for the blob
+        const blobType = mimeTypeRef.current.split(';')[0] || 'audio/webm'; // Remove codec info
+        const audioBlob = new Blob(audioChunksRef.current, { type: blobType });
+        // Calculate actual duration from start time (fixes stale closure issue)
+        const duration = Math.round((Date.now() - recordingStartTimeRef.current) / 1000);
+        console.log('[IMChatWindow] Audio blob size:', audioBlob.size, 'duration:', duration, 'type:', blobType);
+
+        // Reset recording state
+        setIsRecording(false);
+        setRecordingDuration(0);
+        if (recordingIntervalRef.current) {
+          clearInterval(recordingIntervalRef.current);
+          recordingIntervalRef.current = null;
+        }
+
+        // Upload the voice message
+        setIsUploadingVoice(true);
+        try {
+          // Ensure we have a conversation ID (create if needed, same pattern as handleSend)
+          let activeConversationId = conversationId;
+          if (!activeConversationId) {
+            try {
+              console.log('[IMChatWindow] No conversationId, creating conversation for voice message...');
+              const newConv = await createConversation(recipientId, recipientUsername);
+              activeConversationId = newConv._id;
+              setConversationId(windowId, newConv._id);
+              console.log('[IMChatWindow] Created conversation:', activeConversationId);
+            } catch (convError) {
+              console.error('[IMChatWindow] Error creating conversation for voice:', convError);
+              return;
+            }
+          }
+
+          console.log('[IMChatWindow] Uploading voice message to conversationId:', activeConversationId);
+          const attachment = await uploadVoiceMessage(audioBlob, duration, activeConversationId ?? undefined);
+          console.log('[IMChatWindow] Upload result:', attachment);
+
+          if (attachment) {
+            // Add optimistic message to local state (same pattern as handleSend)
+            const tempMessage: Message = {
+              _id: `temp-${Date.now()}`,
+              tempId: `temp-${Date.now()}`,
+              senderId: 'me',
+              senderUsername: 'me',
+              content: `Voice message (${formatDuration(duration)})`,
+              messageType: 'text',
+              status: 'sending',
+              createdAt: new Date(),
+              isDeleted: false,
+              attachments: [attachment],
+            };
+
+            console.log('[IMChatWindow] Adding optimistic voice message to local state');
+            setLocalMessages((prev) => [...prev, tempMessage]);
+
+            // Send via socket directly (same pattern as handleSend)
+            console.log('[IMChatWindow] Emitting dm:send for voice message...');
+            socket?.emit('dm:send', {
+              conversationId: activeConversationId,
+              recipientId,
+              content: tempMessage.content,
+              clientMessageId: tempMessage.tempId,
+              attachments: [attachment],
+            });
+            console.log('[IMChatWindow] Voice message sent via socket');
+          } else {
+            console.error('[IMChatWindow] uploadVoiceMessage returned null');
+          }
+        } catch (error) {
+          console.error('[IMChatWindow] Error uploading voice message:', error);
+        } finally {
+          setIsUploadingVoice(false);
+        }
+      };
+
+      mediaRecorder.start();
+      recordingStartTimeRef.current = Date.now(); // Track start time for accurate duration
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      // Start duration timer
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingDuration((prev) => {
+          if (prev >= MAX_RECORDING_DURATION - 1) {
+            // Auto-stop at max duration
+            stopRecording();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (error) {
+      console.error('[IMChatWindow] Error starting recording:', error);
+      alert('Could not access microphone. Please ensure microphone permissions are granted.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current = null;
+      audioChunksRef.current = [];
+    }
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    setIsRecording(false);
+    setRecordingDuration(0);
+  };
+
+  // Format duration as MM:SS
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Attachment action dialog handlers
@@ -725,8 +1035,8 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
   // Resize handlers
   const MIN_WIDTH = 280;
   const MIN_HEIGHT = 300;
-  const MAX_WIDTH = 600;
-  const MAX_HEIGHT = 800;
+  const MAX_WIDTH = 1200;
+  const MAX_HEIGHT = 1000;
 
   const handleResizeStart = (direction: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -757,30 +1067,34 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
 
       // Handle horizontal resize
       if (isResizing.includes('e')) {
+        // East edge: clamp to min/max width
         newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, resizeStart.width + deltaX));
       }
       if (isResizing.includes('w')) {
+        // West edge: clamp width and adjust position accordingly
         const potentialWidth = resizeStart.width - deltaX;
-        if (potentialWidth >= MIN_WIDTH && potentialWidth <= MAX_WIDTH) {
-          newWidth = potentialWidth;
-          newX = resizeStart.posX + deltaX;
-        }
+        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, potentialWidth));
+        // Only adjust X if width actually changed
+        const actualDeltaX = resizeStart.width - newWidth;
+        newX = resizeStart.posX + actualDeltaX;
       }
 
       // Handle vertical resize
       if (isResizing.includes('s')) {
+        // South edge: clamp to min/max height
         newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, resizeStart.height + deltaY));
       }
       if (isResizing.includes('n')) {
+        // North edge: clamp height and adjust position accordingly
         const potentialHeight = resizeStart.height - deltaY;
-        if (potentialHeight >= MIN_HEIGHT && potentialHeight <= MAX_HEIGHT) {
-          newHeight = potentialHeight;
-          newY = resizeStart.posY + deltaY;
-        }
+        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, potentialHeight));
+        // Only adjust Y if height actually changed
+        const actualDeltaY = resizeStart.height - newHeight;
+        newY = resizeStart.posY + actualDeltaY;
       }
 
-      // Keep window in viewport
-      newX = Math.max(0, Math.min(newX, window.innerWidth - newWidth));
+      // Keep window in viewport (more permissive - just ensure some part is visible)
+      newX = Math.max(-newWidth + 100, Math.min(newX, window.innerWidth - 100));
       newY = Math.max(0, Math.min(newY, window.innerHeight - 50));
 
       setWindowSize({ width: newWidth, height: newHeight });
@@ -908,6 +1222,30 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
         newSet.delete(userId);
       } else {
         newSet.add(userId);
+      }
+      return newSet;
+    });
+  };
+
+  // Handle emoji selection
+  const handleEmojiSelect = (emoji: string) => {
+    setInputValue((prev) => prev + emoji);
+    setShowEmojiPicker(false);
+    inputRef.current?.focus();
+  };
+
+  // Handle double-click to like a message
+  const handleDoubleTapLike = (messageId: string) => {
+    // Toggle like state
+    setLikedMessages((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(messageId)) {
+        newSet.delete(messageId);
+      } else {
+        newSet.add(messageId);
+        // Trigger animation only when adding like
+        setAnimatingLikeId(messageId);
+        setTimeout(() => setAnimatingLikeId(null), 700);
       }
       return newSet;
     });
@@ -1071,6 +1409,16 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
               )}
             </div>
           )}
+          {/* Search button */}
+          <button
+            onClick={() => setIsSearchOpen(!isSearchOpen)}
+            className={`p-1.5 rounded hover:bg-[#404040] transition-colors ${isSearchOpen ? 'bg-[#404040]' : ''}`}
+            title="Search messages"
+          >
+            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
           <button
             onClick={handleAnimatedMinimize}
             className="p-1.5 rounded hover:bg-[#404040] transition-colors"
@@ -1091,6 +1439,69 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Search Panel */}
+      {isSearchOpen && (
+        <div className="bg-[#2a2a2a] dark:bg-[#1e1e1e] border-b border-[#404040] px-3 py-2">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search messages..."
+              className="w-full bg-[#1a1a1a] text-white text-sm rounded-lg pl-8 pr-8 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-500 placeholder-slate-500"
+              autoFocus
+            />
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchResults([]);
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {/* Search Results */}
+          {searchQuery && (
+            <div className="mt-2 max-h-40 overflow-y-auto">
+              {isSearching ? (
+                <div className="text-center py-2 text-slate-400 text-xs">Searching...</div>
+              ) : searchResults.length === 0 ? (
+                <div className="text-center py-2 text-slate-400 text-xs">No messages found</div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="text-xs text-slate-400 mb-1">{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</div>
+                  {searchResults.map((msg) => (
+                    <button
+                      key={msg._id}
+                      onClick={() => handleJumpToMessage(msg._id)}
+                      className="w-full text-left p-2 rounded bg-[#1a1a1a] hover:bg-[#333] transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-yellow-400">{msg.senderUsername}</span>
+                        <span className="text-xs text-slate-500">
+                          {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-300 truncate mt-0.5">
+                        {msg.content}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50 dark:bg-[#1a1a1a]">
@@ -1115,10 +1526,36 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
         ) : (
           localMessages.map((message) => {
             const isOwnMessage = message.senderId === currentUserId || message.senderId === 'me';
+            const isHighlighted = highlightedMessageId === message._id;
+            const isHovered = hoveredMessageId === message._id;
+            const isEditing = editingMessageId === message._id;
+
+            // Handle deleted messages
+            if (message.isDeleted) {
+              return (
+                <div
+                  key={message._id}
+                  id={`message-${message._id}`}
+                  className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-[#2a2a2a] text-slate-500 dark:text-slate-400 italic text-sm">
+                    This message was deleted
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div
                 key={message._id}
-                className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                id={`message-${message._id}`}
+                className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'animate-pulse bg-yellow-500/20 rounded-lg py-1 -my-1' : ''} transition-colors duration-300 group relative`}
+                onMouseEnter={() => setHoveredMessageId(message._id)}
+                onMouseLeave={() => {
+                  setHoveredMessageId(null);
+                  if (showDeleteConfirm === message._id) setShowDeleteConfirm(null);
+                  if (showReactionPicker === message._id) setShowReactionPicker(null);
+                }}
               >
                 <div className={`flex ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 max-w-[85%]`}>
                   {/* Avatar for received messages */}
@@ -1169,12 +1606,19 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
                       </span>
                     )}
                     <div
-                      className={`px-3 py-2 rounded-xl ${
+                      onDoubleClick={() => handleDoubleTapLike(message._id)}
+                      className={`px-3 py-2 rounded-xl cursor-pointer select-none relative ${
                         isOwnMessage
                           ? 'bg-yellow-500 text-slate-800'
                           : 'bg-white dark:bg-[#2a2a2a] text-slate-700 dark:text-slate-200 shadow-sm'
                       }`}
                     >
+                      {/* Heart animation on double-tap like */}
+                      {animatingLikeId === message._id && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                          <span className="text-3xl animate-ping">❤️</span>
+                        </div>
+                      )}
                       {/* Attachments */}
                       {message.attachments && message.attachments.length > 0 && (
                         <div className="mb-2 space-y-2">
@@ -1188,6 +1632,32 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
                                     className="max-w-full max-h-48 rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
                                   />
                                 </a>
+                              ) : attachment.type === 'voice' ? (
+                                <div
+                                  className={`flex items-center gap-2 p-2 rounded-lg ${
+                                    isOwnMessage
+                                      ? 'bg-yellow-600/30'
+                                      : 'bg-slate-100 dark:bg-[#404040]'
+                                  }`}
+                                >
+                                  <svg className="w-5 h-5 flex-shrink-0 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                  </svg>
+                                  <div className="flex-1 min-w-0">
+                                    <audio
+                                      controls
+                                      preload="metadata"
+                                      className="w-full h-8 [&::-webkit-media-controls-panel]:bg-transparent"
+                                      style={{ maxWidth: '200px' }}
+                                    >
+                                      <source src={attachment.url} type={attachment.mimeType} />
+                                      Your browser does not support audio playback.
+                                    </audio>
+                                  </div>
+                                  <span className="text-[10px] opacity-70 flex-shrink-0">
+                                    {attachment.duration ? formatDuration(Math.round(attachment.duration)) : ''}
+                                  </span>
+                                </div>
                               ) : (
                                 <button
                                   onClick={(e) => handleAttachmentClick(attachment, e)}
@@ -1216,20 +1686,188 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
                         </div>
                       )}
                       {/* Text content - only show if not just a "Sent filename" placeholder */}
-                      {message.content && !(message.attachments?.length && message.content.startsWith('Sent ')) && (
-                        <p className="text-sm break-words">{message.content}</p>
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                if (editContent.trim()) {
+                                  editMessage(message._id, editContent);
+                                  setEditingMessageId(null);
+                                  setEditContent('');
+                                }
+                              } else if (e.key === 'Escape') {
+                                setEditingMessageId(null);
+                                setEditContent('');
+                              }
+                            }}
+                            autoFocus
+                            className="w-full px-2 py-1 text-sm rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#1a1a1a] text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                          />
+                          <div className="flex gap-1 justify-end">
+                            <button
+                              onClick={() => {
+                                setEditingMessageId(null);
+                                setEditContent('');
+                              }}
+                              className="px-2 py-0.5 text-[10px] rounded bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (editContent.trim()) {
+                                  editMessage(message._id, editContent);
+                                  setEditingMessageId(null);
+                                  setEditContent('');
+                                }
+                              }}
+                              className="px-2 py-0.5 text-[10px] rounded bg-yellow-500 text-slate-800 hover:bg-yellow-400 transition-colors"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        message.content && !(message.attachments?.length && message.content.startsWith('Sent ')) && (
+                          <p className="text-sm break-words">{message.content}</p>
+                        )
                       )}
                       <div className={`flex items-center gap-1 mt-1 ${isOwnMessage ? 'justify-end' : ''}`}>
                         <span className={`text-[10px] ${isOwnMessage ? 'text-slate-600' : 'text-slate-400'}`}>
                           {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
                         </span>
+                        {message.editedAt && (
+                          <span className={`text-[10px] ${isOwnMessage ? 'text-slate-500' : 'text-slate-400'} italic`}>
+                            (edited)
+                          </span>
+                        )}
                         {isOwnMessage && (
                           <span className={`text-[10px] ${message.status === 'sending' ? 'text-slate-500' : 'text-slate-600'}`}>
                             {message.status === 'sending' ? '...' : message.status === 'read' ? '✓✓' : '✓'}
                           </span>
                         )}
+                        {likedMessages.has(message._id) && (
+                          <span className="text-[10px] text-red-500">❤️</span>
+                        )}
                       </div>
+                      {/* Reactions display row */}
+                      {message.reactions && message.reactions.length > 0 && (
+                        <div className={`flex flex-wrap gap-1 mt-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                          {message.reactions.map((reaction) => (
+                            <button
+                              key={reaction.emoji}
+                              onClick={() => reactToMessage(message._id, reaction.emoji)}
+                              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition-colors ${
+                                reaction.users.some((u) => u.userId === user?._id)
+                                  ? 'bg-yellow-200 dark:bg-yellow-700/50 border border-yellow-400'
+                                  : 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600'
+                              }`}
+                              title={reaction.users.map((u) => u.username).join(', ')}
+                            >
+                              <span>{reaction.emoji}</span>
+                              <span className="text-[10px] text-slate-600 dark:text-slate-300">{reaction.users.length}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
+                    {/* Hover action buttons for own messages */}
+                    {isOwnMessage && isHovered && !isEditing && (
+                      <div className={`absolute right-full mr-2 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white dark:bg-[#2a2a2a] rounded-lg shadow-lg px-1 py-0.5 border border-slate-200 dark:border-slate-600`}>
+                        <button
+                          onClick={() => setShowReactionPicker(message._id)}
+                          className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                          title="Add reaction"
+                        >
+                          <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingMessageId(message._id);
+                            setEditContent(message.content);
+                          }}
+                          className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                          title="Edit message"
+                        >
+                          <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => setShowDeleteConfirm(message._id)}
+                          className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                          title="Delete message"
+                        >
+                          <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                    {/* Hover action buttons for received messages */}
+                    {!isOwnMessage && isHovered && (
+                      <div className={`absolute left-full ml-2 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white dark:bg-[#2a2a2a] rounded-lg shadow-lg px-1 py-0.5 border border-slate-200 dark:border-slate-600`}>
+                        <button
+                          onClick={() => setShowReactionPicker(message._id)}
+                          className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                          title="Add reaction"
+                        >
+                          <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                    {/* Delete confirmation popup */}
+                    {showDeleteConfirm === message._id && (
+                      <div className={`absolute ${isOwnMessage ? 'right-full mr-2' : 'left-full ml-2'} top-1/2 -translate-y-1/2 bg-white dark:bg-[#2a2a2a] rounded-lg shadow-lg px-3 py-2 border border-slate-200 dark:border-slate-600 z-10`}>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-2 whitespace-nowrap">Delete this message?</p>
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => setShowDeleteConfirm(null)}
+                            className="px-2 py-0.5 text-[10px] rounded bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => {
+                              deleteMessage(message._id);
+                              setShowDeleteConfirm(null);
+                            }}
+                            className="px-2 py-0.5 text-[10px] rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {/* Reaction picker popup */}
+                    {showReactionPicker === message._id && (
+                      <div className={`absolute ${isOwnMessage ? 'right-full mr-2' : 'left-full ml-2'} top-1/2 -translate-y-1/2 bg-white dark:bg-[#2a2a2a] rounded-lg shadow-lg px-2 py-1.5 border border-slate-200 dark:border-slate-600 z-10`}>
+                        <div className="flex items-center gap-0.5">
+                          {reactionEmojis.map((emoji) => (
+                            <button
+                              key={emoji}
+                              onClick={() => {
+                                reactToMessage(message._id, emoji);
+                                setShowReactionPicker(null);
+                              }}
+                              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors text-lg"
+                              title={emoji}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1314,25 +1952,117 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
             )}
           </button>
 
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyPress={handleKeyPress}
-            placeholder="Type a message..."
-            disabled={!isConnected}
-            className="flex-1 px-3 py-2 text-sm bg-slate-100 dark:bg-[#2a2a2a] border-0 rounded-lg focus:ring-2 focus:ring-yellow-500 text-slate-700 dark:text-slate-200 placeholder-slate-400 disabled:opacity-50"
-          />
-          <button
-            onClick={handleSend}
-            disabled={(!inputValue.trim() && pendingAttachments.length === 0) || !isConnected}
-            className="p-2 bg-yellow-500 hover:bg-yellow-600 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors"
-          >
-            <svg className="w-4 h-4 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
+          {/* Emoji picker button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              disabled={!isConnected}
+              className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#2a2a2a] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Add emoji"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+
+            {/* Emoji picker popup */}
+            {showEmojiPicker && (
+              <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-[#2a2a2a] rounded-xl shadow-xl border border-slate-200 dark:border-[#404040] overflow-hidden z-50">
+                <div className="max-h-64 overflow-y-auto p-2">
+                  {emojiCategories.map((category) => (
+                    <div key={category.name} className="mb-3 last:mb-0">
+                      <h4 className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 px-1">
+                        {category.name}
+                      </h4>
+                      <div className="grid grid-cols-8 gap-0.5">
+                        {category.emojis.map((emoji) => (
+                          <button
+                            key={emoji}
+                            onClick={() => handleEmojiSelect(emoji)}
+                            className="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-[#404040] rounded transition-colors"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Microphone / Voice recording button */}
+          {!isRecording ? (
+            <button
+              onClick={startRecording}
+              disabled={!isConnected || isUploadingVoice}
+              className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#2a2a2a] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Record voice message"
+            >
+              {isUploadingVoice ? (
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              )}
+            </button>
+          ) : null}
+
+          {/* Recording indicator (replaces input when recording) */}
+          {isRecording ? (
+            <div className="flex-1 flex items-center gap-3 px-3 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+              <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                Recording... {formatDuration(recordingDuration)} / {formatDuration(MAX_RECORDING_DURATION)}
+              </span>
+              <div className="flex-1" />
+              <button
+                onClick={cancelRecording}
+                className="p-1.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 rounded-lg transition-colors"
+                title="Cancel"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <button
+                onClick={stopRecording}
+                className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+                title="Stop and send"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyPress={handleKeyPress}
+                placeholder="Type a message..."
+                disabled={!isConnected}
+                className="flex-1 px-3 py-2 text-sm bg-slate-100 dark:bg-[#2a2a2a] border-0 rounded-lg focus:ring-2 focus:ring-yellow-500 text-slate-700 dark:text-slate-200 placeholder-slate-400 disabled:opacity-50"
+              />
+              <button
+                onClick={handleSend}
+                disabled={(!inputValue.trim() && pendingAttachments.length === 0) || !isConnected}
+                className="p-2 bg-yellow-500 hover:bg-yellow-600 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                <svg className="w-4 h-4 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1595,6 +2325,14 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
         <div
           className="fixed inset-0 z-40"
           onClick={() => setShowGroupMenu(false)}
+        />
+      )}
+
+      {/* Click outside to close emoji picker */}
+      {showEmojiPicker && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowEmojiPicker(false)}
         />
       )}
 

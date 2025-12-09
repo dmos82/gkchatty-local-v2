@@ -4,12 +4,13 @@ export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
 export type MessageType = 'text' | 'image' | 'file' | 'system';
 
 export interface IAttachment {
-  type: 'image' | 'file';
+  type: 'image' | 'file' | 'voice';
   url: string;
   filename: string;
   size: number;
   mimeType: string;
   s3Key?: string;
+  duration?: number; // Duration in seconds (for voice messages)
 }
 
 export interface IReadReceipt {
@@ -34,6 +35,17 @@ export interface ISystemData {
   targetUsername?: string;
 }
 
+export interface IReactionUser {
+  userId: Types.ObjectId;
+  username: string;
+  reactedAt: Date;
+}
+
+export interface IReaction {
+  emoji: string;
+  users: IReactionUser[];
+}
+
 export interface IDirectMessage extends Document {
   _id: Types.ObjectId;
   conversationId: Types.ObjectId;
@@ -53,6 +65,7 @@ export interface IDirectMessage extends Document {
   deletedAt?: Date;
   deletedBy?: Types.ObjectId;
   systemData?: ISystemData;
+  reactions?: IReaction[];
 
   // Instance methods
   markDelivered(userId: Types.ObjectId): Promise<void>;
@@ -61,12 +74,13 @@ export interface IDirectMessage extends Document {
 
 const AttachmentSchema = new Schema<IAttachment>(
   {
-    type: { type: String, enum: ['image', 'file'], required: true },
+    type: { type: String, enum: ['image', 'file', 'voice'], required: true },
     url: { type: String, required: true },
     filename: { type: String, required: true },
     size: { type: Number, required: true },
     mimeType: { type: String, required: true },
     s3Key: { type: String },
+    duration: { type: Number }, // Duration in seconds (for voice messages)
   },
   { _id: false }
 );
@@ -105,6 +119,23 @@ const SystemDataSchema = new Schema<ISystemData>(
     },
     targetUserId: { type: Schema.Types.ObjectId, ref: 'User' },
     targetUsername: { type: String },
+  },
+  { _id: false }
+);
+
+const ReactionUserSchema = new Schema<IReactionUser>(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    username: { type: String, required: true },
+    reactedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
+const ReactionSchema = new Schema<IReaction>(
+  {
+    emoji: { type: String, required: true },
+    users: [ReactionUserSchema],
   },
   { _id: false }
 );
@@ -151,6 +182,7 @@ const DirectMessageSchema = new Schema<IDirectMessage>(
     deletedAt: { type: Date },
     deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     systemData: SystemDataSchema,
+    reactions: [ReactionSchema],
   },
   {
     timestamps: true,

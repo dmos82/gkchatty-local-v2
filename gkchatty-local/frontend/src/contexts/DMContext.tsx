@@ -15,6 +15,11 @@ export interface UserPresence {
   status: PresenceStatus;
   lastSeenAt?: Date;
   iconUrl?: string | null;
+  customStatus?: string | null;
+  // Do Not Disturb fields
+  dndEnabled?: boolean;
+  dndUntil?: Date | string | null;
+  dndMessage?: string | null;
 }
 
 export interface LastMessage {
@@ -34,17 +39,30 @@ export interface Conversation {
   isMuted: boolean;
   isGroup: boolean;
   groupName?: string;
+  participantUsernames?: string[]; // For group chats
   updatedAt: Date;
   createdAt: Date;
 }
 
 export interface Attachment {
-  type: 'image' | 'file';
+  type: 'image' | 'file' | 'voice';
   url: string;
   filename: string;
   size: number;
   mimeType: string;
   s3Key?: string; // Optional - for copy-to-docs functionality
+  duration?: number; // Duration in seconds (for voice messages)
+}
+
+export interface ReactionUser {
+  userId: string;
+  username: string;
+  reactedAt: Date;
+}
+
+export interface Reaction {
+  emoji: string;
+  users: ReactionUser[];
 }
 
 export interface Message {
@@ -63,6 +81,7 @@ export interface Message {
     senderUsername: string;
   };
   attachments?: Attachment[];
+  reactions?: Reaction[];
   // Local tracking
   tempId?: string;
 }
@@ -93,7 +112,11 @@ interface DMContextType {
   hasMoreMessages: boolean;
   sendMessage: (content: string, attachments?: Attachment[]) => Promise<void>;
   loadMoreMessages: () => Promise<void>;
-  uploadAttachment: (file: File) => Promise<Attachment | null>;
+  uploadAttachment: (file: File, conversationId?: string) => Promise<Attachment | null>;
+  uploadVoiceMessage: (blob: Blob, duration: number, conversationId?: string) => Promise<Attachment | null>;
+  editMessage: (messageId: string, newContent: string) => void;
+  deleteMessage: (messageId: string) => void;
+  reactToMessage: (messageId: string, emoji: string) => void;
 
   // Users
   onlineUsers: UserPresence[];
@@ -105,7 +128,13 @@ interface DMContextType {
   sendTyping: () => void;
 
   // Presence
-  updatePresence: (status: PresenceStatus) => void;
+  updatePresence: (status: PresenceStatus, customStatus?: string) => void;
+
+  // Do Not Disturb
+  myDndEnabled: boolean;
+  myDndUntil: Date | null;
+  myDndMessage: string | null;
+  setDND: (enabled: boolean, dndUntil?: Date | null, dndMessage?: string | null) => void;
 
   // Unread count
   totalUnreadCount: number;
@@ -154,6 +183,11 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingSentRef = useRef<number>(0);
+
+  // Do Not Disturb state (for current user)
+  const [myDndEnabled, setMyDndEnabled] = useState(false);
+  const [myDndUntil, setMyDndUntil] = useState<Date | null>(null);
+  const [myDndMessage, setMyDndMessage] = useState<string | null>(null);
 
   // Track processed message IDs to prevent duplicate notification increments
   // (Backend emits to both conversation room and user room, causing duplicates)
@@ -393,16 +427,30 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       }
     });
 
-    // Handle presence updates
-    newSocket.on('presence:changed', ({ userId, status }: { userId: string; status: PresenceStatus }) => {
-      console.log('[DMContext] Presence changed:', userId, status);
+    // Handle presence updates (including DND)
+    newSocket.on('presence:changed', ({ userId, status, customStatus, dndEnabled, dndUntil, dndMessage }: {
+      userId: string;
+      status: PresenceStatus;
+      customStatus?: string;
+      dndEnabled?: boolean;
+      dndUntil?: string;
+      dndMessage?: string;
+    }) => {
+      console.log('[DMContext] Presence changed:', userId, status, customStatus, 'DND:', dndEnabled);
       // Update in conversations
       setConversations((prev) =>
         prev.map((conv) => {
           if (conv.otherParticipant._id === userId) {
             return {
               ...conv,
-              otherParticipant: { ...conv.otherParticipant, status },
+              otherParticipant: {
+                ...conv.otherParticipant,
+                status,
+                customStatus,
+                dndEnabled,
+                dndUntil: dndUntil ? new Date(dndUntil) : null,
+                dndMessage,
+              },
             };
           }
           return conv;
@@ -410,7 +458,14 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       );
       // Update in online users list
       setOnlineUsers((prev) =>
-        prev.map((u) => (u._id === userId ? { ...u, status } : u))
+        prev.map((u) => (u._id === userId ? {
+          ...u,
+          status,
+          customStatus,
+          dndEnabled,
+          dndUntil: dndUntil ? new Date(dndUntil) : null,
+          dndMessage,
+        } : u))
       );
     });
 
@@ -426,6 +481,42 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
           })
         );
       }
+    });
+
+    // Handle message edited
+    newSocket.on('dm:edited', ({ conversationId, messageId, newContent, editedAt }) => {
+      console.log('[DMContext] Message edited:', messageId);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, content: newContent, editedAt: new Date(editedAt) }
+            : m
+        )
+      );
+    });
+
+    // Handle message deleted
+    newSocket.on('dm:deleted', ({ conversationId, messageId, deletedAt }) => {
+      console.log('[DMContext] Message deleted:', messageId);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, isDeleted: true, content: '' }
+            : m
+        )
+      );
+    });
+
+    // Handle reaction updated
+    newSocket.on('dm:reaction_updated', ({ conversationId, messageId, reactions }) => {
+      console.log('[DMContext] Reaction updated on message:', messageId);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, reactions }
+            : m
+        )
+      );
     });
 
     // Handle new conversation notification (when someone messages us for the first time)
@@ -464,6 +555,18 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       console.log(`[DMContext] ${leftUser.username} left group: ${groupName}`);
       // Update the conversation's participant list if needed
       // For now, just log - could show a toast notification
+    });
+
+    // Handle DND update confirmation (for current user)
+    newSocket.on('dnd:updated', ({ dndEnabled, dndUntil, dndMessage }: {
+      dndEnabled: boolean;
+      dndUntil?: string;
+      dndMessage?: string;
+    }) => {
+      console.log('[DMContext] My DND updated:', dndEnabled, dndUntil, dndMessage);
+      setMyDndEnabled(dndEnabled);
+      setMyDndUntil(dndUntil ? new Date(dndUntil) : null);
+      setMyDndMessage(dndMessage || null);
     });
 
     setSocket(newSocket);
@@ -628,9 +731,10 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
 
   // Upload attachment
   const uploadAttachment = useCallback(
-    async (file: File): Promise<Attachment | null> => {
+    async (file: File, conversationId?: string): Promise<Attachment | null> => {
       const token = getToken();
-      if (!token || !selectedConversation) {
+      const targetConversationId = conversationId || selectedConversation?._id;
+      if (!token || !targetConversationId) {
         console.error('[DMContext] Cannot upload: no token or conversation');
         return null;
       }
@@ -641,7 +745,7 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       try {
         console.log('[DMContext] Uploading attachment:', file.name);
         const response = await fetch(
-          `${getSocketUrl()}/api/conversations/${selectedConversation._id}/attachments`,
+          `${getSocketUrl()}/api/conversations/${targetConversationId}/attachments`,
           {
             method: 'POST',
             headers: {
@@ -661,6 +765,49 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
         return data.attachment as Attachment;
       } catch (error) {
         console.error('[DMContext] Error uploading attachment:', error);
+        return null;
+      }
+    },
+    [getToken, selectedConversation]
+  );
+
+  // Upload voice message
+  const uploadVoiceMessage = useCallback(
+    async (blob: Blob, duration: number, conversationId?: string): Promise<Attachment | null> => {
+      const token = getToken();
+      const targetConversationId = conversationId || selectedConversation?._id;
+      if (!token || !targetConversationId) {
+        console.error('[DMContext] Cannot upload voice: no token or conversation');
+        return null;
+      }
+
+      const formData = new FormData();
+      formData.append('voice', blob, `voice_${Date.now()}.webm`);
+      formData.append('duration', duration.toString());
+
+      try {
+        console.log('[DMContext] Uploading voice message, duration:', duration);
+        const response = await fetch(
+          `${getSocketUrl()}/api/conversations/${targetConversationId}/voice`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          }
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Voice upload failed');
+        }
+
+        const data = await response.json();
+        console.log('[DMContext] Voice message uploaded:', data.attachment);
+        return data.attachment as Attachment;
+      } catch (error) {
+        console.error('[DMContext] Error uploading voice message:', error);
         return null;
       }
     },
@@ -749,10 +896,86 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     socket.emit('dm:typing', { conversationId: selectedConversation._id, isTyping: true });
   }, [selectedConversation, socket]);
 
+  // Edit message
+  const editMessage = useCallback(
+    (messageId: string, newContent: string) => {
+      if (!selectedConversation || !socket) return;
+      if (!newContent.trim()) return;
+
+      // Optimistic update
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, content: newContent.trim(), editedAt: new Date() }
+            : m
+        )
+      );
+
+      // Send via socket
+      socket.emit('dm:edit', {
+        conversationId: selectedConversation._id,
+        messageId,
+        newContent: newContent.trim(),
+      });
+    },
+    [selectedConversation, socket]
+  );
+
+  // Delete message
+  const deleteMessage = useCallback(
+    (messageId: string) => {
+      if (!selectedConversation || !socket) return;
+
+      // Optimistic update
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, isDeleted: true, content: '' }
+            : m
+        )
+      );
+
+      // Send via socket
+      socket.emit('dm:delete', {
+        conversationId: selectedConversation._id,
+        messageId,
+      });
+    },
+    [selectedConversation, socket]
+  );
+
+  // React to message
+  const reactToMessage = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!selectedConversation || !socket) return;
+
+      // Send via socket (server will broadcast updated reactions)
+      socket.emit('dm:react', {
+        conversationId: selectedConversation._id,
+        messageId,
+        emoji,
+      });
+    },
+    [selectedConversation, socket]
+  );
+
   // Update presence
   const updatePresence = useCallback(
-    (status: PresenceStatus) => {
-      socket?.emit('presence:update', { status });
+    (status: PresenceStatus, customStatus?: string) => {
+      socket?.emit('presence:update', { status, customStatus });
+    },
+    [socket]
+  );
+
+  // Set Do Not Disturb
+  const setDND = useCallback(
+    (enabled: boolean, dndUntil?: Date | null, dndMessage?: string | null) => {
+      console.log('[DMContext] Setting DND:', enabled, dndUntil, dndMessage);
+      socket?.emit('presence:set_dnd', {
+        enabled,
+        dndUntil: dndUntil?.toISOString(),
+        dndMessage,
+      });
     },
     [socket]
   );
@@ -802,12 +1025,20 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
     sendMessage,
     loadMoreMessages,
     uploadAttachment,
+    uploadVoiceMessage,
+    editMessage,
+    deleteMessage,
+    reactToMessage,
     onlineUsers,
     isLoadingUsers,
     refreshOnlineUsers,
     typingUsers,
     sendTyping,
     updatePresence,
+    myDndEnabled,
+    myDndUntil,
+    myDndMessage,
+    setDND,
     totalUnreadCount,
     markConversationAsRead,
     setOpenConversationIds,

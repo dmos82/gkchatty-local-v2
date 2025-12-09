@@ -7,6 +7,30 @@ import User from '../models/UserModel';
 import UserSettings from '../models/UserSettings';
 import { RequestWithUser } from '../middleware/authMiddleware';
 import socketService from '../services/socketService';
+import { getPresignedUrlForView } from '../utils/s3Helper';
+
+/**
+ * Helper function to generate a fresh URL from a stored icon key/URL
+ * Handles both legacy URLs (already presigned) and new key-based storage
+ */
+const getIconUrl = async (storedIconValue: string | null | undefined): Promise<string | null> => {
+  if (!storedIconValue) return null;
+
+  // If it looks like a URL (starts with http), return as-is (legacy support)
+  // If it's a key (like "user_icons/..."), generate a fresh presigned URL
+  if (storedIconValue.startsWith('http://') || storedIconValue.startsWith('https://')) {
+    // Legacy presigned URL - might be expired, but try anyway
+    return storedIconValue;
+  }
+
+  // It's an S3 key - generate a fresh presigned URL
+  try {
+    return await getPresignedUrlForView(storedIconValue);
+  } catch (error) {
+    console.error('[getIconUrl] Error generating presigned URL:', error);
+    return null;
+  }
+};
 
 /**
  * Get all conversations for the authenticated user
@@ -69,6 +93,7 @@ export const getConversations = async (
           username: otherUsername,
           status: presence?.status || 'offline',
           lastSeenAt: presence?.lastSeenAt,
+          customStatus: presence?.customStatus || null,
         },
         lastMessage: conv.lastMessage,
         unreadCount: userMeta.unreadCount || 0,
@@ -76,6 +101,7 @@ export const getConversations = async (
         isMuted: userMeta.isMuted || false,
         isGroup: conv.isGroup,
         groupName: conv.groupName,
+        participantUsernames: conv.isGroup ? conv.participantUsernames : undefined,
         updatedAt: conv.updatedAt,
         createdAt: conv.createdAt,
       };
@@ -148,6 +174,7 @@ export const createConversation = async (
           username: recipient.username,
           status: presence?.status || 'offline',
           lastSeenAt: presence?.lastSeenAt,
+          customStatus: presence?.customStatus || null,
         },
         lastMessage: conversation.lastMessage,
         unreadCount: 0,
@@ -223,6 +250,7 @@ export const getConversation = async (
           username: otherUsername,
           status: presence?.status || 'offline',
           lastSeenAt: presence?.lastSeenAt,
+          customStatus: presence?.customStatus || null,
         },
         lastMessage: conversation.lastMessage,
         unreadCount: userMeta.unreadCount || 0,
@@ -391,6 +419,93 @@ export const getMessages = async (
             ? formattedMessages[formattedMessages.length - 1]._id
             : null,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Search messages in a conversation
+ * GET /api/conversations/:id/messages/search?q=term
+ */
+export const searchMessages = async (
+  req: RequestWithUser,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id;
+    const { id } = req.params;
+    const { q, limit = '50' } = req.query;
+
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Not authenticated' });
+      return;
+    }
+
+    if (!Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid conversation ID' });
+      return;
+    }
+
+    if (!q || typeof q !== 'string' || q.trim().length === 0) {
+      res.status(400).json({ success: false, message: 'Search query is required' });
+      return;
+    }
+
+    // Verify user is participant
+    const conversation = await Conversation.findOne({
+      _id: id,
+      participants: userId,
+    });
+
+    if (!conversation) {
+      res.status(404).json({ success: false, message: 'Conversation not found' });
+      return;
+    }
+
+    const searchLimit = Math.min(parseInt(limit as string) || 50, 100);
+    const searchTerm = q.trim();
+
+    // Escape special regex characters for safety
+    const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Search messages by content (case-insensitive)
+    const messages = await DirectMessage.find({
+      conversationId: new Types.ObjectId(id),
+      isDeleted: false,
+      content: { $regex: escapedTerm, $options: 'i' },
+    })
+      .sort({ createdAt: -1 }) // Most recent first
+      .limit(searchLimit)
+      .lean();
+
+    const formattedMessages = messages.map((msg) => ({
+      _id: msg._id.toString(),
+      senderId: msg.senderId.toString(),
+      senderUsername: msg.senderUsername,
+      content: msg.content,
+      messageType: msg.messageType,
+      status: msg.status,
+      createdAt: msg.createdAt,
+      editedAt: msg.editedAt,
+      isDeleted: msg.isDeleted,
+      replyTo: msg.replyTo
+        ? {
+            messageId: msg.replyTo.messageId.toString(),
+            content: msg.replyTo.content,
+            senderUsername: msg.replyTo.senderUsername,
+          }
+        : undefined,
+      attachments: msg.attachments,
+    }));
+
+    res.json({
+      success: true,
+      query: searchTerm,
+      totalResults: formattedMessages.length,
+      messages: formattedMessages,
     });
   } catch (error) {
     next(error);
@@ -619,17 +734,23 @@ export const getOnlineUsers = async (
       }
     });
 
-    const usersWithPresence = users.map((user) => {
-      const presence = presenceMap.get(user._id.toString());
-      const iconUrl = iconMap.get(user._id.toString());
-      return {
-        _id: user._id.toString(),
-        username: user.username,
-        status: presence?.status || 'offline',
-        lastSeenAt: presence?.lastSeenAt,
-        iconUrl: iconUrl || null,
-      };
-    });
+    // Generate fresh presigned URLs for all user icons
+    const usersWithPresence = await Promise.all(
+      users.map(async (user) => {
+        const presence = presenceMap.get(user._id.toString());
+        const storedIconValue = iconMap.get(user._id.toString());
+        // Use helper to generate fresh URL from stored key
+        const iconUrl = await getIconUrl(storedIconValue);
+        return {
+          _id: user._id.toString(),
+          username: user.username,
+          status: presence?.status || 'offline',
+          lastSeenAt: presence?.lastSeenAt,
+          iconUrl,
+          customStatus: presence?.customStatus || null,
+        };
+      })
+    );
 
     // Sort: online first, then by username
     usersWithPresence.sort((a, b) => {

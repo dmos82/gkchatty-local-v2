@@ -15,6 +15,28 @@ import { aiLimiter } from '../middleware/rateLimiter';
 import { getContext } from '../services/ragService';
 import { auditChatQuery } from '../middleware/auditMiddleware';
 import { recordKnowledgeGap } from '../services/knowledgeGapService';
+import { getPresignedUrlForView } from '../utils/s3Helper';
+
+/**
+ * Helper function to generate a fresh URL from a stored icon key/URL
+ * Handles both legacy URLs (already presigned) and new key-based storage
+ */
+const getIconUrlFromStored = async (storedIconValue: string | null | undefined): Promise<string | null> => {
+  if (!storedIconValue) return null;
+
+  // If it looks like a URL (starts with http), return as-is (legacy support)
+  if (storedIconValue.startsWith('http://') || storedIconValue.startsWith('https://')) {
+    return storedIconValue;
+  }
+
+  // It's an S3 key - generate a fresh presigned URL
+  try {
+    return await getPresignedUrlForView(storedIconValue);
+  } catch (error) {
+    log.error({ error }, '[getIconUrlFromStored] Error generating presigned URL');
+    return null;
+  }
+};
 
 // Type for chat response object
 interface ChatResponseObject {
@@ -879,13 +901,14 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
       : undefined;
 
     // Check if we should include a custom user icon
-    let iconUrl = null;
+    let iconUrl: string | null = null;
     try {
       if (knowledgeBaseTarget === 'user') {
         // For user-targeted queries, look for a custom icon
         const userSettingsForIcon = await UserSettings.findOne({ userId }); // Renamed to avoid conflict with userSettingsDoc
         if (userSettingsForIcon?.iconUrl) {
-          iconUrl = userSettingsForIcon.iconUrl;
+          // Generate fresh presigned URL from stored key
+          iconUrl = await getIconUrlFromStored(userSettingsForIcon.iconUrl);
           log.debug(
             { userId, knowledgeBaseTarget },
             '[Chat] Using custom user icon for "user" knowledge base target'

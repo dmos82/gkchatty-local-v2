@@ -85,6 +85,10 @@ export default function RootLayout({
 
         {/* Touch Icons */}
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/gk_logo_new.png" />
+
+        {/* PWA Manifest */}
+        <link rel="manifest" href="/manifest.json" />
       </head>
       <body className={`${inter.className} ${livvic.variable} ${mPlus2.variable}`}>
         {/* TODO: SettingsProvider commented out - implementation not found */}

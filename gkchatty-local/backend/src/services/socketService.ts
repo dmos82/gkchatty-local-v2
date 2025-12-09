@@ -65,6 +65,29 @@ interface PresenceUpdatePayload {
   customStatus?: string;
 }
 
+interface SetDNDPayload {
+  enabled: boolean;
+  dndUntil?: string; // ISO date string
+  dndMessage?: string;
+}
+
+interface EditMessagePayload {
+  conversationId: string;
+  messageId: string;
+  newContent: string;
+}
+
+interface DeleteMessagePayload {
+  conversationId: string;
+  messageId: string;
+}
+
+interface ReactMessagePayload {
+  conversationId: string;
+  messageId: string;
+  emoji: string; // 👍, ❤️, 😂, 😮, 😢, 🎉
+}
+
 // Socket service singleton
 class SocketService {
   private io: Server | null = null;
@@ -226,12 +249,18 @@ class SocketService {
     socket.on('dm:send', (payload: SendMessagePayload) => this.handleSendMessage(socket, payload));
     socket.on('dm:typing', (payload: TypingPayload) => this.handleTyping(socket, payload));
     socket.on('dm:mark_read', (payload: MarkReadPayload) => this.handleMarkRead(socket, payload));
+    socket.on('dm:edit', (payload: EditMessagePayload) => this.handleEditMessage(socket, payload));
+    socket.on('dm:delete', (payload: DeleteMessagePayload) => this.handleDeleteMessage(socket, payload));
+    socket.on('dm:react', (payload: ReactMessagePayload) => this.handleReactToMessage(socket, payload));
 
     // Presence Events
     socket.on('presence:update', (payload: PresenceUpdatePayload) =>
       this.handlePresenceUpdate(socket, payload)
     );
     socket.on('presence:heartbeat', () => this.handleHeartbeat(socket));
+    socket.on('presence:set_dnd', (payload: SetDNDPayload) =>
+      this.handleSetDND(socket, payload)
+    );
 
     // Conversation Events
     socket.on('conversation:join', (conversationId: string) =>
@@ -338,42 +367,71 @@ class SocketService {
         replyTo: message.replyTo,
       };
 
+      // Get DND status for all participants (to skip real-time delivery for DND users)
+      const participantIds = conversation.participants.filter(
+        (id: Types.ObjectId) => !id.equals(socket.userObjectId)
+      );
+      const presenceMap = await UserPresence.getBulkPresence(participantIds);
+
+      // Check which participants are in DND mode
+      const isDNDActive = (participantId: string): boolean => {
+        const presence = presenceMap.get(participantId);
+        if (!presence?.dndEnabled) return false;
+        // If dndUntil is set, check if it has passed
+        if (presence.dndUntil && new Date(presence.dndUntil) < new Date()) {
+          return false; // DND has expired
+        }
+        return true;
+      };
+
       // Use socket.to() instead of io.to() to exclude the sender
+      // Note: This broadcasts to conversation room, but DND users won't see notifications
       socket.to(`conversation:${conversationId}`).emit('dm:receive', messageData);
 
       // ALSO emit to each participant's user room to handle NEW conversations
       // where recipients haven't joined the conversation room yet
+      // SKIP real-time delivery for users in DND mode
       for (const participantId of conversation.participants) {
         if (!participantId.equals(socket.userObjectId)) {
-          // Emit to user:${participantId} room (they always join this on connect)
-          this.io?.to(`user:${participantId.toString()}`).emit('dm:receive', messageData);
+          const participantIdStr = participantId.toString();
 
-          // Also emit conversation:new so recipients can add new conversations to their list
+          // Skip real-time notification for DND users
+          if (isDNDActive(participantIdStr)) {
+            console.log(`[Socket DM] Skipping real-time delivery for DND user ${participantIdStr}`);
+            continue;
+          }
+
+          // Emit to user:${participantId} room (they always join this on connect)
+          this.io?.to(`user:${participantIdStr}`).emit('dm:receive', messageData);
+
+          // Only emit conversation:new for 1-on-1 DMs, NOT for group chats
           // This ensures User B sees the chat when User A messages them for the first time
-          const conversationData = {
-            _id: conversation._id.toString(),
-            otherParticipant: {
-              _id: socket.userId,
-              username: socket.username,
-              status: 'online' as const, // Sender is obviously online
-            },
-            lastMessage: {
-              content: message.content.substring(0, 100),
-              senderId: socket.userId,
-              senderUsername: socket.username,
-              sentAt: message.createdAt,
-              isRead: false,
-            },
-            unreadCount: 1,
-            isArchived: false,
-            isMuted: false,
-            isGroup: conversation.isGroup,
-            groupName: conversation.groupName,
-            updatedAt: conversation.updatedAt,
-            createdAt: conversation.createdAt,
-          };
-          this.io?.to(`user:${participantId.toString()}`).emit('conversation:new', conversationData);
-          console.log(`[Socket DM] Emitted conversation:new to user:${participantId} for chat visibility`);
+          // Group chats are shown separately in the Groups section and don't need this event
+          if (!conversation.isGroup) {
+            const conversationData = {
+              _id: conversation._id.toString(),
+              otherParticipant: {
+                _id: socket.userId,
+                username: socket.username,
+                status: 'online' as const, // Sender is obviously online
+              },
+              lastMessage: {
+                content: message.content.substring(0, 100),
+                senderId: socket.userId,
+                senderUsername: socket.username,
+                sentAt: message.createdAt,
+                isRead: false,
+              },
+              unreadCount: 1,
+              isArchived: false,
+              isMuted: false,
+              isGroup: false,
+              updatedAt: conversation.updatedAt,
+              createdAt: conversation.createdAt,
+            };
+            this.io?.to(`user:${participantIdStr}`).emit('conversation:new', conversationData);
+            console.log(`[Socket DM] Emitted conversation:new to user:${participantId} for chat visibility`);
+          }
         }
       }
 
@@ -481,6 +539,203 @@ class SocketService {
   }
 
   /**
+   * Handle editing a message
+   */
+  private async handleEditMessage(
+    socket: AuthenticatedSocket,
+    payload: EditMessagePayload
+  ): Promise<void> {
+    try {
+      const { conversationId, messageId, newContent } = payload;
+
+      if (!conversationId || !messageId || !newContent?.trim()) {
+        socket.emit('dm:error', { messageId, error: 'Invalid edit payload' });
+        return;
+      }
+
+      // Find the message and verify ownership
+      const message = await DirectMessage.findOne({
+        _id: new Types.ObjectId(messageId),
+        conversationId: new Types.ObjectId(conversationId),
+        senderId: socket.userObjectId,
+        isDeleted: false,
+      });
+
+      if (!message) {
+        socket.emit('dm:error', { messageId, error: 'Message not found or not authorized' });
+        return;
+      }
+
+      // Update the message
+      message.content = newContent.trim();
+      message.editedAt = new Date();
+      await message.save();
+
+      // Broadcast edit to all participants in the conversation
+      const editData = {
+        conversationId,
+        messageId,
+        newContent: message.content,
+        editedAt: message.editedAt,
+      };
+
+      // Emit to conversation room (all participants)
+      this.io?.to(`conversation:${conversationId}`).emit('dm:edited', editData);
+
+      console.log(`[Socket DM] Message ${messageId} edited by ${socket.username}`);
+    } catch (error: any) {
+      console.error('[Socket DM] Error editing message:', error.message);
+      socket.emit('dm:error', { messageId: payload.messageId, error: 'Failed to edit message' });
+    }
+  }
+
+  /**
+   * Handle deleting a message (soft delete)
+   */
+  private async handleDeleteMessage(
+    socket: AuthenticatedSocket,
+    payload: DeleteMessagePayload
+  ): Promise<void> {
+    try {
+      const { conversationId, messageId } = payload;
+
+      if (!conversationId || !messageId) {
+        socket.emit('dm:error', { messageId, error: 'Invalid delete payload' });
+        return;
+      }
+
+      // Find the message and verify ownership
+      const message = await DirectMessage.findOne({
+        _id: new Types.ObjectId(messageId),
+        conversationId: new Types.ObjectId(conversationId),
+        senderId: socket.userObjectId,
+        isDeleted: false,
+      });
+
+      if (!message) {
+        socket.emit('dm:error', { messageId, error: 'Message not found or not authorized' });
+        return;
+      }
+
+      // Soft delete the message
+      message.isDeleted = true;
+      message.deletedAt = new Date();
+      message.deletedBy = socket.userObjectId;
+      await message.save();
+
+      // Broadcast deletion to all participants in the conversation
+      const deleteData = {
+        conversationId,
+        messageId,
+        deletedAt: message.deletedAt,
+      };
+
+      // Emit to conversation room (all participants)
+      this.io?.to(`conversation:${conversationId}`).emit('dm:deleted', deleteData);
+
+      console.log(`[Socket DM] Message ${messageId} deleted by ${socket.username}`);
+    } catch (error: any) {
+      console.error('[Socket DM] Error deleting message:', error.message);
+      socket.emit('dm:error', { messageId: payload.messageId, error: 'Failed to delete message' });
+    }
+  }
+
+  /**
+   * Handle adding/removing a reaction to a message (toggle behavior)
+   */
+  private async handleReactToMessage(
+    socket: AuthenticatedSocket,
+    payload: ReactMessagePayload
+  ): Promise<void> {
+    try {
+      const { conversationId, messageId, emoji } = payload;
+
+      if (!conversationId || !messageId || !emoji) {
+        socket.emit('dm:error', { messageId, error: 'Invalid reaction payload' });
+        return;
+      }
+
+      // Validate emoji is one of the allowed emojis
+      const allowedEmojis = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
+      if (!allowedEmojis.includes(emoji)) {
+        socket.emit('dm:error', { messageId, error: 'Invalid emoji' });
+        return;
+      }
+
+      // Find the message
+      const message = await DirectMessage.findOne({
+        _id: new Types.ObjectId(messageId),
+        conversationId: new Types.ObjectId(conversationId),
+        isDeleted: false,
+      });
+
+      if (!message) {
+        socket.emit('dm:error', { messageId, error: 'Message not found' });
+        return;
+      }
+
+      // Initialize reactions array if not exists
+      if (!message.reactions) {
+        message.reactions = [];
+      }
+
+      // Find existing reaction for this emoji
+      const existingReaction = message.reactions.find(r => r.emoji === emoji);
+
+      if (existingReaction) {
+        // Check if user already reacted with this emoji
+        const userIndex = existingReaction.users.findIndex(
+          u => u.userId.toString() === socket.userId
+        );
+
+        if (userIndex >= 0) {
+          // User already reacted - remove their reaction (toggle off)
+          existingReaction.users.splice(userIndex, 1);
+
+          // If no users left for this emoji, remove the emoji entry
+          if (existingReaction.users.length === 0) {
+            message.reactions = message.reactions.filter(r => r.emoji !== emoji);
+          }
+        } else {
+          // User hasn't reacted with this emoji - add their reaction
+          existingReaction.users.push({
+            userId: socket.userObjectId,
+            username: socket.username,
+            reactedAt: new Date(),
+          });
+        }
+      } else {
+        // No one has reacted with this emoji yet - create new reaction
+        message.reactions.push({
+          emoji,
+          users: [{
+            userId: socket.userObjectId,
+            username: socket.username,
+            reactedAt: new Date(),
+          }],
+        });
+      }
+
+      await message.save();
+
+      // Broadcast updated reactions to all participants in the conversation
+      const reactionData = {
+        conversationId,
+        messageId,
+        reactions: message.reactions,
+      };
+
+      // Emit to conversation room (all participants)
+      this.io?.to(`conversation:${conversationId}`).emit('dm:reaction_updated', reactionData);
+
+      console.log(`[Socket DM] Reaction ${emoji} toggled on message ${messageId} by ${socket.username}`);
+    } catch (error: any) {
+      console.error('[Socket DM] Error handling reaction:', error.message);
+      socket.emit('dm:error', { messageId: payload.messageId, error: 'Failed to update reaction' });
+    }
+  }
+
+  /**
    * Handle presence status update
    */
   private async handlePresenceUpdate(
@@ -502,6 +757,61 @@ class SocketService {
       }
     } catch (error: any) {
       console.error('[Socket] Heartbeat error:', error.message);
+    }
+  }
+
+  /**
+   * Handle setting Do Not Disturb mode
+   */
+  private async handleSetDND(
+    socket: AuthenticatedSocket,
+    payload: SetDNDPayload
+  ): Promise<void> {
+    try {
+      console.log(`[Socket DND] Received presence:set_dnd from ${socket.username}: enabled=${payload.enabled}`);
+
+      const presence = await UserPresence.findOne({ userId: socket.userObjectId });
+      if (!presence) {
+        console.error(`[Socket DND] Presence not found for ${socket.username}`);
+        return;
+      }
+
+      // Update DND fields
+      presence.dndEnabled = payload.enabled;
+      if (payload.enabled) {
+        presence.dndUntil = payload.dndUntil ? new Date(payload.dndUntil) : undefined;
+        presence.dndMessage = payload.dndMessage?.substring(0, 100);
+      } else {
+        presence.dndUntil = undefined;
+        presence.dndMessage = undefined;
+      }
+
+      await presence.save();
+
+      // Broadcast DND status change to all users
+      console.log(`[Socket DND] Broadcasting presence:changed for ${socket.username} with DND=${payload.enabled}`);
+      this.io?.emit('presence:changed', {
+        userId: socket.userId,
+        username: socket.username,
+        status: presence.status,
+        customStatus: presence.customStatus,
+        lastSeenAt: presence.lastSeenAt,
+        dndEnabled: presence.dndEnabled,
+        dndUntil: presence.dndUntil,
+        dndMessage: presence.dndMessage,
+      });
+
+      // Acknowledge to sender
+      socket.emit('dnd:updated', {
+        dndEnabled: presence.dndEnabled,
+        dndUntil: presence.dndUntil,
+        dndMessage: presence.dndMessage,
+      });
+
+      console.log(`[Socket DND] ${socket.username} DND mode ${payload.enabled ? 'enabled' : 'disabled'}`);
+    } catch (error: any) {
+      console.error('[Socket DND] Error setting DND:', error.message);
+      socket.emit('dnd:error', { error: error.message });
     }
   }
 
@@ -576,6 +886,9 @@ class SocketService {
         status: 'offline',
         customStatus: presence?.customStatus,
         lastSeenAt: new Date(),
+        dndEnabled: presence?.dndEnabled,
+        dndUntil: presence?.dndUntil,
+        dndMessage: presence?.dndMessage,
       });
 
       console.log(`[Socket FORCE OFFLINE] Broadcasted offline status for ${socket.username}`);
@@ -614,7 +927,21 @@ class SocketService {
           const userAgent = socket.handshake.headers['user-agent'] || '';
           const deviceType = this.detectDeviceType(userAgent);
           await presence.addSocket(socketId, deviceType, userAgent);
+        } else if (status === 'offline') {
+          // When explicitly going offline, clear all socket data (logout scenario)
+          presence.socketIds = [];
+          presence.activeDevices = [];
+          presence.status = 'offline';
+          presence.lastSeenAt = new Date();
+          if (customStatus !== undefined) {
+            presence.customStatus = customStatus;
+          }
+          await presence.save();
+          // Also clear in-memory socket tracking for this user
+          this.userSocketMap.delete(socket.userId);
+          console.log(`[Socket Presence] ${socket.username} explicitly set to offline, socketIds and userSocketMap cleared`);
         } else {
+          // For 'away' or 'busy' status changes
           presence.status = status;
           if (customStatus !== undefined) {
             presence.customStatus = customStatus;
@@ -631,6 +958,9 @@ class SocketService {
         status: presence.status,
         customStatus: presence.customStatus,
         lastSeenAt: presence.lastSeenAt,
+        dndEnabled: presence.dndEnabled,
+        dndUntil: presence.dndUntil,
+        dndMessage: presence.dndMessage,
       });
 
       console.log(`[Socket Presence] ${socket.username} is now ${presence.status}`);
