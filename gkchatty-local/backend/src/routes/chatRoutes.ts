@@ -933,53 +933,110 @@ router.post('/', auditChatQuery, async (req: Request, res: Response): Promise<vo
 
     // --- FIX: Validate sources exist in MongoDB to filter out ghost documents ---
     // Ghost documents are ones that exist in Pinecone but have been deleted from MongoDB
+    // or belong to a different user (cross-user leakage)
     let validatedSources = uniqueFinalSources;
     if (uniqueFinalSources.length > 0) {
       try {
-        // Separate sources by type
-        const userDocIds = uniqueFinalSources
-          .filter((s: any) => s.type === 'user' && s.documentId)
-          .map((s: any) => s.documentId);
-        const systemDocIds = uniqueFinalSources
-          .filter((s: any) => s.type === 'system' && s.documentId)
+        log.debug(
+          {
+            knowledgeBaseTarget,
+            sourcesCount: uniqueFinalSources.length,
+            sources: uniqueFinalSources.map((s: any) => ({
+              fileName: s.fileName,
+              documentId: s.documentId,
+              type: s.type
+            }))
+          },
+          '[Ghost Filter] Starting validation'
+        );
+
+        // Collect ALL documentIds from sources, regardless of type
+        const allDocIds = uniqueFinalSources
+          .filter((s: any) => s.documentId)
           .map((s: any) => s.documentId);
 
-        // Query MongoDB to find which documents actually exist
-        const existingDocIds = new Set<string>();
+        // Query MongoDB to find which documents this user actually owns
+        const existingUserDocIds = new Set<string>();
+        const existingSystemDocIds = new Set<string>();
 
-        if (userDocIds.length > 0) {
-          // CRITICAL: Also filter by userId to ensure documents belong to THIS user
-          // Without userId filter, documents from other users would pass validation
+        if (allDocIds.length > 0) {
+          // Check user documents - MUST belong to current user
           const existingUserDocs = await UserDocument.find({
-            _id: { $in: userDocIds.map((id: string) => new Types.ObjectId(id)) },
-            userId: new Types.ObjectId(userId), // Only this user's documents
+            _id: { $in: allDocIds.map((id: string) => new Types.ObjectId(id)) },
+            userId: new Types.ObjectId(userId), // CRITICAL: Only this user's documents
           }).select('_id').lean();
-          existingUserDocs.forEach((doc: any) => existingDocIds.add(doc._id.toString()));
-        }
+          existingUserDocs.forEach((doc: any) => existingUserDocIds.add(doc._id.toString()));
 
-        if (systemDocIds.length > 0) {
+          // Check system documents (no userId filter needed)
           const existingSystemDocs = await SystemKbDocument.find({
-            _id: { $in: systemDocIds.map((id: string) => new Types.ObjectId(id)) },
+            _id: { $in: allDocIds.map((id: string) => new Types.ObjectId(id)) },
           }).select('_id').lean();
-          existingSystemDocs.forEach((doc: any) => existingDocIds.add(doc._id.toString()));
+          existingSystemDocs.forEach((doc: any) => existingSystemDocIds.add(doc._id.toString()));
         }
 
-        // Filter out ghost documents (those not found in MongoDB)
+        log.debug(
+          {
+            allDocIdsCount: allDocIds.length,
+            existingUserDocsCount: existingUserDocIds.size,
+            existingSystemDocsCount: existingSystemDocIds.size,
+          },
+          '[Ghost Filter] MongoDB lookup results'
+        );
+
+        // Filter sources based on knowledgeBaseTarget mode
         const beforeCount = uniqueFinalSources.length;
         validatedSources = uniqueFinalSources.filter((source: any) => {
-          if (!source.documentId) return true; // Keep sources without documentId
-          const exists = existingDocIds.has(source.documentId);
-          if (!exists) {
+          // Sources without documentId are invalid - filter them out
+          if (!source.documentId) {
+            log.warn(
+              { fileName: source.fileName, type: source.type },
+              '[Ghost Document] Filtering source without documentId'
+            );
+            return false;
+          }
+
+          // Check if document exists in user's collection OR system collection
+          const isUserDoc = existingUserDocIds.has(source.documentId);
+          const isSystemDoc = existingSystemDocIds.has(source.documentId);
+
+          // For "My Docs" mode, only allow user documents owned by current user
+          if (knowledgeBaseTarget === 'user') {
+            if (!isUserDoc) {
+              log.warn(
+                { documentId: source.documentId, fileName: source.fileName, type: source.type, userId },
+                '[Ghost Document] Filtering out source - not found in current user\'s documents'
+              );
+              return false;
+            }
+            return true;
+          }
+
+          // For "System KB" mode, only allow system documents
+          if (knowledgeBaseTarget === 'system') {
+            if (!isSystemDoc) {
+              log.warn(
+                { documentId: source.documentId, fileName: source.fileName, type: source.type },
+                '[Ghost Document] Filtering out source - not found in system KB'
+              );
+              return false;
+            }
+            return true;
+          }
+
+          // For "Hybrid" mode, allow either user docs (owned by user) or system docs
+          if (!isUserDoc && !isSystemDoc) {
             log.warn(
               { documentId: source.documentId, fileName: source.fileName, type: source.type, userId },
-              '[Ghost Document] Filtering out source that exists in Pinecone but not in MongoDB (or belongs to different user)'
+              '[Ghost Document] Filtering out source - not found in user docs or system KB'
             );
+            return false;
           }
-          return exists;
+          return true;
         });
 
         log.info(
           {
+            knowledgeBaseTarget,
             beforeValidation: beforeCount,
             afterValidation: validatedSources.length,
             ghostDocsRemoved: beforeCount - validatedSources.length,
