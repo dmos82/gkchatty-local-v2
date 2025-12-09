@@ -986,19 +986,22 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       const token = getToken();
       if (!token) return;
 
+      // OPTIMISTIC UPDATE: Clear badge immediately for instant UI response
+      // This fixes Chromium-specific badge persistence issues
+      setConversations((prev) =>
+        prev.map((c) => (c._id === conversationId ? { ...c, unreadCount: 0 } : c))
+      );
+
       try {
-        // Always call API to ensure backend state is synced
-        // This fixes edge cases where frontend/backend unread counts diverge
-        await fetch(`${getSocketUrl()}/api/conversations/${conversationId}/read`, {
+        // Then sync with backend (fire and forget pattern for better UX)
+        fetch(`${getSocketUrl()}/api/conversations/${conversationId}/read`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
           },
+        }).catch((error) => {
+          console.error('[DMContext] Error marking conversation as read:', error);
         });
-        // Update local state to 0
-        setConversations((prev) =>
-          prev.map((c) => (c._id === conversationId ? { ...c, unreadCount: 0 } : c))
-        );
       } catch (error) {
         console.error('[DMContext] Error marking conversation as read:', error);
       }
