@@ -64,12 +64,33 @@ interface VoiceVideoCallContextType {
 
 const VoiceVideoCallContext = createContext<VoiceVideoCallContextType | undefined>(undefined);
 
-// STUN servers for NAT traversal
+// ICE servers for NAT traversal
+// STUN: Discovers public IP (works for most NATs)
+// TURN: Relays traffic when direct connection fails (symmetric NATs, firewalls)
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
+    // Google STUN servers (free, no auth required)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    // OpenRelay TURN servers (free public TURN)
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 interface VoiceVideoCallProviderProps {
