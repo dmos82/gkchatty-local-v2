@@ -694,20 +694,15 @@ export const VoiceVideoCallProvider: React.FC<VoiceVideoCallProviderProps> = ({ 
       cleanup();
     };
 
-    const handleVisibilityChange = () => {
-      // When user navigates away (hidden), end the call
-      if (document.visibilityState === 'hidden') {
-        const currentCall = activeCallRef.current;
-        if (currentCall && socket) {
-          console.log('[VoiceVideoCall] Page hidden (navigated away), ending call');
-          socket.emit('call:end', { callId: currentCall.callId });
-          cleanup();
-        }
-      }
-    };
+    // Note: We intentionally do NOT end calls on visibilitychange (tab switch)
+    // Users should be able to switch tabs while on a call. The call only ends when:
+    // 1. User clicks "End Call" button
+    // 2. User closes/navigates away from the page (beforeunload)
+    // 3. WebRTC connection fails/disconnects
+    // 4. Other party ends the call
 
     const handlePopState = () => {
-      // Handle browser back/forward navigation
+      // Handle browser back/forward navigation (actual page change within the app)
       const currentCall = activeCallRef.current;
       if (currentCall && socket) {
         console.log('[VoiceVideoCall] Browser navigation detected, ending call');
@@ -717,12 +712,10 @@ export const VoiceVideoCallProvider: React.FC<VoiceVideoCallProviderProps> = ({ 
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('popstate', handlePopState);
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('popstate', handlePopState);
     };
   }, [socket, cleanup]);
