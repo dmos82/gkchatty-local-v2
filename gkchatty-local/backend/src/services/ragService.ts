@@ -23,7 +23,7 @@ function getLegacyUserNamespace(userId: string): string {
 
 const KEYWORD_SEARCH_LIMIT = 5;
 const SEMANTIC_SEARCH_TOP_K = 8;
-const MIN_CONFIDENCE_SCORE = 0.2; // Lowered from 0.3 - semantic search typically uses 0.15-0.25 thresholds
+const MIN_CONFIDENCE_SCORE = 0.35; // Raised to filter out low-quality matches - improves response accuracy
 const KWD_BOOST_FACTOR = 1.5;
 
 interface SearchOptions {

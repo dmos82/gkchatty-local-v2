@@ -408,9 +408,9 @@ describe('ragService - getContext', () => {
   });
 
   describe('Score Filtering and Boosting', () => {
-    it('should filter out matches below MIN_CONFIDENCE_SCORE (0.3)', async () => {
+    it('should filter out matches below MIN_CONFIDENCE_SCORE (0.35)', async () => {
       // COVERS LINE 232
-      const lowScoreMatch = createPineconeMatch('vec-low', 0.25, 'system', 'doc-low');
+      const lowScoreMatch = createPineconeMatch('vec-low', 0.30, 'system', 'doc-low');
       const highScoreMatch = createPineconeMatch('vec-high', 0.8, 'system', 'doc-high');
 
       mockQueryVectors.mockResolvedValue({ matches: [lowScoreMatch, highScoreMatch] });
@@ -433,7 +433,7 @@ describe('ragService - getContext', () => {
         expect.objectContaining({
           matchId: 'vec-low',
           score: 0.2,
-          threshold: 0.3,
+          threshold: 0.35,
           sourceType: 'system',
           fileName: 'low.pdf',
         }),
