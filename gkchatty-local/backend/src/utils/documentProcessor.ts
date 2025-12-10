@@ -28,6 +28,7 @@ const CHUNK_OVERLAP = RAG_CONFIG.CHUNK_OVERLAP;
 // Import getFileFromS3 helper (assuming it exists and is correctly configured)
 import { getFileStream } from './s3Helper';
 import { getLogger } from './logger';
+import { socketService } from '../services/socketService';
 
 const log = getLogger('documentProcessor');
 
@@ -261,19 +262,19 @@ export const processAndEmbedDocument = async (
           `[DocProcessor - ${correlationId}] Audio processing successful. Text length: ${fullText.length} characters`
         );
 
-        // Store the generated PDF in S3 (replace the original audio file)
-        // The PDF will be what users see when they view the document
-        log.info(`[DocProcessor - ${correlationId}] Storing generated PDF in S3`);
+        // Store the generated DOCX in S3 (replace the original audio file)
+        // The DOCX will be what users see when they view the document
+        log.info(`[DocProcessor - ${correlationId}] Storing generated DOCX in S3`);
         const { uploadFile, deleteFile } = await import('./s3Helper');
-        const pdfKey = s3Key.replace(/\.[^/.]+$/, '.pdf'); // Replace extension with .pdf
-        await uploadFile(audioResult.pdfBuffer, pdfKey, 'application/pdf');
+        const docxKey = s3Key.replace(/\.[^/.]+$/, '.docx'); // Replace extension with .docx
+        await uploadFile(audioResult.docxBuffer, docxKey, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
-        // Update document record to reflect it's now a PDF
+        // Update document record to reflect it's now a DOCX
         const updateData: any = {
-          mimeType: 'application/pdf',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           originalFileName: audioResult.metadata.generatedFileName,
-          s3Key: pdfKey, // Update the s3Key to point to the PDF
-          file_extension: 'pdf', // Update the file extension
+          s3Key: docxKey, // Update the s3Key to point to the DOCX
+          file_extension: 'docx', // Update the file extension
         };
 
         if (sourceType === 'user') {
@@ -298,8 +299,19 @@ export const processAndEmbedDocument = async (
         }
 
         log.info(
-          `[DocProcessor - ${correlationId}] Audio file converted to PDF and stored successfully. New S3 key: ${pdfKey}`
+          `[DocProcessor - ${correlationId}] Audio file converted to DOCX and stored successfully. New S3 key: ${docxKey}`
         );
+
+        // Notify user via socket that document was processed (audio → DOCX)
+        if (userId) {
+          socketService.sendToUser(userId, 'document:processed', {
+            documentId,
+            originalFileName,
+            newFileName: audioResult.metadata.generatedFileName,
+            type: 'audio_transcription',
+          });
+          log.debug(`[DocProcessor - ${correlationId}] Sent document:processed socket event to user ${userId}`);
+        }
 
         if (!fullText) {
           log.warn(
@@ -326,18 +338,18 @@ export const processAndEmbedDocument = async (
           `[DocProcessor - ${correlationId}] Video processing successful. Text length: ${fullText.length} characters`
         );
 
-        // Store the generated PDF in S3 (replace the original video file)
-        log.info(`[DocProcessor - ${correlationId}] Storing generated PDF in S3`);
+        // Store the generated DOCX in S3 (replace the original video file)
+        log.info(`[DocProcessor - ${correlationId}] Storing generated DOCX in S3`);
         const { uploadFile, deleteFile } = await import('./s3Helper');
-        const pdfKey = s3Key.replace(/\.[^/.]+$/, '.pdf'); // Replace extension with .pdf
-        await uploadFile(videoResult.pdfBuffer, pdfKey, 'application/pdf');
+        const docxKey = s3Key.replace(/\.[^/.]+$/, '.docx'); // Replace extension with .docx
+        await uploadFile(videoResult.docxBuffer, docxKey, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
-        // Update document record to reflect it's now a PDF
+        // Update document record to reflect it's now a DOCX
         const updateData: any = {
-          mimeType: 'application/pdf',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           originalFileName: videoResult.metadata.generatedFileName,
-          s3Key: pdfKey, // Update the s3Key to point to the PDF
-          file_extension: 'pdf', // Update the file extension
+          s3Key: docxKey, // Update the s3Key to point to the DOCX
+          file_extension: 'docx', // Update the file extension
         };
 
         if (sourceType === 'user') {
@@ -362,8 +374,19 @@ export const processAndEmbedDocument = async (
         }
 
         log.info(
-          `[DocProcessor - ${correlationId}] Video file converted to PDF and stored successfully. New S3 key: ${pdfKey}`
+          `[DocProcessor - ${correlationId}] Video file converted to DOCX and stored successfully. New S3 key: ${docxKey}`
         );
+
+        // Notify user via socket that document was processed (video → DOCX)
+        if (userId) {
+          socketService.sendToUser(userId, 'document:processed', {
+            documentId,
+            originalFileName,
+            newFileName: videoResult.metadata.generatedFileName,
+            type: 'video_transcription',
+          });
+          log.debug(`[DocProcessor - ${correlationId}] Sent document:processed socket event to user ${userId}`);
+        }
 
         if (!fullText) {
           log.warn(

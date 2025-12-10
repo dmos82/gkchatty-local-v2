@@ -41,10 +41,11 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import useFileTreeStore, { FileNode } from '@/stores/fileTreeStore';
-import { PdfViewer } from '@/components/common/PdfViewer';
+import { UniversalFileViewer, getFileType } from '@/components/viewers';
 import FolderContextMenu from './FolderContextMenu';
 import FolderPermissionsModal from './FolderPermissionsModal';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { getApiBaseUrl } from '@/lib/config';
 
 interface FileTreeManagerProps {
   mode?: 'user' | 'system';
@@ -56,7 +57,14 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [allItems, setAllItems] = useState<FileNode[]>([]);
-  const [viewingPdf, setViewingPdf] = useState<{id: string, name: string} | null>(null);
+  const [viewingFile, setViewingFile] = useState<{id: string, name: string, mimeType?: string} | null>(null);
+
+  // Handle file click - opens file viewer directly
+  // Note: Video/audio files are auto-transcribed to DOCX on upload, so no special handling needed
+  const handleFileClick = useCallback((node: FileNode) => {
+    console.log('[FileTreeManager] handleFileClick called:', { id: node._id, name: node.name, type: node.type, mimeType: node.mimeType });
+    setViewingFile({ id: node._id, name: node.name, mimeType: node.mimeType });
+  }, []);
 
   const {
     fileTree,
@@ -185,6 +193,29 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
       });
     }
   }, [error, toast]);
+
+  // Listen for document:processed browser events (dispatched by DMContext when audio/video transcription completes)
+  useEffect(() => {
+    const handleDocumentProcessed = (event: Event) => {
+      const customEvent = event as CustomEvent<{ documentId: string; originalFileName: string; newFileName: string; type: string }>;
+      const data = customEvent.detail;
+      console.log('[FileTreeManager] Received document:processed event:', data);
+      toast({
+        title: 'Document Processed',
+        description: `${data.originalFileName} has been transcribed to ${data.newFileName}`,
+      });
+      // Refresh the file tree to show the updated document
+      fetchFileTree();
+    };
+
+    console.log('[FileTreeManager] Listening for document:processed browser events');
+    window.addEventListener('document:processed', handleDocumentProcessed);
+
+    return () => {
+      console.log('[FileTreeManager] Removing document:processed listener');
+      window.removeEventListener('document:processed', handleDocumentProcessed);
+    };
+  }, [fetchFileTree, toast]);
 
   // Handle item selection with Shift and Ctrl/Cmd support
   const handleItemSelect = useCallback((itemId: string, e: React.MouseEvent) => {
@@ -657,11 +688,11 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
             <File className="h-4 w-4" />
           )}
           <span className="flex-1 truncate text-sm overflow-hidden">
-            {(!isFolder && (node.mimeType?.includes('pdf') || node.name.toLowerCase().endsWith('.pdf'))) ? (
+            {!isFolder ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setViewingPdf({id: node._id, name: node.name});
+                  handleFileClick(node);
                 }}
                 className="text-primary hover:underline bg-transparent border-none p-0 text-left cursor-pointer inline"
               >
@@ -791,11 +822,11 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
               <File className="h-12 w-12 mb-2 text-gray-500" />
             )}
             <span className="text-sm text-center truncate w-full">
-              {(item.type === 'file' && (item.mimeType?.includes('pdf') || item.name.toLowerCase().endsWith('.pdf'))) ? (
+              {item.type === 'file' ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setViewingPdf({id: item._id, name: item.name});
+                    handleFileClick(item);
                   }}
                   className="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer inline"
                 >
@@ -846,11 +877,11 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
               <File className="h-4 w-4" />
             )}
             <span className="flex-1 text-sm overflow-hidden">
-              {(item.type === 'file' && (item.mimeType?.includes('pdf') || item.name.toLowerCase().endsWith('.pdf'))) ? (
+              {item.type === 'file' ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setViewingPdf({id: item._id, name: item.name});
+                    handleFileClick(item);
                   }}
                   className="text-primary hover:underline bg-transparent border-none p-0 text-left cursor-pointer inline"
                 >
@@ -1166,15 +1197,14 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
         </DialogContent>
       </Dialog>
 
-      {/* PDF Viewer */}
-      {viewingPdf && (
-        <PdfViewer
-          documentId={viewingPdf.id}
-          filename={viewingPdf.name}
-          type={mode}
-          onClose={() => setViewingPdf(null)}
-        />
-      )}
+      {/* Universal File Viewer */}
+      <UniversalFileViewer
+        documentId={viewingFile?.id || ''}
+        fileName={viewingFile?.name || ''}
+        mimeType={viewingFile?.mimeType}
+        isOpen={viewingFile !== null}
+        onClose={() => setViewingFile(null)}
+      />
 
       {/* Context Menu */}
       {contextMenuPosition && contextItem && contextItem.type === 'folder' && (

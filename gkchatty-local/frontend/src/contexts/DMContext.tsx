@@ -651,6 +651,21 @@ export const DMProvider: React.FC<DMProviderProps> = ({ children }) => {
       });
     });
 
+    // Handle document processing events (audio/video transcription complete)
+    // This dispatches a browser event that components like FileTreeManager can listen to
+    newSocket.on('document:processed', (data: {
+      documentId: string;
+      originalFileName: string;
+      newFileName: string;
+      type: string;
+    }) => {
+      console.log('[DMContext] Document processed:', data.originalFileName, '->', data.newFileName);
+      // Dispatch a custom browser event for any component to listen to
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('document:processed', { detail: data }));
+      }
+    });
+
     setSocket(newSocket);
 
     return () => {

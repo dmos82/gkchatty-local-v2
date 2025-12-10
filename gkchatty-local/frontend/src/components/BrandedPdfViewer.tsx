@@ -40,6 +40,52 @@ const BrandedPdfViewer: React.FC<BrandedPdfViewerProps> = ({
   const [error, setError] = useState<Error | null>(null);
   const [logoLoaded, setLogoLoaded] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  // Fetch PDF with authentication and create blob URL
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchPdf = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const token = localStorage.getItem('accessToken');
+        const response = await fetch(fileUrl, {
+          credentials: 'include',
+          headers: {
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Unexpected server response (${response.status}) while retrieving PDF "${fileUrl}".`);
+        }
+
+        const blob = await response.blob();
+        if (isMounted) {
+          const objectUrl = URL.createObjectURL(blob);
+          setBlobUrl(objectUrl);
+        }
+      } catch (err) {
+        console.error('[BrandedPdfViewer] Error fetching PDF:', err);
+        if (isMounted) {
+          setError(err instanceof Error ? err : new Error('Failed to load PDF'));
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchPdf();
+
+    return () => {
+      isMounted = false;
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [fileUrl]);
 
   // Track fileUrl stability
   const initialFileUrl = useRef(fileUrl);
@@ -329,7 +375,7 @@ const BrandedPdfViewer: React.FC<BrandedPdfViewerProps> = ({
           )}
 
           {/* Render Document container unless a fatal error has occurred */}
-          {!error && (
+          {!error && blobUrl && (
             <div className="flex justify-center">
               {/* REMOVE Log state before rendering */}
               {/* {(() => {
@@ -346,7 +392,7 @@ const BrandedPdfViewer: React.FC<BrandedPdfViewerProps> = ({
               {/* REMOVE Wrap Document in Error Boundary */}
               {/* <PdfDocumentErrorBoundary fallback={ ... } > */}
               <Document
-                file={fileUrl}
+                file={blobUrl}
                 onLoadSuccess={onDocumentLoadSuccess}
                 onLoadError={onDocumentLoadError}
                 onSourceError={onDocumentSourceError}

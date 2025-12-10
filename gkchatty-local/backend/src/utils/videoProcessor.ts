@@ -138,7 +138,7 @@ export async function extractAudioFromVideo(
 }
 
 /**
- * Process video file: extract audio → transcribe → generate PDF
+ * Process video file: extract audio → transcribe → generate DOCX
  */
 export async function processVideoFile(
   videoBuffer: Buffer,
@@ -155,7 +155,7 @@ export async function processVideoFile(
     temperature?: number;
   } = {}
 ): Promise<{
-  pdfBuffer: Buffer;
+  docxBuffer: Buffer;
   transcriptionText: string;
   metadata: {
     language?: string;
@@ -205,12 +205,12 @@ export async function processVideoFile(
 
     // Step 3: Enhance metadata for video
     const baseName = path.parse(originalFileName).name;
-    const generatedFileName = `${baseName}_video_transcript.pdf`;
+    const generatedFileName = `${baseName}_video_transcript.docx`;
 
     log.debug(`[VideoProcessor] Video processing completed successfully for: ${originalFileName}`);
 
     return {
-      pdfBuffer: audioResult.pdfBuffer,
+      docxBuffer: audioResult.docxBuffer,
       transcriptionText: audioResult.transcriptionText,
       metadata: {
         language: audioResult.metadata.language,
