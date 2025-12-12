@@ -26,6 +26,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 // import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Header } from '@/components/layout/Header';
 import { AuthenticatedIMContainer } from '@/components/im';
+import { HelpProvider } from '@/contexts/HelpContext';
+import { HelpPanel } from '@/components/help/HelpPanel';
 // No PdfWorkerSetup import here anymore
 
 const inter = Inter({ subsets: ['latin'] });
@@ -102,28 +104,32 @@ export default function RootLayout({
                   enableSystem
                   disableTransitionOnChange
                 >
-                  <ErrorBoundary>
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={pathname}
-                        initial={{ opacity: 1 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.4, ease: 'easeInOut' }}
-                      >
-                        <div vaul-drawer-wrapper="" className="bg-background">
-                          <div className="relative flex min-h-screen w-full flex-col">
-                            <Header />
-                            <main>
-                              {children}
-                            </main>
+                  <HelpProvider>
+                    <ErrorBoundary>
+                      <AnimatePresence mode="wait">
+                        <motion.div
+                          key={pathname}
+                          initial={{ opacity: 1 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ duration: 0.4, ease: 'easeInOut' }}
+                        >
+                          <div vaul-drawer-wrapper="" className="bg-background">
+                            <div className="relative flex min-h-screen w-full flex-col">
+                              <Header />
+                              <main>
+                                {children}
+                              </main>
+                            </div>
+                            {/* IM Popup System - only renders for authenticated users */}
+                            <AuthenticatedIMContainer />
                           </div>
-                          {/* IM Popup System - only renders for authenticated users */}
-                          <AuthenticatedIMContainer />
-                        </div>
-                      </motion.div>
-                    </AnimatePresence>
-                  </ErrorBoundary>
-                  <Toaster />
+                        </motion.div>
+                      </AnimatePresence>
+                    </ErrorBoundary>
+                    <Toaster />
+                    {/* Help Mode Panel - global floating help */}
+                    <HelpPanel />
+                  </HelpProvider>
                 </ThemeProvider>
               </PersonaProvider>
             </SearchModeProvider>
