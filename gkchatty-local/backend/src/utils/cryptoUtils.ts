@@ -4,8 +4,8 @@ import { getLogger } from './logger';
 const log = getLogger('cryptoUtils');
 
 const ALGORITHM = 'aes-256-cbc';
-// Ensure ENCRYPTION_KEY is set in your .env file and is a 32-byte string
-const BASE_ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef'; // Fallback for local dev, **REPLACE IN PROD**
+// SEC-019 FIX: No fallback encryption key - require proper configuration
+const BASE_ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || ''; // Empty string will trigger validation error
 const IV_LENGTH = 16; // For AES, this is always 16
 
 // Validate encryption key on module load
@@ -55,10 +55,13 @@ function validateEncryptionKey(): void {
 // Validate on module load
 validateEncryptionKey();
 
-if (process.env.NODE_ENV !== 'test' && BASE_ENCRYPTION_KEY === '0123456789abcdef0123456789abcdef') {
-  log.warn(
-    'WARNING: Using default fallback ENCRYPTION_KEY. This is not secure for production. Please set a strong ENCRYPTION_KEY in your environment variables.'
+// SEC-019 FIX: Strict validation in production - fail fast if no valid key
+if (process.env.NODE_ENV === 'production' && (!BASE_ENCRYPTION_KEY || BASE_ENCRYPTION_KEY.length !== 64)) {
+  log.error(
+    'CRITICAL: ENCRYPTION_KEY environment variable is required in production. Generate one with: openssl rand -hex 32'
   );
+  // In production, throw immediately to prevent startup with insecure config
+  throw new Error('ENCRYPTION_KEY environment variable is required in production');
 }
 
 export function encrypt(text: string): string {

@@ -5,6 +5,7 @@ import { getLogger } from '../utils/logger';
 import User, { IUser } from '../models/UserModel';
 import UserSettings, { IUserSettings } from '../models/UserSettings';
 import PersonaModel from '../models/PersonaModel';
+import { escapeRegExp } from '../utils/regexEscape';
 
 // Configure environment variables
 config({ path: pathModule.resolve(__dirname, '../../../../.env') });
@@ -35,9 +36,10 @@ const hasExistingPersonaWithName = async (
   userId: mongoose.Types.ObjectId,
   name: string
 ): Promise<boolean> => {
+  // SEC-011 FIX: Escape user input to prevent regex injection / ReDoS
   const existingPersona = await PersonaModel.findOne({
     userId,
-    name: { $regex: new RegExp(`^${name}$`, 'i') }, // Case-insensitive match
+    name: { $regex: new RegExp(`^${escapeRegExp(name)}$`, 'i') }, // Case-insensitive match
   });
   return !!existingPersona;
 };

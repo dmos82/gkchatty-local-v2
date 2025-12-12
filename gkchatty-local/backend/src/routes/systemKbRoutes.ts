@@ -30,19 +30,48 @@ router.get(
   async (req: Request, res: Response): Promise<void | Response> => {
     logger.info('Public system KB documents list request received');
     try {
+      const userId = req.user?._id;
+      const isUserAdmin = req.user?.role === 'admin';
+
       // Fetch docs from SystemKbDocument collection only
       const { SystemKbDocument } = await import('../models/SystemKbDocument');
-      const docs = await SystemKbDocument.find({}).select('_id filename').lean();
+      const docs = await SystemKbDocument.find({}).select('_id filename folderId').lean();
+
+      // SEC-006 FIX: Filter documents based on folder permissions
+      // Only return documents that:
+      // 1. Have no folderId (public system KB docs), OR
+      // 2. Are in folders the user has access to
+      const { hasAccessToFolder } = await import('../utils/folderPermissionHelper');
+
+      const accessibleDocs = [];
+      for (const doc of docs) {
+        // Documents without folderId are considered public system KB docs
+        if (!doc.folderId) {
+          accessibleDocs.push(doc);
+          continue;
+        }
+
+        // Check folder permission for documents in folders
+        const hasAccess = await hasAccessToFolder(
+          userId.toString(),
+          isUserAdmin,
+          doc.folderId.toString()
+        );
+
+        if (hasAccess) {
+          accessibleDocs.push(doc);
+        }
+      }
 
       // Format and sort documents
-      const responseDocs = docs
+      const responseDocs = accessibleDocs
         .map(d => ({
           _id: d._id.toString(),
           filename: d.filename,
         }))
         .sort((a, b) => a.filename.localeCompare(b.filename));
 
-      logger.info({ count: responseDocs.length }, 'Public system KB documents returned');
+      logger.info({ count: responseDocs.length, total: docs.length }, 'Public system KB documents returned (filtered by permissions)');
 
       return res.status(200).json({ success: true, documents: responseDocs });
     } catch (error) {

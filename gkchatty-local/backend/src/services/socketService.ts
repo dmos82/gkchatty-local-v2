@@ -184,12 +184,99 @@ interface ActiveCall {
   connectedAt?: Date;
 }
 
+// SEC-015: Rate limiting configuration for WebSocket events
+interface RateLimitConfig {
+  maxRequests: number; // Max requests per window
+  windowMs: number; // Time window in milliseconds
+}
+
+// Rate limit state per socket
+interface SocketRateLimitState {
+  counts: Map<string, number>; // eventType -> count
+  windowStart: Map<string, number>; // eventType -> timestamp
+}
+
+// Rate limits per event type (requests per window)
+const SOCKET_RATE_LIMITS: Record<string, RateLimitConfig> = {
+  'dm:send': { maxRequests: 30, windowMs: 60000 }, // 30 msgs/min
+  'dm:typing': { maxRequests: 60, windowMs: 60000 }, // 60/min (typing indicators)
+  'dm:edit': { maxRequests: 30, windowMs: 60000 }, // 30/min
+  'dm:delete': { maxRequests: 20, windowMs: 60000 }, // 20/min
+  'dm:react': { maxRequests: 60, windowMs: 60000 }, // 60 reactions/min
+  'collab:sync': { maxRequests: 120, windowMs: 60000 }, // 120/min (real-time sync)
+  'collab:awareness': { maxRequests: 120, windowMs: 60000 }, // 120/min (cursor updates)
+  'presence:update': { maxRequests: 20, windowMs: 60000 }, // 20/min
+  'presence:heartbeat': { maxRequests: 30, windowMs: 60000 }, // 30/min
+  'call:initiate': { maxRequests: 5, windowMs: 60000 }, // 5/min (prevent spam calls)
+  default: { maxRequests: 60, windowMs: 60000 }, // Default: 60/min
+};
+
 // Socket service singleton
 class SocketService {
   private io: Server | null = null;
   private userSocketMap: Map<string, Set<string>> = new Map(); // userId -> Set of socketIds
   private activeDocuments: Map<string, Y.Doc> = new Map(); // documentId -> Yjs Doc (in-memory)
   private activeCalls: Map<string, ActiveCall> = new Map(); // callId -> ActiveCall
+  // SEC-015: Rate limiting state per socket
+  private socketRateLimits: Map<string, SocketRateLimitState> = new Map(); // socketId -> rate limit state
+
+  /**
+   * SEC-015: Check if a socket event should be rate limited
+   * Returns true if event is allowed, false if rate limited
+   */
+  private checkRateLimit(socket: AuthenticatedSocket, eventType: string): boolean {
+    const socketId = socket.id;
+    const config = SOCKET_RATE_LIMITS[eventType] || SOCKET_RATE_LIMITS.default;
+    const now = Date.now();
+
+    // Initialize rate limit state for this socket if not exists
+    if (!this.socketRateLimits.has(socketId)) {
+      this.socketRateLimits.set(socketId, {
+        counts: new Map(),
+        windowStart: new Map(),
+      });
+    }
+
+    const state = this.socketRateLimits.get(socketId)!;
+
+    // Get or initialize window start for this event type
+    let windowStart = state.windowStart.get(eventType) || now;
+    let count = state.counts.get(eventType) || 0;
+
+    // Check if window has expired - reset if so
+    if (now - windowStart >= config.windowMs) {
+      windowStart = now;
+      count = 0;
+      state.windowStart.set(eventType, windowStart);
+    }
+
+    // Increment count
+    count++;
+    state.counts.set(eventType, count);
+
+    // Check if rate limited
+    if (count > config.maxRequests) {
+      console.warn(
+        `[Socket Rate Limit] User ${socket.username} (${socketId}) exceeded rate limit for ${eventType}: ${count}/${config.maxRequests} in ${config.windowMs}ms`
+      );
+      // Emit rate limit error to client
+      socket.emit('error', {
+        type: 'RATE_LIMITED',
+        message: `Rate limit exceeded for ${eventType}. Please slow down.`,
+        retryAfter: Math.ceil((windowStart + config.windowMs - now) / 1000),
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * SEC-015: Clean up rate limit state for a socket
+   */
+  private cleanupSocketRateLimit(socketId: string): void {
+    this.socketRateLimits.delete(socketId);
+  }
 
   /**
    * Initialize Socket.IO server with JWT authentication
@@ -324,6 +411,9 @@ class SocketService {
         console.log(`[Socket DISCONNECT] User: ${authSocket.username}, Socket: ${socket.id}, Reason: ${reason}`);
         this.removeUserSocket(authSocket.userId, socket.id);
 
+        // SEC-015: Clean up rate limit state for this socket
+        this.cleanupSocketRateLimit(socket.id);
+
         // Clean up any active calls for this user
         await this.cleanupUserCalls(authSocket);
 
@@ -346,70 +436,80 @@ class SocketService {
    * Register all event handlers for a socket
    */
   private registerEventHandlers(socket: AuthenticatedSocket): void {
-    // Direct Message Events
-    socket.on('dm:send', (payload: SendMessagePayload) => this.handleSendMessage(socket, payload));
-    socket.on('dm:typing', (payload: TypingPayload) => this.handleTyping(socket, payload));
-    socket.on('dm:mark_read', (payload: MarkReadPayload) => this.handleMarkRead(socket, payload));
-    socket.on('dm:edit', (payload: EditMessagePayload) => this.handleEditMessage(socket, payload));
-    socket.on('dm:delete', (payload: DeleteMessagePayload) => this.handleDeleteMessage(socket, payload));
-    socket.on('dm:react', (payload: ReactMessagePayload) => this.handleReactToMessage(socket, payload));
+    // SEC-015: Helper to wrap handlers with rate limiting
+    const withRateLimit = <T>(eventType: string, handler: (payload: T) => void) => {
+      return (payload: T) => {
+        if (this.checkRateLimit(socket, eventType)) {
+          handler(payload);
+        }
+        // If rate limited, checkRateLimit already emitted error to client
+      };
+    };
 
-    // Presence Events
-    socket.on('presence:update', (payload: PresenceUpdatePayload) =>
+    // Direct Message Events (rate limited)
+    socket.on('dm:send', withRateLimit('dm:send', (payload: SendMessagePayload) => this.handleSendMessage(socket, payload)));
+    socket.on('dm:typing', withRateLimit('dm:typing', (payload: TypingPayload) => this.handleTyping(socket, payload)));
+    socket.on('dm:mark_read', (payload: MarkReadPayload) => this.handleMarkRead(socket, payload)); // Not rate limited - important for UX
+    socket.on('dm:edit', withRateLimit('dm:edit', (payload: EditMessagePayload) => this.handleEditMessage(socket, payload)));
+    socket.on('dm:delete', withRateLimit('dm:delete', (payload: DeleteMessagePayload) => this.handleDeleteMessage(socket, payload)));
+    socket.on('dm:react', withRateLimit('dm:react', (payload: ReactMessagePayload) => this.handleReactToMessage(socket, payload)));
+
+    // Presence Events (rate limited)
+    socket.on('presence:update', withRateLimit('presence:update', (payload: PresenceUpdatePayload) =>
       this.handlePresenceUpdate(socket, payload)
-    );
-    socket.on('presence:heartbeat', () => this.handleHeartbeat(socket));
+    ));
+    socket.on('presence:heartbeat', withRateLimit('presence:heartbeat', () => this.handleHeartbeat(socket)));
     socket.on('presence:set_dnd', (payload: SetDNDPayload) =>
       this.handleSetDND(socket, payload)
-    );
+    ); // Not rate limited - infrequent action
 
-    // Conversation Events
+    // Conversation Events (not rate limited - infrequent)
     socket.on('conversation:join', (conversationId: string) =>
       this.handleJoinConversation(socket, conversationId)
     );
 
-    // Collaborative Document Events
+    // Collaborative Document Events (rate limited for high-frequency sync)
     socket.on('collab:create', (payload: CollabCreatePayload) =>
       this.handleCollabCreate(socket, payload)
-    );
+    ); // Not rate limited - infrequent
     socket.on('collab:join', (payload: CollabJoinPayload) =>
       this.handleCollabJoin(socket, payload)
-    );
+    ); // Not rate limited - infrequent
     socket.on('collab:leave', (payload: CollabLeavePayload) =>
       this.handleCollabLeave(socket, payload)
-    );
-    socket.on('collab:sync', (payload: CollabSyncPayload) =>
+    ); // Not rate limited - infrequent
+    socket.on('collab:sync', withRateLimit('collab:sync', (payload: CollabSyncPayload) =>
       this.handleCollabSync(socket, payload)
-    );
-    socket.on('collab:awareness', (payload: CollabAwarenessPayload) =>
+    ));
+    socket.on('collab:awareness', withRateLimit('collab:awareness', (payload: CollabAwarenessPayload) =>
       this.handleCollabAwareness(socket, payload)
-    );
+    ));
 
-    // Voice/Video Call Events
-    socket.on('call:initiate', (payload: CallInitiatePayload) =>
+    // Voice/Video Call Events (rate limited for initiation to prevent spam)
+    socket.on('call:initiate', withRateLimit('call:initiate', (payload: CallInitiatePayload) =>
       this.handleCallInitiate(socket, payload)
-    );
+    ));
     socket.on('call:accept', (payload: CallAcceptPayload) =>
       this.handleCallAccept(socket, payload)
-    );
+    ); // Not rate limited - critical for call flow
     socket.on('call:reject', (payload: CallRejectPayload) =>
       this.handleCallReject(socket, payload)
-    );
+    ); // Not rate limited - critical for call flow
     socket.on('call:offer', (payload: CallOfferPayload) =>
       this.handleCallOffer(socket, payload)
-    );
+    ); // Not rate limited - WebRTC signaling
     socket.on('call:answer', (payload: CallAnswerPayload) =>
       this.handleCallAnswer(socket, payload)
-    );
+    ); // Not rate limited - WebRTC signaling
     socket.on('call:ice_candidate', (payload: CallIceCandidatePayload) =>
       this.handleCallIceCandidate(socket, payload)
-    );
+    ); // Not rate limited - WebRTC requires fast ICE exchange
     socket.on('call:end', (payload: CallEndPayload) =>
       this.handleCallEnd(socket, payload)
-    );
+    ); // Not rate limited - critical for call cleanup
     socket.on('call:toggle_media', (payload: CallToggleMediaPayload) =>
       this.handleCallToggleMedia(socket, payload)
-    );
+    ); // Not rate limited - user experience
   }
 
   /**

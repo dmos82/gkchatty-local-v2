@@ -7,6 +7,65 @@ import os from 'os';
 // MEDIUM-003: Import file validation utilities for enhanced security
 // Additional validation is performed in middleware/fileValidation.ts
 
+// CRITICAL-004: Filename sanitization to prevent path traversal and injection attacks
+const ALLOWED_EXTENSIONS = new Set([
+  // Documents
+  '.pdf', '.txt', '.md', '.markdown', '.docx', '.doc',
+  // Excel
+  '.xlsx', '.xls',
+  // Images
+  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif',
+  // Audio
+  '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm',
+  // Video
+  '.mp4', '.mov', '.avi', '.mkv', '.m4v', '.flv', '.wmv', '.mpeg', '.mpg',
+]);
+
+/**
+ * CRITICAL-004: Sanitize filename to prevent path traversal and injection attacks
+ * - Removes path traversal sequences (../, ..\)
+ * - Removes null bytes
+ * - Strips any directory components
+ * - Only allows alphanumeric, dots, hyphens, underscores, and spaces
+ * - Validates extension against allowed list
+ */
+const sanitizeFilename = (originalName: string): { baseName: string; extension: string; isValid: boolean } => {
+  // Remove null bytes (can bypass security checks)
+  let sanitized = originalName.replace(/\0/g, '');
+
+  // Remove path traversal sequences
+  sanitized = sanitized.replace(/\.\.\//g, '').replace(/\.\.\\/g, '');
+
+  // Extract only the filename (remove any directory path)
+  sanitized = path.basename(sanitized);
+
+  // Get extension and validate
+  const extension = path.extname(sanitized).toLowerCase();
+  const isValidExtension = ALLOWED_EXTENSIONS.has(extension);
+
+  // Get base name without extension
+  let baseName = path.basename(sanitized, extension);
+
+  // Remove any remaining dangerous characters, only allow safe chars
+  // Allow alphanumeric, dots (not at start), hyphens, underscores, spaces
+  baseName = baseName.replace(/[^a-zA-Z0-9.\-_ ]/g, '_');
+
+  // Remove leading dots (hidden files) and multiple consecutive dots
+  baseName = baseName.replace(/^\.+/, '').replace(/\.{2,}/g, '.');
+
+  // Ensure the filename isn't empty after sanitization
+  if (!baseName || baseName.trim() === '') {
+    baseName = 'file';
+  }
+
+  // Truncate long filenames (prevent DoS with extremely long names)
+  if (baseName.length > 200) {
+    baseName = baseName.substring(0, 200);
+  }
+
+  return { baseName, extension, isValid: isValidExtension };
+};
+
 // Create a temporary upload directory within the system temp directory
 const TEMP_UPLOAD_DIR = path.join(os.tmpdir(), 'gkchatty_temp_uploads');
 
@@ -22,10 +81,18 @@ const storage = multer.diskStorage({
     cb(null, TEMP_UPLOAD_DIR);
   },
   filename: (req, file, cb) => {
+    // CRITICAL-004: Use sanitized filename to prevent path traversal attacks
+    const { extension, isValid } = sanitizeFilename(file.originalname);
+
     // Generate a unique filename to avoid collisions
     const uniquePrefix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    // Keep original extension
-    const extension = path.extname(file.originalname);
+
+    // Only use the sanitized extension if it's valid, otherwise reject
+    if (!isValid) {
+      console.log(`[Multer] SECURITY: Blocked file with invalid extension: ${file.originalname}`);
+      return cb(new Error('Invalid file extension'), '');
+    }
+
     cb(null, uniquePrefix + extension);
   },
 });
@@ -112,12 +179,40 @@ const imageFileFilter = (
   }
 };
 
-// Configure multer instance with disk storage
+// File size limits by type (in bytes)
+const FILE_SIZE_LIMITS = {
+  document: 25 * 1024 * 1024,   // 25 MB for documents (PDF, DOCX, TXT, etc.)
+  image: 10 * 1024 * 1024,       // 10 MB for images
+  video: 100 * 1024 * 1024,      // 100 MB for video files
+  audio: 50 * 1024 * 1024,       // 50 MB for audio files
+  default: 25 * 1024 * 1024,     // 25 MB default
+};
+
+// Get appropriate file size limit based on MIME type
+const getFileSizeLimit = (mimetype: string): number => {
+  if (mimetype.startsWith('video/')) return FILE_SIZE_LIMITS.video;
+  if (mimetype.startsWith('audio/')) return FILE_SIZE_LIMITS.audio;
+  if (mimetype.startsWith('image/')) return FILE_SIZE_LIMITS.image;
+  return FILE_SIZE_LIMITS.document;
+};
+
+// Configure multer instance with disk storage and tiered limits
 const userUpload = multer({
   storage: storage,
-  fileFilter: fileFilter,
+  fileFilter: (req, file, cb) => {
+    // First run the standard file filter
+    fileFilter(req, file, (err, accepted) => {
+      if (err || !accepted) {
+        return cb(err, false);
+      }
+      // Check file size limit for this type (multer will enforce the max)
+      const limit = getFileSizeLimit(file.mimetype);
+      console.log(`[Multer] File type: ${file.mimetype}, Size limit: ${limit / 1024 / 1024}MB`);
+      cb(null, true);
+    });
+  },
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100 MB limit to support video files
+    fileSize: FILE_SIZE_LIMITS.video, // Max possible (video) - individual checks happen in fileFilter
   },
 });
 

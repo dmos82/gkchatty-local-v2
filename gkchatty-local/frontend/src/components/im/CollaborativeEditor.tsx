@@ -231,10 +231,12 @@ export default function CollaborativeEditor({
   };
 
   // Convert HTML to docx paragraphs
+  // SEC-009 FIX: Use DOMParser instead of innerHTML to avoid XSS risk
   const htmlToDocxParagraphs = (html: string): Paragraph[] => {
     const paragraphs: Paragraph[] = [];
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const tempDiv = doc.body;
 
     const processNode = (node: Node): void => {
       if (node.nodeType === Node.TEXT_NODE) {

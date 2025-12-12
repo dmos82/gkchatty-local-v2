@@ -841,6 +841,13 @@ router.put(
       // Use centralized bcrypt work factor
       user.password = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
       user.forcePasswordChange = false; // Clear the force password change flag
+      // CRITICAL-003: Invalidate all existing sessions on password change (session fixation prevention)
+      const previousSessionCount = user.activeSessionIds?.length || 0;
+      user.activeSessionIds = [];
+      logger.info(
+        { userId: userIdToUpdate, invalidatedSessions: previousSessionCount },
+        'Security: Cleared all active sessions due to password change'
+      );
       await user.save();
       logger.info({ userId: userIdToUpdate }, 'Password updated for user');
       return res

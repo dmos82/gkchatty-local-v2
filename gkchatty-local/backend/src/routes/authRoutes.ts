@@ -1,6 +1,7 @@
 import express, { Request, Response, Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto'; // SEC-016: Used for generating session IDs
 import { v4 as uuidv4 } from 'uuid'; // Ensure this import is present
 import User from '../models/UserModel'; // Import the User model
 import { protect, checkSession, RequestWithUser } from '../middleware/authMiddleware'; // Keep protect for logout
@@ -202,7 +203,8 @@ router.post(
       );
 
       if (!user) {
-        // MEDIUM-006: Enhanced security logging for failed authentication
+        // SEC-017 FIX: Generic logging to prevent account enumeration
+        // Do not differentiate between user not found vs invalid password in logs
         logger.warn(
           {
             username,
@@ -210,21 +212,21 @@ router.post(
             userAgent: req.get('user-agent'),
             timestamp: new Date().toISOString(),
             event: 'FAILED_LOGIN_ATTEMPT',
-            reason: 'USER_NOT_FOUND',
+            reason: 'INVALID_CREDENTIALS', // SEC-017: Generic reason
           },
-          'Security Event: Failed login attempt - user not found'
+          'Security Event: Failed login attempt'
         );
 
-        // Log audit event for failed login
+        // Log audit event for failed login - generic message
         await logAuditEvent({
           username,
           action: 'LOGIN_FAILED',
           resource: 'USER',
-          details: { reason: 'USER_NOT_FOUND' },
+          details: { reason: 'INVALID_CREDENTIALS' }, // SEC-017: Generic reason
           ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
           userAgent: req.get('user-agent'),
           success: false,
-          errorMessage: 'User not found',
+          errorMessage: 'Invalid credentials', // SEC-017: Generic message
         });
 
         return res.status(401).json({ message: 'Invalid credentials' });
@@ -336,12 +338,13 @@ router.post(
       logger.info({ username, sessionId: newSessionId }, 'Generating JWT');
 
       // Generate JWT with the new session ID as jwtid, using the directly read secret
-      // Extended token expiration to 8h for better UX - enterprise apps need longer sessions
+      // SEC-016 FIX: Reduced token expiration from 8h to 1h for security
+      // Use /api/auth/refresh-token endpoint to get new tokens without re-authenticating
       const token = jwt.sign(
         payload,
         signingSecret, // Use the directly read variable
         {
-          expiresIn: '8h', // 8 hours - reasonable for active work sessions
+          expiresIn: '1h', // SEC-016: 1 hour - use refresh token for longer sessions
           jwtid: newSessionId, // Use the new session ID as the JWT ID (jti)
         }
       );
@@ -359,7 +362,7 @@ router.post(
         // Use 'none' for cross-origin requests in HTTPS environments
         // In development, don't set sameSite to allow cookies across different ports (mobile testing)
         ...(isProductionLike ? { sameSite: 'none' as 'none' } : {}),
-        maxAge: 28800000, // 8 hours in milliseconds (matches JWT expiration)
+        maxAge: 3600000, // SEC-016: 1 hour in milliseconds (matches JWT expiration)
         path: '/',
         // Removed explicit domain to let the browser use the current domain
       };
@@ -552,6 +555,130 @@ router.get('/verify', protect, checkSession, (req, res) => {
       forcePasswordChange: user.forcePasswordChange || false, // Ensure this field is included
     },
   });
+});
+
+// SEC-016: Refresh Token Endpoint
+// @desc    Refresh the user's JWT token without re-authenticating
+// @route   POST /api/auth/refresh-token
+// @access  Private (requires valid current token)
+router.post('/refresh-token', protect, checkSession, async (req: RequestWithUser, res: Response) => {
+  try {
+    const user = req.user as any;
+
+    if (!user) {
+      return res.status(401).json({ message: 'Not authorized, user not found' });
+    }
+
+    // Generate a new session ID for the refreshed token
+    const newSessionId = crypto.randomUUID();
+
+    // Get the current session ID from the token to replace it
+    let currentSessionId: string | undefined;
+    let token: string | undefined;
+
+    if (req.cookies?.authToken) {
+      token = req.cookies.authToken;
+    } else {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
+
+    if (token) {
+      const jwtSecret = process.env.JWT_SECRET;
+      if (jwtSecret) {
+        try {
+          const decoded = jwt.verify(token, jwtSecret) as any;
+          currentSessionId = decoded.jti;
+        } catch {
+          // Token verification failed - will be handled by protect middleware
+        }
+      }
+    }
+
+    // Refetch user to get mutable document
+    const userDoc = await User.findById(user._id);
+    if (!userDoc) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Replace old session ID with new one (maintains session count)
+    if (currentSessionId && userDoc.activeSessionIds) {
+      const sessionIndex = userDoc.activeSessionIds.indexOf(currentSessionId);
+      if (sessionIndex > -1) {
+        userDoc.activeSessionIds[sessionIndex] = newSessionId;
+      } else {
+        // Current session not found, add new one
+        userDoc.activeSessionIds.push(newSessionId);
+        // Limit to last 10 sessions
+        if (userDoc.activeSessionIds.length > 10) {
+          userDoc.activeSessionIds = userDoc.activeSessionIds.slice(-10);
+        }
+      }
+    } else {
+      if (!userDoc.activeSessionIds) {
+        userDoc.activeSessionIds = [];
+      }
+      userDoc.activeSessionIds.push(newSessionId);
+    }
+
+    await userDoc.save();
+
+    // Prepare new token payload
+    const payload = {
+      userId: userDoc._id,
+      username: userDoc.username,
+      email: userDoc.email,
+      role: userDoc.role,
+    };
+
+    const signingSecret = process.env.JWT_SECRET;
+    if (!signingSecret) {
+      logger.error('JWT_SECRET not configured');
+      return res.status(500).json({ message: 'Internal server error: Signing key not configured.' });
+    }
+
+    // Generate new JWT with 1-hour expiration
+    const newToken = jwt.sign(payload, signingSecret, {
+      expiresIn: '1h',
+      jwtid: newSessionId,
+    });
+
+    // Set new token as HttpOnly cookie
+    const isProductionLike =
+      process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+    const cookieOptions: any = {
+      httpOnly: true,
+      secure: isProductionLike,
+      ...(isProductionLike ? { sameSite: 'none' as 'none' } : {}),
+      maxAge: 3600000, // 1 hour in milliseconds
+      path: '/',
+    };
+
+    res.cookie('authToken', newToken, cookieOptions);
+
+    logger.info(
+      { username: userDoc.username, userId: userDoc._id, newSessionId },
+      'Token refreshed successfully'
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Token refreshed successfully',
+      token: newToken, // Include token in response for client-side storage
+      user: {
+        _id: userDoc._id,
+        username: userDoc.username,
+        email: userDoc.email,
+        role: userDoc.role,
+        forcePasswordChange: userDoc.forcePasswordChange || false,
+      },
+    });
+  } catch (error) {
+    logger.error({ error }, 'Error refreshing token');
+    res.status(500).json({ message: 'Server error during token refresh' });
+  }
 });
 
 export default router;

@@ -51,9 +51,8 @@ router.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// TEMPORARILY COMMENT OUT GLOBAL AUTH MIDDLEWARE TO TEST
-// Middleware for all document routes
-// router.use(protect, checkSession);
+// NOTE: Auth middleware (protect, checkSession) is applied per-route below
+// This allows flexibility for any future public endpoints while maintaining security
 
 // Type augmentation for custom request properties (Ideally in a types file)
 // eslint-disable-next-line @typescript-eslint/no-namespace

@@ -13,8 +13,14 @@
 import { Router, Request, Response } from 'express';
 import { ollamaService } from '../services/ollamaService';
 import { getFeatures } from '../config/features';
+import { protect } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// ============================================================================
+// SEC-005 FIX: Require authentication for all Ollama routes
+// ============================================================================
+router.use(protect);
 
 // ============================================================================
 // Middleware: Check Ollama Feature Flag

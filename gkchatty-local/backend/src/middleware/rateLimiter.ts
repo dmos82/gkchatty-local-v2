@@ -253,21 +253,7 @@ export const uploadLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator,
   store: redisStore || undefined,
-  skip: (req: Request) => {
-    // Skip rate limiting for presigned URL endpoints
-    if (req.path.includes('/get-presigned-url')) {
-      logger.info(
-        {
-          ip: req.ip,
-          userId: req.user?._id,
-          path: req.path,
-        },
-        'Skipping rate limit for presigned URL generation'
-      );
-      return true;
-    }
-    return false;
-  },
+  // SEC-014 FIX: Removed presigned URL rate limit bypass - all uploads now rate limited
   handler: (req: Request, res: Response) => {
     logger.warn(
       {

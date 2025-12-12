@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import AuditLog, { IAuditLog, AuditAction, AuditResource } from '../models/AuditLogModel';
 import { getLogger } from '../utils/logger';
 import { isFeatureEnabled } from './featureToggleService';
+import { escapeRegExp } from '../utils/regexEscape';
 
 const log = getLogger('auditService');
 
@@ -108,7 +109,8 @@ export async function getAuditLogs(
     query.userId = new Types.ObjectId(filters.userId);
   }
   if (filters.username) {
-    query.username = { $regex: filters.username, $options: 'i' };
+    // SEC-010 FIX: Escape user input to prevent regex injection / ReDoS
+    query.username = { $regex: escapeRegExp(filters.username), $options: 'i' };
   }
   if (filters.action) {
     query.action = filters.action;

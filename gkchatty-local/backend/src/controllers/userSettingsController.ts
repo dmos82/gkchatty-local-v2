@@ -34,19 +34,31 @@ const getIconUrl = async (storedIconValue: string | null | undefined): Promise<s
 /**
  * @desc    Get settings for a specific user
  * @route   GET /api/admin/user-settings/:userId
- * @access  Private (Admin only)
+ * @access  Private (Admin or own settings)
  */
 const getUserSettings: RequestHandler = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { userId } = req.params;
     const reqId = req.reqId;
+    const requestingUserId = req.user?._id?.toString();
+    const requestingUserRole = req.user?.role;
 
-    log.info({ reqId, userId, msg: 'Fetching user settings for specific user' });
+    log.info({ reqId, userId, requestingUserId, msg: 'Fetching user settings for specific user' });
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       log.warn({ reqId, userId, msg: 'Invalid user ID format provided' });
       res.status(400);
       throw new Error('Invalid user ID format');
+    }
+
+    // SECURITY: Only allow access to own settings or admin access
+    const isOwnSettings = requestingUserId === userId;
+    const isAdmin = requestingUserRole === 'admin';
+
+    if (!isOwnSettings && !isAdmin) {
+      log.warn({ reqId, userId, requestingUserId, msg: 'Unauthorized access attempt to other user settings' });
+      res.status(403);
+      throw new Error('Not authorized to access other users\' settings');
     }
 
     try {

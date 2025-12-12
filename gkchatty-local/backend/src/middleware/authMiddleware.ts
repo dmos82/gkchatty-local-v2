@@ -151,18 +151,30 @@ export const protect = async (
  */
 export const isAdmin = async (req: RequestWithUser, res: Response, next: NextFunction) => {
   try {
-    // Check req.user exists and has role property with value 'admin'
-    // Need type assertion or check because req.user might be DecodedUserPayload if DB fetch fails (though protect should handle that)
+    // SEC-018 FIX: Re-verify admin role from database instead of trusting JWT claim
     const user = req.user as (IUser & { _id: any }) | null | undefined;
 
-    if (user && user.role === 'admin') {
+    if (!user || !user._id) {
+      console.warn('[isAdmin Middleware] Access DENIED: No user context');
+      return res.status(403).json({ message: 'Forbidden: Admin access required' });
+    }
+
+    // Fetch fresh user data from database to verify current role
+    const freshUser = await User.findById(user._id).select('role username');
+
+    if (!freshUser) {
+      console.warn(`[isAdmin Middleware] Access DENIED: User ${user._id} not found in database`);
+      return res.status(403).json({ message: 'Forbidden: Admin access required' });
+    }
+
+    if (freshUser.role === 'admin') {
       console.log(
-        `[isAdmin Middleware] Access GRANTED for admin user ${user.username} (ID: ${user._id}) to ${req.originalUrl}`
+        `[isAdmin Middleware] Access GRANTED for admin user ${freshUser.username} (ID: ${user._id}) to ${req.originalUrl}`
       );
       next(); // User is admin, proceed
     } else {
       console.warn(
-        `[isAdmin Middleware] Access DENIED: User ${user?._id || 'unknown'} with role ${user?.role || 'none'} tried to access admin route ${req.originalUrl}`
+        `[isAdmin Middleware] Access DENIED: User ${user._id} with role ${freshUser.role || 'none'} tried to access admin route ${req.originalUrl}`
       );
       res.status(403).json({ message: 'Forbidden: Admin access required' });
     }
@@ -250,18 +262,8 @@ export const checkSession = async (
       return res.status(500).json({ message: 'Server configuration error' });
     }
 
-    // Enhanced JWT_SECRET debug logging for checkSession
-    console.log('[checkSession - JWT DEBUG] ===== JWT SESSION CHECK DEBUG INFO =====');
-    console.log(`[checkSession - JWT DEBUG] Secret Length: ${jwtSecret.length}`);
-    console.log(`[checkSession - JWT DEBUG] Secret First 5: ${jwtSecret.substring(0, 5)}`);
-    console.log(`[checkSession - JWT DEBUG] Secret Last 5: ${jwtSecret.slice(-5)}`);
-    console.log(
-      `[checkSession - JWT DEBUG] Contains quotes: ${jwtSecret.includes('"') || jwtSecret.includes("'")}`
-    );
-    console.log(
-      `[checkSession - JWT DEBUG] Has whitespace: ${jwtSecret.startsWith(' ') || jwtSecret.endsWith(' ')}`
-    );
-    console.log('[checkSession - JWT DEBUG] =========================================');
+    // SEC-013 FIX: Removed debug logging that exposed JWT_SECRET details
+    // Only log that session check is being performed (no sensitive data)
 
     const decoded = jwt.verify(token, jwtSecret, { ignoreExpiration: false }) as DecodedUserPayload;
     // Add _id as an alias for userId for type compatibility

@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';
 import BrandedPdfViewer from '@/components/BrandedPdfViewer';
 import { getApiBaseUrl } from '@/lib/config';
+import { LinkifiedText } from '@/utils/linkify';
 
 interface IMChatWindowProps {
   windowId: string;
@@ -1522,7 +1523,7 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
                         </span>
                       </div>
                       <p className="text-sm text-slate-300 truncate mt-0.5">
-                        {msg.content}
+                        <LinkifiedText text={msg.content} />
                       </p>
                     </button>
                   ))}
@@ -1764,7 +1765,9 @@ export const IMChatWindow: React.FC<IMChatWindowProps> = ({
                         </div>
                       ) : (
                         message.content && !(message.attachments?.length && message.content.startsWith('Sent ')) && (
-                          <p className="text-sm break-words">{message.content}</p>
+                          <p className="text-sm break-words">
+                            <LinkifiedText text={message.content} />
+                          </p>
                         )
                       )}
                       <div className={`flex items-center gap-1 mt-1 ${isOwnMessage ? 'justify-end' : ''}`}>

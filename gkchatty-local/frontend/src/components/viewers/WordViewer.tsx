@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import mammoth from 'mammoth';
+import DOMPurify from 'dompurify';
 import {
   X,
   Download,
@@ -165,7 +166,7 @@ export function WordViewer({ url, fileName, documentId, onClose }: WordViewerPro
           <div className="max-w-4xl mx-auto p-8">
             <article
               className="word-document prose prose-sm sm:prose max-w-none"
-              dangerouslySetInnerHTML={{ __html: htmlContent }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(htmlContent) }}
             />
           </div>
         )}

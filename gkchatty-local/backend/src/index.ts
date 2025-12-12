@@ -64,6 +64,7 @@ import embeddingsRoutes from './routes/embeddingsRoutes'; // <-- Import embeddin
 import conversationRoutes from './routes/conversationRoutes'; // <-- Import conversation routes (DMs)
 import * as http from 'http'; // Import http
 import { correlationIdMiddleware } from './middleware/correlationId';
+import { prototypePollutionProtection } from './middleware/prototypePollutionProtection'; // HIGH-007: Prevent prototype pollution attacks
 import { pinoLogger } from './utils/logger'; // Import base pinoLogger
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
@@ -117,22 +118,28 @@ app.use(
 
 // HIGH-005: Apply helmet.js security headers middleware
 // Must be applied early in middleware chain, before routes
+// SECURITY: In production, unsafe-inline is removed to prevent XSS attacks
+const isProductionEnv = process.env.NODE_ENV === 'production';
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"], // Allow inline scripts for development
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        // HIGH-005: Remove unsafe-inline in production to prevent XSS
+        // Development allows inline for hot reload and debugging
+        scriptSrc: isProductionEnv ? ["'self'"] : ["'self'", "'unsafe-inline'"],
+        styleSrc: isProductionEnv ? ["'self'"] : ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'https:', 'http://localhost:*'],
         // Allow connections to both localhost and network IPs for mobile testing
-        connectSrc: ["'self'", 'http://localhost:*', 'http://192.168.1.*:*', 'http://127.0.0.1:*'],
+        connectSrc: isProductionEnv
+          ? ["'self'", 'https://*.netlify.app', 'https://*.onrender.com', 'wss://*.onrender.com']
+          : ["'self'", 'http://localhost:*', 'http://192.168.1.*:*', 'http://127.0.0.1:*', 'ws://localhost:*'],
         fontSrc: ["'self'"],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],
         frameSrc: ["'none'"],
         // Remove upgrade-insecure-requests for local HTTP development with mobile devices
-        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+        upgradeInsecureRequests: isProductionEnv ? [] : null,
       },
     },
     crossOriginEmbedderPolicy: false, // Disable for CORS compatibility
@@ -241,49 +248,53 @@ async function startServer() {
     // --- END: Seed Default Settings ---
 
     // --- BEGIN: Temporary Admin User Seeder ---
-    // THIS IS TEMPORARY AND SHOULD BE REMOVED AFTER INITIAL SETUP
+    // SECURITY: Only seeds admin if SEED_ADMIN_USER=true AND password is provided via env var
     try {
-      console.log('[Admin Seeder] Checking if initial admin user seeding is required...');
-
-      const TEMP_ADMIN_USERNAME = process.env.TEMP_ADMIN_USERNAME || 'initial_admin';
-      const TEMP_ADMIN_PASSWORD = process.env.TEMP_ADMIN_PASSWORD || 'TempPassword123!';
+      const SEED_ADMIN = process.env.SEED_ADMIN_USER === 'true';
+      const TEMP_ADMIN_USERNAME = process.env.TEMP_ADMIN_USERNAME;
+      const TEMP_ADMIN_PASSWORD = process.env.TEMP_ADMIN_PASSWORD;
       const TEMP_ADMIN_EMAIL = process.env.TEMP_ADMIN_EMAIL || 'admin@example.com';
 
-      // Check if the specific admin user already exists
-      const existingAdminUser = await User.findOne({ username: TEMP_ADMIN_USERNAME });
-      console.log(
-        `[Admin Seeder] Check for existing user '${TEMP_ADMIN_USERNAME}': ${existingAdminUser ? 'Found' : 'Not Found'}`
-      );
-
-      if (!existingAdminUser) {
-        console.log(
-          `[Admin Seeder] User '${TEMP_ADMIN_USERNAME}' not found. Seeding initial admin user...`
-        );
-        const hashedPassword = await bcrypt.hash(TEMP_ADMIN_PASSWORD, BCRYPT_SALT_ROUNDS);
-        const tempAdmin = new User({
-          username: TEMP_ADMIN_USERNAME,
-          password: hashedPassword,
-          email: TEMP_ADMIN_EMAIL,
-          role: 'admin',
-          // Add any other mandatory fields for the User model if they exist
-          isPersonaEnabled: false,
-          canCustomizePersona: false,
-        });
-        await tempAdmin.save();
-        console.log(
-          `[Admin Seeder] Initial admin user '${TEMP_ADMIN_USERNAME}' created successfully.`
-        );
-        console.log(`[Admin Seeder] Database: ${mongoose.connection.db?.databaseName}`);
-        console.log(`[Admin Seeder] Admin email: ${TEMP_ADMIN_EMAIL}`);
-        console.log(`[Admin Seeder] Password set from environment variable (not logged for security)`);
+      if (!SEED_ADMIN) {
+        console.log('[Admin Seeder] SEED_ADMIN_USER not set to true. Skipping admin seeding.');
+      } else if (!TEMP_ADMIN_USERNAME || !TEMP_ADMIN_PASSWORD) {
+        console.log('[Admin Seeder] SEED_ADMIN_USER=true but TEMP_ADMIN_USERNAME or TEMP_ADMIN_PASSWORD not set. Skipping for security.');
+      } else if (TEMP_ADMIN_PASSWORD.length < 12) {
+        console.log('[Admin Seeder] TEMP_ADMIN_PASSWORD must be at least 12 characters. Skipping for security.');
       } else {
+        // Check if the specific admin user already exists
+        const existingAdminUser = await User.findOne({ username: TEMP_ADMIN_USERNAME });
         console.log(
-          `[Admin Seeder] User '${TEMP_ADMIN_USERNAME}' already exists. Skipping initial admin user seeding.`
+          `[Admin Seeder] Check for existing user '${TEMP_ADMIN_USERNAME}': ${existingAdminUser ? 'Found' : 'Not Found'}`
         );
+
+        if (!existingAdminUser) {
+          console.log(
+            `[Admin Seeder] User '${TEMP_ADMIN_USERNAME}' not found. Seeding initial admin user...`
+          );
+          const hashedPassword = await bcrypt.hash(TEMP_ADMIN_PASSWORD, BCRYPT_SALT_ROUNDS);
+          const tempAdmin = new User({
+            username: TEMP_ADMIN_USERNAME,
+            password: hashedPassword,
+            email: TEMP_ADMIN_EMAIL,
+            role: 'admin',
+            isPersonaEnabled: false,
+            canCustomizePersona: false,
+          });
+          await tempAdmin.save();
+          console.log(
+            `[Admin Seeder] Initial admin user '${TEMP_ADMIN_USERNAME}' created successfully.`
+          );
+          console.log(`[Admin Seeder] Database: ${mongoose.connection.db?.databaseName}`);
+          console.log(`[Admin Seeder] Admin email: ${TEMP_ADMIN_EMAIL}`);
+        } else {
+          console.log(
+            `[Admin Seeder] User '${TEMP_ADMIN_USERNAME}' already exists. Skipping initial admin user seeding.`
+          );
+        }
       }
     } catch (error) {
       console.error('[Admin Seeder] Error during initial admin user seeding:', error);
-      // Decide if this should be a fatal error. For now, we log and continue.
     }
     // --- END: Temporary Admin User Seeder ---
 
@@ -402,7 +413,7 @@ async function startServer() {
         }
 
         const allowedOriginsExplicit = [process.env.CORS_ORIGIN || '']; // Explicit whitelist (prod site)
-        const netlifyPreviewRegex = /\.netlify\.app$/i; // Any subdomain ending with .netlify.app
+        const netlifyPreviewRegex = /^https:\/\/.*gkchatty.*\.netlify\.app$/i; // Only gkchatty netlify subdomains
         const localNetworkRegex = /^http:\/\/192\.168\.\d+\.\d+:4003$/i; // Any local network IP on port 4003
 
         // Check against all allowed origins (including localhost for development)
@@ -513,6 +524,10 @@ async function startServer() {
         express.urlencoded({ extended: true, limit: maxUrlencodedSize })(req, res, next);
       }
     });
+
+    // HIGH-007: Prototype pollution protection - must come after body parsing
+    // Blocks requests containing __proto__, constructor, or prototype keys
+    app.use(prototypePollutionProtection);
 
     app.use(morgan('dev')); // Logging HTTP requests
 

@@ -10,7 +10,7 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { DiskSpaceError, MemoryError } from './errors';
 
 /**
@@ -72,11 +72,31 @@ export function getDiskSpace(targetPath: string = os.homedir()): {
     let freeBytes = 0;
 
     if (process.platform === 'win32') {
-      // Windows: use wmic
+      // SEC-007 FIX: Use spawnSync with argument array to prevent command injection
       const drive = path.parse(targetPath).root;
-      const output = execSync(`wmic logicaldisk where "DeviceID='${drive.replace('\\', '')}'" get Size,FreeSpace`, {
-        encoding: 'utf-8',
-      });
+      // Validate drive letter format (e.g., "C:")
+      const driveLetterMatch = drive.match(/^([A-Za-z]):[\\/]?$/);
+      if (!driveLetterMatch) {
+        console.error('[ResourceMonitor] Invalid drive format:', drive);
+        return { totalGB: 0, freeGB: 0, usedGB: 0, usedPercent: 0 };
+      }
+      const driveLetter = driveLetterMatch[1].toUpperCase() + ':';
+
+      // Use spawnSync with argument array (no shell interpolation)
+      const result = spawnSync('wmic', [
+        'logicaldisk',
+        'where',
+        `DeviceID='${driveLetter}'`,
+        'get',
+        'Size,FreeSpace'
+      ], { encoding: 'utf-8' });
+
+      if (result.error || result.status !== 0) {
+        console.error('[ResourceMonitor] wmic command failed:', result.error || result.stderr);
+        return { totalGB: 0, freeGB: 0, usedGB: 0, usedPercent: 0 };
+      }
+
+      const output = result.stdout;
       const lines = output.trim().split('\n');
       if (lines.length >= 2) {
         const values = lines[1].trim().split(/\s+/);
@@ -84,8 +104,22 @@ export function getDiskSpace(targetPath: string = os.homedir()): {
         totalBytes = parseInt(values[1]);
       }
     } else {
-      // Unix-like: use df
-      const output = execSync(`df -k "${targetPath}"`, { encoding: 'utf-8' });
+      // SEC-007 FIX: Use spawnSync with argument array for Unix
+      // Validate targetPath - must be an existing directory
+      const resolvedPath = path.resolve(targetPath);
+      if (!fs.existsSync(resolvedPath)) {
+        console.error('[ResourceMonitor] Path does not exist:', resolvedPath);
+        return { totalGB: 0, freeGB: 0, usedGB: 0, usedPercent: 0 };
+      }
+
+      const result = spawnSync('df', ['-k', resolvedPath], { encoding: 'utf-8' });
+
+      if (result.error || result.status !== 0) {
+        console.error('[ResourceMonitor] df command failed:', result.error || result.stderr);
+        return { totalGB: 0, freeGB: 0, usedGB: 0, usedPercent: 0 };
+      }
+
+      const output = result.stdout;
       const lines = output.trim().split('\n');
       if (lines.length >= 2) {
         const values = lines[1].trim().split(/\s+/);

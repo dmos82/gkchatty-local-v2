@@ -1,1 +1,43 @@
+# Dependencies
+node_modules/
 
+# Environment files - NEVER commit these
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.backup*
+
+# Build outputs
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Credentials and secrets
+*.pem
+*.key
+credentials.json
+service-account*.json
