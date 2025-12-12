@@ -168,6 +168,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <Button
         onClick={handleNewChat}
         variant="secondary"
+        data-help-id="sidebar-new-chat"
         className="w-full mb-1 transition-all duration-200 ease-in-out hover:bg-secondary/90 hover:scale-[1.02] active:scale-[0.98]"
       >
         New Chat
@@ -177,6 +178,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <Link href="/documents" passHref legacyBehavior>
         <Button
           variant="secondary"
+          data-help-id="sidebar-documents"
           className="w-full mb-1 transition-all duration-200 ease-in-out hover:bg-secondary/90 hover:scale-[1.02] active:scale-[0.98]"
         >
           {/* <Icon className="mr-2 h-4 w-4" /> // Optional Icon */}
@@ -188,6 +190,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         <Link href="/admin" passHref>
           <Button
             variant="ghost"
+            data-help-id="sidebar-admin"
             className={cn(
               'w-full justify-start mb-2 text-left text-foreground',
               'transition-all duration-200 ease-in-out hover:bg-muted/10 hover:scale-[1.02] active:scale-[0.98]'
@@ -202,6 +205,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Feedback Button - Added here, after Admin Dashboard */}
       <Button
         variant="ghost"
+        data-help-id="sidebar-feedback"
         className={cn(
           'w-full justify-start mb-2 text-left text-foreground',
           'transition-all duration-200 ease-in-out hover:bg-muted/10 hover:scale-[1.02] active:scale-[0.98]'
@@ -359,7 +363,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </Tooltip>
         </TooltipProvider>
 
-        <Button variant="outline" size="sm" onClick={onLogoutClick} className="w-full">
+        <Button variant="outline" size="sm" onClick={onLogoutClick} data-help-id="sidebar-logout" className="w-full">
           <LogOut className="mr-2 h-4 w-4" />
           Logout
         </Button>

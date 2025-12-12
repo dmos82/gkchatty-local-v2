@@ -40,6 +40,11 @@ export const helpContent: Record<string, HelpItem> = {
     description: 'Sign out of your account. Your data remains saved and will be available when you log back in.',
     category: 'navigation',
   },
+  'sidebar-feedback': {
+    title: 'Submit Feedback',
+    description: 'Share your thoughts, report bugs, or suggest improvements. Your feedback helps us make GKChatty better.',
+    category: 'navigation',
+  },
 
   // === CHAT INTERFACE ===
   'chat-input': {

@@ -50,10 +50,12 @@ export default function KBTogglePanel({ onKBsChange }: KBTogglePanelProps) {
 
       <div className="space-y-2 px-4 pb-4">
         {/* System KB Toggle */}
-        <div className={cn(
-          "flex items-center justify-between py-2 px-3 rounded-lg transition-colors",
-          searchMode === 'system-kb' ? 'bg-primary/10' : 'bg-muted/50'
-        )}>
+        <div
+          data-help-id="chat-system-kb"
+          className={cn(
+            "flex items-center justify-between py-2 px-3 rounded-lg transition-colors",
+            searchMode === 'system-kb' ? 'bg-primary/10' : 'bg-muted/50'
+          )}>
           <div className="flex items-center gap-3">
             <Database className="h-4 w-4 text-muted-foreground" />
             <div className="flex-1">
@@ -72,10 +74,12 @@ export default function KBTogglePanel({ onKBsChange }: KBTogglePanelProps) {
         </div>
 
         {/* My Docs Toggle */}
-        <div className={cn(
-          "flex items-center justify-between py-2 px-3 rounded-lg transition-colors",
-          searchMode === 'user-docs' ? 'bg-primary/10' : 'bg-muted/50'
-        )}>
+        <div
+          data-help-id="chat-my-docs"
+          className={cn(
+            "flex items-center justify-between py-2 px-3 rounded-lg transition-colors",
+            searchMode === 'user-docs' ? 'bg-primary/10' : 'bg-muted/50'
+          )}>
           <div className="flex items-center gap-3">
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
             <div className="flex-1">

@@ -36,6 +36,7 @@ export default function ChatInputArea() {
               value={message}
               onChange={e => setMessage(e.target.value)}
               placeholder="Type your message..."
+              data-help-id="chat-input"
               className="w-full p-3 pr-20 rounded-lg border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
               rows={1}
               style={{ minHeight: '44px', maxHeight: '120px' }}
@@ -45,6 +46,7 @@ export default function ChatInputArea() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowUpload(!showUpload)}
+                data-help-id="im-attach-file"
                 className="h-8 w-8 p-0"
                 title="Attach files"
               >
@@ -56,7 +58,7 @@ export default function ChatInputArea() {
               )}
             </div>
           </div>
-          <Button size="sm" disabled={!message.trim()} className="h-11 px-4">
+          <Button size="sm" disabled={!message.trim()} data-help-id="chat-send" className="h-11 px-4">
             <Send className="w-4 h-4" />
           </Button>
         </div>
