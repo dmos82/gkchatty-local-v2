@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { helpContent, HelpItem } from '@/utils/helpContent';
 
 interface HelpContextType {
@@ -9,6 +10,7 @@ interface HelpContextType {
   activeHelpId: string | null;
   setActiveHelpId: (id: string | null) => void;
   getHelpContent: (id: string) => HelpItem | null;
+  clearHelp: () => void;
 }
 
 const HelpContext = createContext<HelpContextType | undefined>(undefined);
@@ -18,10 +20,13 @@ interface HelpProviderProps {
 }
 
 const HELP_MODE_STORAGE_KEY = 'gkchatty-help-mode-enabled';
+const HIDE_DELAY_MS = 150; // Delay before hiding tooltip to prevent flicker
 
 export const HelpProvider: React.FC<HelpProviderProps> = ({ children }) => {
   const [isHelpModeEnabled, setIsHelpModeEnabled] = useState<boolean>(false);
-  const [activeHelpId, setActiveHelpId] = useState<string | null>(null);
+  const [activeHelpId, setActiveHelpIdState] = useState<string | null>(null);
+  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pathname = usePathname();
 
   // Load state from localStorage on mount
   useEffect(() => {
@@ -32,6 +37,16 @@ export const HelpProvider: React.FC<HelpProviderProps> = ({ children }) => {
       }
     }
   }, []);
+
+  // Clear activeHelpId when route changes
+  useEffect(() => {
+    setActiveHelpIdState(null);
+    // Clear any pending hide timeout
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+  }, [pathname]);
 
   // Keyboard shortcut: Press '?' to toggle help mode
   useEffect(() => {
@@ -51,7 +66,7 @@ export const HelpProvider: React.FC<HelpProviderProps> = ({ children }) => {
       // Close help mode on Escape
       if (e.key === 'Escape' && isHelpModeEnabled) {
         setIsHelpModeEnabled(false);
-        setActiveHelpId(null);
+        setActiveHelpIdState(null);
         if (typeof window !== 'undefined') {
           localStorage.setItem(HELP_MODE_STORAGE_KEY, 'false');
         }
@@ -62,6 +77,15 @@ export const HelpProvider: React.FC<HelpProviderProps> = ({ children }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isHelpModeEnabled]);
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const toggleHelpMode = useCallback(() => {
     setIsHelpModeEnabled(prev => {
       const newValue = !prev;
@@ -70,10 +94,38 @@ export const HelpProvider: React.FC<HelpProviderProps> = ({ children }) => {
       }
       // Clear active help when disabling
       if (!newValue) {
-        setActiveHelpId(null);
+        setActiveHelpIdState(null);
       }
       return newValue;
     });
+  }, []);
+
+  // Debounced setActiveHelpId to prevent flickering
+  const setActiveHelpId = useCallback((id: string | null) => {
+    // Clear any pending hide timeout
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+
+    if (id !== null) {
+      // Show immediately when hovering a new element
+      setActiveHelpIdState(id);
+    } else {
+      // Delay hiding to prevent flicker when moving between elements
+      hideTimeoutRef.current = setTimeout(() => {
+        setActiveHelpIdState(null);
+      }, HIDE_DELAY_MS);
+    }
+  }, []);
+
+  // Immediate clear function (for route changes)
+  const clearHelp = useCallback(() => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+    setActiveHelpIdState(null);
   }, []);
 
   const getHelpContent = useCallback((id: string): HelpItem | null => {
@@ -86,6 +138,7 @@ export const HelpProvider: React.FC<HelpProviderProps> = ({ children }) => {
     activeHelpId,
     setActiveHelpId,
     getHelpContent,
+    clearHelp,
   };
 
   return <HelpContext.Provider value={value}>{children}</HelpContext.Provider>;

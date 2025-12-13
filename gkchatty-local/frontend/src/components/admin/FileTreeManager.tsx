@@ -915,6 +915,7 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           <Button
             variant="outline"
             size="icon"
+            data-help-id="docs-folder-create"
             onClick={() => {
               // If a single item is selected, determine the parent folder
               let targetFolder: string | null = null;
@@ -953,6 +954,7 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
           <Button
             variant="outline"
             size="icon"
+            data-help-id="docs-upload"
             onClick={() => fileInputRef.current?.click()}
             title="Upload Files"
           >
@@ -963,6 +965,7 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
               <Button
                 variant="destructive"
                 size="sm"
+                data-help-id="docs-delete"
                 onClick={handleDelete}
                 title={`Delete ${selectedItems.size} item(s)`}
                 className="flex items-center gap-2"
@@ -983,7 +986,7 @@ const FileTreeManager: React.FC<FileTreeManagerProps> = ({ mode = 'system' }) =>
         </div>
         
         <div className="flex items-center gap-2">
-          <div className="relative">
+          <div className="relative" data-help-id="docs-search">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"

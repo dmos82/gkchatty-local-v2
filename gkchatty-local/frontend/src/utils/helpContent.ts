@@ -74,6 +74,23 @@ export const helpContent: Record<string, HelpItem> = {
     description: 'Search only your personal documents. These are files you\'ve uploaded that are private to your account.',
     category: 'chat',
   },
+
+  // === SEARCH MODE TOGGLE ===
+  'search-mode-hybrid': {
+    title: 'Hybrid Search Mode',
+    description: 'Search both the System Knowledge Base and your personal documents simultaneously. Best for comprehensive answers using all available information.',
+    category: 'chat',
+  },
+  'search-mode-system-kb': {
+    title: 'Knowledge Base Only',
+    description: 'Search only the System Knowledge Base. Contains company-wide documents and information shared by administrators.',
+    category: 'chat',
+  },
+  'search-mode-user-docs': {
+    title: 'My Docs Only',
+    description: 'Search only your personal uploaded documents. Use this when you want answers based solely on your private files.',
+    category: 'chat',
+  },
   'chat-persona-selector': {
     title: 'AI Persona',
     description: 'Choose how the AI responds. Different personas have different expertise areas and communication styles.',
@@ -164,22 +181,37 @@ export const helpContent: Record<string, HelpItem> = {
   // === ADMIN FEATURES ===
   'admin-users': {
     title: 'User Management',
-    description: 'View, create, edit, and manage user accounts. Set roles and permissions. Reset passwords.',
+    description: 'View, create, edit, and manage user accounts. Set roles and permissions. Reset passwords and manage access levels.',
     category: 'admin',
   },
   'admin-system-kb': {
     title: 'System Knowledge Base',
-    description: 'Manage the shared company knowledge base. Upload documents that will be available to all users.',
+    description: 'Manage the shared company knowledge base. Upload PDF and text documents that will be indexed and available for AI-powered search by all users.',
+    category: 'admin',
+  },
+  'admin-usage': {
+    title: 'Usage Statistics',
+    description: 'View system-wide usage statistics including total documents, chat sessions, messages, and per-user token consumption with cost estimates.',
     category: 'admin',
   },
   'admin-audit-logs': {
     title: 'Audit Logs',
-    description: 'View system activity logs. Track user actions, document access, and security events.',
+    description: 'View system activity logs. Track user actions, document uploads/deletions, login events, and security-related activities.',
+    category: 'admin',
+  },
+  'admin-knowledge-gaps': {
+    title: 'Knowledge Gaps',
+    description: 'Review questions the AI could not answer confidently. Identify missing information in the knowledge base to improve response quality.',
+    category: 'admin',
+  },
+  'admin-feedback': {
+    title: 'User Feedback',
+    description: 'View and manage feedback submitted by users. Review bug reports, feature requests, and general comments.',
     category: 'admin',
   },
   'admin-settings': {
     title: 'System Settings',
-    description: 'Configure system-wide settings including AI behavior, security policies, and feature flags.',
+    description: 'Configure system-wide settings including AI personas, system prompts, OpenAI API configuration, and feature flags.',
     category: 'admin',
   },
 
@@ -194,6 +226,23 @@ export const helpContent: Record<string, HelpItem> = {
     title: 'Theme Toggle',
     description: 'Switch between light and dark modes. Your preference is saved automatically.',
     category: 'general',
+  },
+
+  // === RIGHT PANEL TABS ===
+  'panel-notes-tab': {
+    title: 'Chat Notes',
+    description: 'View and edit notes for the current chat. Notes are saved automatically and help you keep track of important information from your conversations.',
+    category: 'chat',
+  },
+  'panel-system-kb-tab': {
+    title: 'System Knowledge Base',
+    description: 'Browse the shared company knowledge base. View documents uploaded by administrators that are available for AI-powered search.',
+    category: 'documents',
+  },
+  'panel-my-docs-tab': {
+    title: 'My Documents',
+    description: 'Browse and manage your personal uploaded documents. These files are private to your account and can be used for AI-powered search.',
+    category: 'documents',
   },
 
   // === GENERAL ===

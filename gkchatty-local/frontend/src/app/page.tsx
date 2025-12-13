@@ -5,9 +5,10 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import Sidebar from '@/components/layout/Sidebar';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { PanelLeftClose, PanelRightClose, Moon, Sun, Send } from 'lucide-react';
+import { PanelLeftClose, PanelRightClose, Moon, Sun, Send, HelpCircle } from 'lucide-react';
 import { UnifiedSearchToggle } from '@/components/ui/UnifiedSearchToggle';
 import { useSearchMode } from '@/contexts/SearchModeContext';
+import { useHelp } from '@/contexts/HelpContext';
 import { useTheme } from 'next-themes';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/useAuth';
@@ -98,6 +99,7 @@ export default function Home() {
   const { settings, refreshSettings } = useUserSettings();
   const { toast } = useToast(); // Initialize toast
   const { searchMode } = useSearchMode(); // Use the new unified search mode
+  const { isHelpModeEnabled, toggleHelpMode } = useHelp(); // Help Mode toggle
 
   // State for UI elements
   const [chats, setChats] = React.useState<ChatSummary[]>([]); // <-- SPECIFY TYPE HERE
@@ -1018,8 +1020,23 @@ export default function Home() {
             <div className="flex items-center gap-2 md:gap-4">
               {/* Unified Search Toggle */}
               <UnifiedSearchToggle />
+              {/* Help Mode Toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleHelpMode}
+                data-help-id="header-help-mode"
+                title={isHelpModeEnabled ? 'Disable Help Mode' : 'Enable Help Mode'}
+                className={`transition-all duration-200 ${
+                  isHelpModeEnabled
+                    ? 'bg-yellow-500 text-yellow-900 hover:bg-yellow-600 shadow-md'
+                    : 'hover:bg-muted'
+                }`}
+              >
+                <HelpCircle className="h-5 w-5" />
+              </Button>
               {/* Theme Toggle Switch */}
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2" data-help-id="header-theme">
                 <Sun className="h-5 w-5 text-yellow-500" />
                 <Switch
                   id="theme-switch"
@@ -1167,9 +1184,9 @@ export default function Home() {
               // Show tabs when no document is selected
               <Tabs value={selectedTab} onValueChange={setSelectedTab} className="flex flex-col h-full">
                 <TabsList className="grid w-full grid-cols-3 p-1 m-2">
-                  <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
-                  <TabsTrigger value="system-kb" className="text-xs">System KB</TabsTrigger>
-                  <TabsTrigger value="my-docs" className="text-xs">My Docs</TabsTrigger>
+                  <TabsTrigger value="notes" className="text-xs" data-help-id="panel-notes-tab">Notes</TabsTrigger>
+                  <TabsTrigger value="system-kb" className="text-xs" data-help-id="panel-system-kb-tab">System KB</TabsTrigger>
+                  <TabsTrigger value="my-docs" className="text-xs" data-help-id="panel-my-docs-tab">My Docs</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="notes" className="flex-1 m-0 overflow-hidden">

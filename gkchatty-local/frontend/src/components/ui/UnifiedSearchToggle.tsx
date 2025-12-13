@@ -11,16 +11,19 @@ const searchModeConfig = {
     label: 'Hybrid',
     icon: Layers,
     description: 'Search both Knowledge Base and My Documents',
+    helpId: 'search-mode-hybrid',
   },
   'system-kb': {
     label: 'Knowledge Base',
     icon: Database,
     description: 'Search only System Knowledge Base',
+    helpId: 'search-mode-system-kb',
   },
   'user-docs': {
     label: 'My Docs',
     icon: FolderOpen,
     description: 'Search only My Documents',
+    helpId: 'search-mode-user-docs',
   },
 } as const;
 
@@ -45,13 +48,13 @@ export const UnifiedSearchToggle: React.FC = () => {
             variant={isActive ? 'default' : 'ghost'}
             size="sm"
             onClick={() => handleModeChange(mode)}
+            data-help-id={config.helpId}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all',
               isActive
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
             )}
-            title={config.description}
           >
             <Icon className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{config.label}</span>

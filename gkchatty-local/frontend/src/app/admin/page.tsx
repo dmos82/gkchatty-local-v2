@@ -1451,11 +1451,11 @@ export default function AdminPage() {
               className="h-full flex flex-col"
             >
               <TabsList className="m-4 mb-0 flex-shrink-0">
-                <TabsTrigger value="system-kb">System KB</TabsTrigger>
-                <TabsTrigger value="users">Users</TabsTrigger>
-                <TabsTrigger value="usage">Usage</TabsTrigger>
-                <TabsTrigger value="audit-logs">Audit Logs</TabsTrigger>
-                <TabsTrigger value="knowledge-gaps" className="relative">
+                <TabsTrigger value="system-kb" data-help-id="admin-system-kb">System KB</TabsTrigger>
+                <TabsTrigger value="users" data-help-id="admin-users">Users</TabsTrigger>
+                <TabsTrigger value="usage" data-help-id="admin-usage">Usage</TabsTrigger>
+                <TabsTrigger value="audit-logs" data-help-id="admin-audit-logs">Audit Logs</TabsTrigger>
+                <TabsTrigger value="knowledge-gaps" data-help-id="admin-knowledge-gaps" className="relative">
                   Knowledge Gaps
                   {knowledgeGapCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
@@ -1463,8 +1463,8 @@ export default function AdminPage() {
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="feedback">Feedback</TabsTrigger>
-                <TabsTrigger value="settings">Settings</TabsTrigger>
+                <TabsTrigger value="feedback" data-help-id="admin-feedback">Feedback</TabsTrigger>
+                <TabsTrigger value="settings" data-help-id="admin-settings">Settings</TabsTrigger>
               </TabsList>
 
               {/* Scrollable Tab Content */}
